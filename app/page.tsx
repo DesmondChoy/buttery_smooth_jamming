@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import { ChatPanel } from '@/components/ChatPanel';
 import { AudioStartButton } from '@/components/AudioStartButton';
@@ -69,6 +69,33 @@ export default function Home() {
     stop();
     setIsPlaying(false);
   }, [stop]);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore if user is typing in an input/textarea
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+        return;
+      }
+
+      if (e.ctrlKey || e.metaKey) {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          if (audioReady) {
+            handlePlay();
+          }
+        } else if (e.key === '.') {
+          e.preventDefault();
+          if (audioReady && isPlaying) {
+            handleStopClick();
+          }
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [audioReady, isPlaying, handlePlay, handleStopClick]);
 
   return (
     <main className="flex min-h-screen">
