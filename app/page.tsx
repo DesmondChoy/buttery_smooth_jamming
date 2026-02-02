@@ -24,6 +24,10 @@ export default function Home() {
     setError(err?.message || null);
   }, []);
 
+  const handlePlayStateChange = useCallback((playing: boolean) => {
+    setIsPlaying(playing);
+  }, []);
+
   const handleExecute = useCallback((code: string) => {
     setCode(code);
     evaluate(true);
@@ -151,9 +155,10 @@ export default function Home() {
             ref={ref}
             initialCode={`// Welcome to CC Sick Beats!
 // Press play or Ctrl+Enter to start
-note("c3 e3 g3 c4").sound("piano").pianoroll()`}
+note("c3 e3 g3 c4").sound("piano")._pianoroll({ fold: 1 })`}
             className="rounded-lg overflow-hidden"
             onError={handleStrudelError}
+            onPlayStateChange={handlePlayStateChange}
           />
         </div>
         {!audioReady && <AudioStartButton onAudioReady={handleAudioReady} />}

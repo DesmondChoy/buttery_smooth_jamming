@@ -1,3 +1,15 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Contain Strudel editor visualizations */
+.strudel-container {
+  position: relative;
+}
+
+/* Ensure the CodeMirror editor has proper styling */
+.strudel-container .cm-editor {
+  position: relative;
+  z-index: 10;
+  background: rgba(30, 30, 30, 0.95);
+}

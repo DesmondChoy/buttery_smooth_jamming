@@ -17,6 +17,7 @@ interface StrudelEditorProps {
   initialCode?: string;
   onReady?: (editor: StrudelEditorElement['editor']) => void;
   onError?: (error: Error | null) => void;
+  onPlayStateChange?: (isPlaying: boolean) => void;
   className?: string;
 }
 
@@ -24,6 +25,7 @@ export function StrudelEditor({
   initialCode = '',
   onReady,
   onError,
+  onPlayStateChange,
   className = ''
 }: StrudelEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -48,18 +50,34 @@ export function StrudelEditor({
       container.appendChild(strudelEditor);
       editorRef.current = strudelEditor;
 
-      // Wait for editor to initialize
-      requestAnimationFrame(() => {
+      // Wait for editor to initialize - poll until ready (with timeout)
+      let attempts = 0;
+      const maxAttempts = 300; // ~5 seconds at 60fps
+      const checkReady = () => {
+        if (!mounted) return;
         if (strudelEditor.editor && onReady) {
           onReady(strudelEditor.editor);
+        } else if (attempts < maxAttempts) {
+          attempts++;
+          requestAnimationFrame(checkReady);
+        } else {
+          console.warn('Strudel editor failed to initialize within timeout');
         }
-      });
+      };
+      requestAnimationFrame(checkReady);
     }
 
-    // Listen for update events to capture errors
+    // Listen for update events to capture errors and play state
     const handleUpdate = (event: Event) => {
       const customEvent = event as CustomEvent;
       const state = customEvent.detail;
+
+      // Track play state changes
+      if (typeof state?.started === 'boolean') {
+        onPlayStateChange?.(state.started);
+      }
+
+      // Handle errors
       if (state?.error) {
         onError?.(state.error);
       } else if (state && !state.pending) {
@@ -86,8 +104,8 @@ export function StrudelEditor({
   return (
     <div
       ref={containerRef}
-      className={className}
-      style={{ minHeight: '200px' }}
+      className={`strudel-container ${className}`}
+      style={{ minHeight: '200px', maxHeight: '400px', overflow: 'hidden' }}
     />
   );
 }

@@ -21,10 +21,16 @@ export interface UseWebSocketReturn {
   sendMessage: (text: string) => void;
 }
 
-const DEFAULT_WS_URL = 'ws://localhost:3000/api/ws';
+function getDefaultWsUrl(): string {
+  if (typeof window === 'undefined') {
+    return 'ws://localhost:3000/api/ws';
+  }
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${protocol}//${window.location.host}/api/ws`;
+}
 
 export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketReturn {
-  const { url = DEFAULT_WS_URL, onExecute, onStop, onMessage } = options;
+  const { url = getDefaultWsUrl(), onExecute, onStop, onMessage } = options;
 
   const [isConnected, setIsConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
