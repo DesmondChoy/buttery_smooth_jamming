@@ -1,12 +1,136 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import WebSocket from "ws";
+import { randomUUID } from "crypto";
+import { z } from "zod";
 
 const server = new McpServer({
   name: "strudel-mcp",
   version: "0.1.0",
 });
 
-// Tools and resources will be added by subsequent issues (m83, qvx)
+// WebSocket connection management
+const WS_URL = process.env.WS_URL || "ws://localhost:3000/api/ws";
+let ws: WebSocket | null = null;
+let isConnecting = false;
+
+function connect(): Promise<boolean> {
+  if (ws?.readyState === WebSocket.OPEN) {
+    return Promise.resolve(true);
+  }
+
+  if (isConnecting) {
+    return Promise.resolve(false);
+  }
+
+  return new Promise((resolve) => {
+    isConnecting = true;
+    ws = new WebSocket(WS_URL);
+
+    ws.on("open", () => {
+      isConnecting = false;
+      console.error("WebSocket connected to", WS_URL);
+      resolve(true);
+    });
+
+    ws.on("error", (error) => {
+      isConnecting = false;
+      console.error("WebSocket error:", error.message);
+      resolve(false);
+    });
+
+    ws.on("close", () => {
+      isConnecting = false;
+      ws = null;
+      console.error("WebSocket disconnected");
+    });
+  });
+}
+
+function send(
+  type: string,
+  payload: object
+): { success: boolean; error?: string } {
+  if (ws?.readyState !== WebSocket.OPEN) {
+    return {
+      success: false,
+      error: `WebSocket not connected. Ensure the web app is running at ${WS_URL}`,
+    };
+  }
+
+  try {
+    ws.send(JSON.stringify({ type, payload }));
+    return { success: true };
+  } catch (error) {
+    return {
+      success: false,
+      error: `Failed to send message: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+}
+
+// Tool: execute_pattern
+server.tool(
+  "execute_pattern",
+  "Send Strudel code to the web app for execution",
+  { code: z.string().describe("Strudel/Tidal code to execute") },
+  async ({ code }) => {
+    await connect();
+    const result = send("execute", { code });
+    return {
+      content: [
+        {
+          type: "text",
+          text: result.success
+            ? `Pattern sent for execution: ${code.substring(0, 100)}${code.length > 100 ? "..." : ""}`
+            : result.error!,
+        },
+      ],
+    };
+  }
+);
+
+// Tool: stop_pattern
+server.tool(
+  "stop_pattern",
+  "Stop the currently playing pattern",
+  {},
+  async () => {
+    await connect();
+    const result = send("stop", {});
+    return {
+      content: [
+        {
+          type: "text",
+          text: result.success ? "Stop signal sent" : result.error!,
+        },
+      ],
+    };
+  }
+);
+
+// Tool: send_message
+server.tool(
+  "send_message",
+  "Send a chat message to display in the web app",
+  { text: z.string().describe("Message text to display") },
+  async ({ text }) => {
+    await connect();
+    const result = send("message", {
+      id: randomUUID(),
+      text,
+      timestamp: new Date().toISOString(),
+    });
+    return {
+      content: [
+        {
+          type: "text",
+          text: result.success ? "Message sent" : result.error!,
+        },
+      ],
+    };
+  }
+);
 
 async function main() {
   const transport = new StdioServerTransport();
