@@ -3,6 +3,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import WebSocket from "ws";
 import { randomUUID } from "crypto";
 import { z } from "zod";
+import { STRUDEL_REFERENCE } from "./strudel-reference.js";
 
 const server = new McpServer({
   name: "strudel-mcp",
@@ -12,39 +13,41 @@ const server = new McpServer({
 // WebSocket connection management
 const WS_URL = process.env.WS_URL || "ws://localhost:3000/api/ws";
 let ws: WebSocket | null = null;
-let isConnecting = false;
+let connectPromise: Promise<boolean> | null = null;
 
 function connect(): Promise<boolean> {
   if (ws?.readyState === WebSocket.OPEN) {
     return Promise.resolve(true);
   }
 
-  if (isConnecting) {
-    return Promise.resolve(false);
+  // If a connection is already in progress, wait for it
+  if (connectPromise) {
+    return connectPromise;
   }
 
-  return new Promise((resolve) => {
-    isConnecting = true;
+  connectPromise = new Promise((resolve) => {
     ws = new WebSocket(WS_URL);
 
     ws.on("open", () => {
-      isConnecting = false;
+      connectPromise = null;
       console.error("WebSocket connected to", WS_URL);
       resolve(true);
     });
 
     ws.on("error", (error) => {
-      isConnecting = false;
+      connectPromise = null;
       console.error("WebSocket error:", error.message);
       resolve(false);
     });
 
     ws.on("close", () => {
-      isConnecting = false;
+      connectPromise = null;
       ws = null;
       console.error("WebSocket disconnected");
     });
   });
+
+  return connectPromise;
 }
 
 function send(
