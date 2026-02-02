@@ -135,6 +135,25 @@ server.tool(
   }
 );
 
+// Resource: strudel://reference
+server.resource(
+  "strudel-reference",
+  "strudel://reference",
+  {
+    description: "Strudel pattern language API reference",
+    mimeType: "text/markdown",
+  },
+  async (uri) => ({
+    contents: [
+      {
+        uri: uri.toString(),
+        mimeType: "text/markdown",
+        text: STRUDEL_REFERENCE,
+      },
+    ],
+  })
+);
+
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
