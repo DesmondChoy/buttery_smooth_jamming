@@ -37,6 +37,7 @@ export default tseslint.config(
       '.next/**',
       'out/**',
       'dist/**',
+      'packages/*/build/**',
     ],
   }
 );
