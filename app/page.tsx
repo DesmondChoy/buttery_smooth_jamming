@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import { ChatPanel } from '@/components/ChatPanel';
 import { AudioStartButton } from '@/components/AudioStartButton';
@@ -30,6 +30,10 @@ export default function Home() {
   const [isConnected] = useState(true);
   const [audioReady, setAudioReady] = useState(false);
 
+  const handleAudioReady = useCallback(() => {
+    setAudioReady(true);
+  }, []);
+
   return (
     <main className="flex min-h-screen">
       <ChatPanel
@@ -53,9 +57,7 @@ note("c3 e3 g3 c4").sound("piano")`}
             className="rounded-lg overflow-hidden"
           />
         </div>
-        {!audioReady && (
-          <AudioStartButton onAudioReady={() => setAudioReady(true)} />
-        )}
+        {!audioReady && <AudioStartButton onAudioReady={handleAudioReady} />}
       </div>
     </main>
   );
