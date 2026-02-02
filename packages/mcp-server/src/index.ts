@@ -15,6 +15,14 @@ const WS_URL = process.env.WS_URL || "ws://localhost:3000/api/ws";
 let ws: WebSocket | null = null;
 let connectPromise: Promise<boolean> | null = null;
 
+// Message queue for user messages from the web app
+interface UserMessage {
+  id: string;
+  text: string;
+  timestamp: string;
+}
+const userMessages: UserMessage[] = [];
+
 function connect(): Promise<boolean> {
   if (ws?.readyState === WebSocket.OPEN) {
     return Promise.resolve(true);
@@ -32,6 +40,22 @@ function connect(): Promise<boolean> {
       connectPromise = null;
       console.error("WebSocket connected to", WS_URL);
       resolve(true);
+    });
+
+    ws.on("message", (data) => {
+      try {
+        const msg = JSON.parse(data.toString());
+        if (msg.type === "user_message" && msg.payload) {
+          userMessages.push({
+            id: msg.payload.id,
+            text: msg.payload.text,
+            timestamp: msg.payload.timestamp,
+          });
+          console.error("Received user message:", msg.payload.text.substring(0, 50));
+        }
+      } catch (err) {
+        console.error("Failed to parse incoming message:", err);
+      }
     });
 
     ws.on("error", (error) => {
@@ -133,6 +157,48 @@ server.tool(
       ],
     };
   }
+);
+
+// Tool: get_user_messages
+server.tool(
+  "get_user_messages",
+  "Get pending messages from web users (clears queue after reading)",
+  {},
+  async () => {
+    await connect();
+    const messages = [...userMessages];
+    userMessages.length = 0; // Clear queue
+    return {
+      content: [
+        {
+          type: "text",
+          text:
+            messages.length > 0
+              ? JSON.stringify(messages, null, 2)
+              : "No new messages",
+        },
+      ],
+    };
+  }
+);
+
+// Resource: strudel://user-messages
+server.resource(
+  "user-messages",
+  "strudel://user-messages",
+  {
+    description: "Pending messages from web users",
+    mimeType: "application/json",
+  },
+  async (uri) => ({
+    contents: [
+      {
+        uri: uri.toString(),
+        mimeType: "application/json",
+        text: JSON.stringify(userMessages),
+      },
+    ],
+  })
 );
 
 // Resource: strudel://reference

@@ -293,4 +293,27 @@ stack(
   s("hh").euclid(7, 8).gain(0.5)
 )
 \`\`\`
+
+## Visualization
+
+### \`.pianoroll()\`
+Display a piano roll visualization of the pattern in the editor. This shows notes as horizontal bars on a piano-style grid.
+
+\`\`\`javascript
+note("c3 e3 g3 c4").sound("piano").pianoroll()
+
+// Works with any melodic pattern
+note("c3 [e3 g3] a3 g3")
+  .s("sawtooth")
+  .lpf("800 1200")
+  .pianoroll()
+
+// Use with stacks for complex visualizations
+stack(
+  note("c2 g2").s("sine"),
+  note("e4 g4 c5").s("piano")
+).pianoroll()
+\`\`\`
+
+**Important:** Always include \`.pianoroll()\` at the end of melodic patterns to provide visual feedback for the user.
 `;
