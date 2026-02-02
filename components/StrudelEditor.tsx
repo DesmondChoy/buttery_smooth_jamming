@@ -29,12 +29,13 @@ export function StrudelEditor({
 
   useEffect(() => {
     let mounted = true;
+    const container = containerRef.current;
 
     async function initStrudel() {
       // Dynamic import to avoid SSR issues
       await import('@strudel/repl');
 
-      if (!mounted || !containerRef.current) return;
+      if (!mounted || !container) return;
 
       // Create the web component
       const strudelEditor = document.createElement('strudel-editor') as StrudelEditorElement;
@@ -42,7 +43,7 @@ export function StrudelEditor({
         strudelEditor.setAttribute('code', initialCode);
       }
 
-      containerRef.current.appendChild(strudelEditor);
+      container.appendChild(strudelEditor);
       editorRef.current = strudelEditor;
 
       // Wait for editor to initialize
@@ -57,10 +58,11 @@ export function StrudelEditor({
 
     return () => {
       mounted = false;
-      if (editorRef.current && containerRef.current) {
-        containerRef.current.removeChild(editorRef.current);
+      if (editorRef.current && container) {
+        container.removeChild(editorRef.current);
       }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- Initialize once on mount; props are captured at mount time
   }, []);
 
   return (
