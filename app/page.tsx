@@ -2,10 +2,9 @@
 
 import { useState, useCallback, useEffect } from 'react';
 import dynamic from 'next/dynamic';
-import { ChatPanel } from '@/components/ChatPanel';
+import { TerminalPanel } from '@/components/TerminalPanel';
 import { AudioStartButton } from '@/components/AudioStartButton';
 import { useWebSocket, useStrudel } from '@/hooks';
-import type { ChatMessage } from '@/lib/types';
 
 const StrudelPanel = dynamic(
   () => import('@/components/StrudelPanel'),
@@ -13,7 +12,6 @@ const StrudelPanel = dynamic(
 );
 
 export default function Home() {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [audioReady, setAudioReady] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -39,28 +37,18 @@ export default function Home() {
     setIsPlaying(false);
   }, [stop]);
 
-  const handleMessage = useCallback((message: ChatMessage) => {
-    setMessages(prev => [...prev, message]);
-  }, []);
-
-  const { isConnected, sendMessage, error: wsError } = useWebSocket({
+  // Keep the WebSocket connection for MCP server to send execute/stop commands
+  const { error: wsError } = useWebSocket({
     onExecute: handleExecute,
     onStop: handleStop,
-    onMessage: handleMessage,
   });
 
-  const handleSendMessage = useCallback((text: string) => {
-    // Add user message to local state
-    const userMessage: ChatMessage = {
-      id: crypto.randomUUID(),
-      text,
-      timestamp: new Date(),
-      sender: 'user',
-    };
-    setMessages(prev => [...prev, userMessage]);
-    // Send via WebSocket
-    sendMessage(text);
-  }, [sendMessage]);
+  // Handle tool calls from Claude terminal
+  const handleToolUse = useCallback((toolName: string, toolInput: Record<string, unknown>) => {
+    // The actual execute_pattern calls come through the MCP server WebSocket
+    // This handler is for displaying purposes / additional actions
+    console.log('[Page] Tool use:', toolName, toolInput);
+  }, []);
 
   const handleAudioReady = useCallback(() => {
     setAudioReady(true);
@@ -106,10 +94,8 @@ export default function Home() {
 
   return (
     <main className="flex min-h-screen">
-      <ChatPanel
-        messages={messages}
-        isConnected={isConnected}
-        onSendMessage={handleSendMessage}
+      <TerminalPanel
+        onToolUse={handleToolUse}
         className="w-1/3 min-w-[300px] border-r border-gray-700"
       />
       <div className="flex-1 flex flex-col items-center p-8 relative">

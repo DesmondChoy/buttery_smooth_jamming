@@ -84,6 +84,11 @@ Work through the structured checklists systematically. Do NOT skip items or test
 - [ ] Clicking stop halts audio playback
 - [ ] Can restart after stopping
 
+### Keyboard Shortcuts (Critical State Sync Test)
+- [ ] Ctrl+Enter inside editor starts playback AND updates Play button to "Playing" state
+- [ ] Ctrl+. inside editor stops playback AND updates Stop button to disabled
+- [ ] Button states stay in sync regardless of play/stop method (button click vs keyboard)
+
 ### Error Handling
 - [ ] Invalid code shows error message
 - [ ] Error message is user-friendly
@@ -92,31 +97,53 @@ Work through the structured checklists systematically. Do NOT skip items or test
 
 ---
 
-## Phase 4: WebSocket Integration (Future)
+## Phase 4: WebSocket Integration
 
-### Connection Status
-- [ ] WebSocket connection indicator visible (if implemented)
-- [ ] Shows connected/disconnected state
-- [ ] Reconnects automatically on disconnect
+### Strudel MCP Connection
+- [ ] Strudel MCP WebSocket connects on load
+- [ ] Pattern updates from MCP reflected in editor
+- [ ] Audio responds to MCP execute_pattern commands
 
-### MCP Commands (Future)
-- [ ] Can receive pattern updates from MCP
-- [ ] Editor updates when receiving new patterns
-- [ ] Audio responds to remote commands
+### Claude WebSocket Connection
+- [ ] Terminal panel shows connection status indicator
+- [ ] Status transitions: Connecting → Ready (within ~3 seconds)
+- [ ] No rapid reconnection loop (client IDs should stabilize, not increment endlessly)
+- [ ] Reconnection attempts on disconnect (up to 5 retries with exponential backoff)
+- [ ] Error message displayed after max reconnection failures
+
+### Claude Terminal Interaction
+- [ ] Can type message in terminal input
+- [ ] Enter key sends message to Claude
+- [ ] User message appears in terminal (prefixed with ">")
+- [ ] Claude response appears after a few seconds
+- [ ] Tool use displays (e.g., "[mcp__strudel__execute_pattern]")
+- [ ] Claude can execute patterns that play audio
 
 ---
 
-## Phase 5: Chat Panel (Future)
+## Phase 5: Terminal Panel
 
 ### Layout
-- [ ] Chat panel visible alongside editor
-- [ ] Proper split/resize behavior
-- [ ] Panel can be collapsed/expanded
+- [ ] Terminal panel visible on left side (1/3 width)
+- [ ] Strudel editor on right side (2/3 width)
+- [ ] Two-panel layout renders correctly
 
-### Messages
-- [ ] Can send messages
-- [ ] Messages display in chat history
-- [ ] AI responses render correctly
+### Header
+- [ ] Header shows "Claude Terminal" title
+- [ ] Status indicator visible (dot + text)
+- [ ] Ctrl+L hint displayed for clearing
+
+### Content Area
+- [ ] Empty state message: "Ask Claude to create music patterns"
+- [ ] Messages display with proper formatting
+- [ ] User messages distinguishable from Claude responses
+- [ ] Auto-scroll to latest message
+
+### Input
+- [ ] Input field present at bottom
+- [ ] Placeholder text visible
+- [ ] Can type in input field
+- [ ] Enter key submits message (when connected)
 
 ---
 
@@ -126,7 +153,7 @@ Work through the structured checklists systematically. Do NOT skip items or test
 - [ ] Full layout renders correctly
 - [ ] All controls accessible
 - [ ] Editor has adequate space
-- [ ] Chat panel and editor side-by-side
+- [ ] Terminal panel and editor side-by-side
 
 ---
 
@@ -145,16 +172,18 @@ Work through the structured checklists systematically. Do NOT skip items or test
 
 ## Quick Smoke Test
 
-Use this 8-item checklist for rapid validation:
+Use this 10-item checklist for rapid validation:
 
 1. [ ] App loads at localhost:3000
-2. [ ] Strudel editor visible with code
-3. [ ] Can type in the editor
-4. [ ] Play button clickable
-5. [ ] Stop button clickable
-6. [ ] No console errors on load
-7. [ ] No console errors after play/stop
-8. [ ] Code changes persist in editor
+2. [ ] Two-panel layout renders (Terminal left, Editor right)
+3. [ ] Terminal panel shows "Claude Terminal" header
+4. [ ] Terminal status indicator visible
+5. [ ] Strudel editor visible with code
+6. [ ] Can type in the editor
+7. [ ] Play button clickable
+8. [ ] Stop button clickable
+9. [ ] No console errors on load
+10. [ ] No console errors after play/stop
 
 ---
 

@@ -215,32 +215,62 @@ app/
 ├── page.tsx                   # Split pane layout with keyboard shortcuts
 ├── layout.tsx
 ├── globals.css                # Tailwind + Strudel visualization hiding
-└── api/ws/route.ts            # WebSocket endpoint (SOCKET export)
+└── api/
+    ├── ws/route.ts            # WebSocket for Strudel MCP bridge
+    └── claude-ws/route.ts     # WebSocket for Claude Terminal integration
 components/
-├── ChatPanel.tsx              # Left panel with message input
+├── TerminalPanel.tsx          # Left panel - Claude Terminal with chat
 ├── StrudelPanel.tsx           # Right panel (wraps StrudelEditor)
 ├── StrudelEditor.tsx          # Strudel web component wrapper
 └── AudioStartButton.tsx       # Browser audio unlock
 hooks/
 ├── index.ts                   # Exports
-├── useWebSocket.ts            # WebSocket connection with error handling
+├── useWebSocket.ts            # Strudel MCP WebSocket connection
+├── useClaudeTerminal.ts       # Claude Terminal WebSocket + message handling
 └── useStrudel.ts              # setCode, evaluate, stop
 lib/
-└── types.ts                   # TypeScript types for messages
+├── types.ts                   # TypeScript types for messages
+└── claude-process.ts          # Spawns Claude CLI with stream-json mode
 types/
 └── strudel.d.ts               # Strudel module declarations
 ```
 
-**Architecture (Bidirectional):**
+**Architecture (Dual WebSocket):**
 ```
-Claude ↔ MCP Server (stdio) ↔ WebSocket ↔ Next.js Server ↔ Browser
-                                                          ↓
-                                               Strudel + Chat Panel
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ Browser                                                                      │
+│  ┌──────────────────┐         ┌──────────────────────────────────────────┐  │
+│  │ Terminal Panel   │         │ Strudel Panel                            │  │
+│  │ (useClaudeTerminal)        │ (useStrudel + useWebSocket)              │  │
+│  └────────┬─────────┘         └────────────────────┬─────────────────────┘  │
+└───────────│────────────────────────────────────────│────────────────────────┘
+            │ WebSocket                              │ WebSocket
+            ▼                                        ▼
+┌───────────────────────┐              ┌─────────────────────────────────────┐
+│ /api/claude-ws        │              │ /api/ws                             │
+│ (spawns Claude CLI)   │              │ (broadcasts to MCP server)          │
+└───────────┬───────────┘              └──────────────────┬──────────────────┘
+            │ stdin/stdout (stream-json)                  │ WebSocket
+            ▼                                             ▼
+┌───────────────────────┐              ┌─────────────────────────────────────┐
+│ Claude CLI            │              │ MCP Server (packages/mcp-server)    │
+│ --input-format        │──────────────│ execute_pattern, stop_pattern, etc. │
+│   stream-json         │  MCP tools   └─────────────────────────────────────┘
+└───────────────────────┘
 ```
 
+**Two Communication Channels:**
+1. **Claude Terminal** (`/api/claude-ws`) - Spawns Claude CLI process with stream-json mode for interactive chat
+2. **Strudel MCP Bridge** (`/api/ws`) - WebSocket bridge for MCP server tool calls (execute_pattern, stop_pattern)
+
+**Important:** This project uses **Claude Code** (the CLI tool) in two ways:
+- Directly via the Terminal Panel (spawned by the web server)
+- Via MCP server for tool execution (configured in `mcp-config.json`)
+
 Message flow:
-- Claude → Browser: `execute`, `stop`, `message` events
-- Browser → Claude: `user_message` events (via `get_user_messages` tool)
+- Terminal → Claude CLI: User messages via stdin (stream-json format)
+- Claude CLI → Terminal: Responses via stdout (stream-json format)
+- Claude → Strudel: MCP tool calls via WebSocket bridge
 
 **Key Code - app/api/ws/route.ts (using next-ws):**
 ```typescript
@@ -341,12 +371,16 @@ Add curriculum/progress only if structured learning is needed.
 
 ## Critical Technical Notes
 
-1. **Strudel SSR**: Must use `'use client'` + dynamic imports
-2. **Audio Context**: Requires user gesture (AudioStartButton)
-3. **WebSocket**: Use `next-ws` package with `SOCKET` export (not `UPGRADE`)
-4. **AGPL License**: Strudel is AGPL - project must be open source
-5. **Connection Timeout**: 5-second timeout prevents hanging on connection issues
-6. **Strudel Visualizations**: Hidden via CSS to prevent full-screen canvas overlays
+1. **No API Keys**: This project uses Claude Code (CLI) directly, not the Anthropic API. Claude Code auto-discovers the MCP server from `.mcp.json`
+2. **Strudel SSR**: Must use `'use client'` + dynamic imports
+3. **Audio Context**: Requires user gesture (AudioStartButton)
+4. **WebSocket**: Use `next-ws` package with `SOCKET` export (not `UPGRADE`). Requires `npx next-ws-cli@latest patch` after install.
+5. **AGPL License**: Strudel is AGPL - project must be open source
+6. **Connection Timeout**: 5-second timeout prevents hanging on connection issues
+7. **Strudel Visualizations**: Hidden via CSS to prevent full-screen canvas overlays
+8. **Claude CLI Stream-JSON Format**: User messages must be `{type:'user',message:{role:'user',content:text}}` (not just `{type:'user',content:text}`)
+9. **React StrictMode WebSocket**: Add delay before spawning processes to survive StrictMode's mount/unmount/remount cycle
+10. **useCallback Dependencies**: Avoid putting state in WebSocket callback deps - use refs to prevent reconnection loops
 
 ---
 
