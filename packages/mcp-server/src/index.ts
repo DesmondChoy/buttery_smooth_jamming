@@ -45,13 +45,13 @@ function connect(): Promise<boolean> {
     ws.on("message", (data) => {
       try {
         const msg = JSON.parse(data.toString());
-        if (msg.type === "user_message" && msg.payload) {
+        if (msg.type === "user_message" && msg.payload?.text) {
           userMessages.push({
-            id: msg.payload.id,
+            id: msg.payload.id || randomUUID(),
             text: msg.payload.text,
-            timestamp: msg.payload.timestamp,
+            timestamp: msg.payload.timestamp || new Date().toISOString(),
           });
-          console.error("Received user message:", msg.payload.text.substring(0, 50));
+          console.error("Received user message:", String(msg.payload.text).substring(0, 50));
         }
       } catch (err) {
         console.error("Failed to parse incoming message:", err);
