@@ -16,8 +16,13 @@ export default function Home() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [audioReady, setAudioReady] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const { ref, setCode, evaluate, stop } = useStrudel();
+
+  const handleStrudelError = useCallback((err: Error | null) => {
+    setError(err?.message || null);
+  }, []);
 
   const handleExecute = useCallback((code: string) => {
     setCode(code);
@@ -110,9 +115,9 @@ export default function Home() {
         </p>
 
         {/* Error banner */}
-        {wsError && (
+        {(wsError || error) && (
           <div className="w-full max-w-4xl mb-4 bg-red-900/50 border border-red-500 rounded-lg p-3">
-            <p className="text-red-200 text-sm font-mono">{wsError}</p>
+            <p className="text-red-200 text-sm font-mono">{wsError || error}</p>
           </div>
         )}
 
@@ -148,6 +153,7 @@ export default function Home() {
 // Press play or Ctrl+Enter to start
 note("c3 e3 g3 c4").sound("piano").pianoroll()`}
             className="rounded-lg overflow-hidden"
+            onError={handleStrudelError}
           />
         </div>
         {!audioReady && <AudioStartButton onAudioReady={handleAudioReady} />}

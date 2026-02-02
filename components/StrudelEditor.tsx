@@ -16,12 +16,14 @@ interface StrudelEditorElement extends HTMLElement {
 interface StrudelEditorProps {
   initialCode?: string;
   onReady?: (editor: StrudelEditorElement['editor']) => void;
+  onError?: (error: Error | null) => void;
   className?: string;
 }
 
 export function StrudelEditor({
   initialCode = '',
   onReady,
+  onError,
   className = ''
 }: StrudelEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -54,12 +56,28 @@ export function StrudelEditor({
       });
     }
 
-    initStrudel();
+    // Listen for update events to capture errors
+    const handleUpdate = (event: Event) => {
+      const customEvent = event as CustomEvent;
+      const state = customEvent.detail;
+      if (state?.error) {
+        onError?.(state.error);
+      } else if (state && !state.pending) {
+        onError?.(null); // Clear error on successful evaluation
+      }
+    };
+
+    initStrudel().then(() => {
+      editorRef.current?.addEventListener('update', handleUpdate);
+    });
 
     return () => {
       mounted = false;
-      if (editorRef.current && container) {
-        container.removeChild(editorRef.current);
+      if (editorRef.current) {
+        editorRef.current.removeEventListener('update', handleUpdate);
+        if (container) {
+          container.removeChild(editorRef.current);
+        }
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- Initialize once on mount; props are captured at mount time

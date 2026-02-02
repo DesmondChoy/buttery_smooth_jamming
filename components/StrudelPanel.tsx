@@ -13,10 +13,11 @@ export interface StrudelPanelHandle {
 export interface StrudelPanelProps {
   initialCode?: string;
   className?: string;
+  onError?: (error: Error | null) => void;
 }
 
 const StrudelPanel = forwardRef<StrudelPanelHandle, StrudelPanelProps>(
-  function StrudelPanel({ initialCode, className }, ref) {
+  function StrudelPanel({ initialCode, className, onError }, ref) {
     const editorRef = useRef<{ setCode: (code: string) => void; evaluate: (autostart?: boolean) => void; stop: () => void } | null>(null);
 
     const handleEditorReady = useCallback((editor: typeof editorRef.current) => {
@@ -39,6 +40,7 @@ const StrudelPanel = forwardRef<StrudelPanelHandle, StrudelPanelProps>(
       <StrudelEditor
         initialCode={initialCode}
         onReady={handleEditorReady}
+        onError={onError}
         className={className}
       />
     );
