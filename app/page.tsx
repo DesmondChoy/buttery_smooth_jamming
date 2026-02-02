@@ -16,13 +16,11 @@ export default function Home() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [audioReady, setAudioReady] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   const { ref, setCode, evaluate, stop } = useStrudel();
 
   const handleExecute = useCallback((code: string) => {
     setCode(code);
-    setError(null);
     evaluate(true);
     setIsPlaying(true);
   }, [setCode, evaluate]);
@@ -36,7 +34,7 @@ export default function Home() {
     setMessages(prev => [...prev, message]);
   }, []);
 
-  const { isConnected, sendMessage } = useWebSocket({
+  const { isConnected, sendMessage, error: wsError } = useWebSocket({
     onExecute: handleExecute,
     onStop: handleStop,
     onMessage: handleMessage,
@@ -60,7 +58,6 @@ export default function Home() {
   }, []);
 
   const handlePlay = useCallback(() => {
-    setError(null);
     evaluate(true);
     setIsPlaying(true);
   }, [evaluate]);
@@ -113,16 +110,9 @@ export default function Home() {
         </p>
 
         {/* Error banner */}
-        {error && (
-          <div className="w-full max-w-4xl mb-4 bg-red-900/50 border border-red-500 rounded-lg p-3 flex items-center justify-between">
-            <p className="text-red-200 text-sm font-mono">{error}</p>
-            <button
-              onClick={() => setError(null)}
-              className="text-red-400 hover:text-red-200 ml-4"
-              aria-label="Dismiss error"
-            >
-              ✕
-            </button>
+        {wsError && (
+          <div className="w-full max-w-4xl mb-4 bg-red-900/50 border border-red-500 rounded-lg p-3">
+            <p className="text-red-200 text-sm font-mono">{wsError}</p>
           </div>
         )}
 
