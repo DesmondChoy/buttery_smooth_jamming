@@ -33,6 +33,7 @@ export interface ContentBlock {
 
 export interface ClaudeProcessOptions {
   workingDir?: string;
+  wsUrl?: string;  // WebSocket URL for MCP server to connect to
   onMessage?: (msg: ClaudeMessage) => void;
   onError?: (error: Error) => void;
   onExit?: (code: number | null) => void;
@@ -122,6 +123,8 @@ export class ClaudeProcess extends EventEmitter {
         ...process.env,
         // Disable interactive prompts
         CLAUDE_CODE_ENTRYPOINT: 'cli',
+        // Pass WebSocket URL to MCP server (supports dynamic ports)
+        ...(this.options.wsUrl ? { WS_URL: this.options.wsUrl } : {}),
       },
     });
 

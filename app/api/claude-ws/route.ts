@@ -40,10 +40,12 @@ function sendToClient(client: WebSocket, msg: ServerMessage): void {
 
 async function startClaudeForClient(
   client: WebSocket,
-  workingDir: string
+  workingDir: string,
+  wsUrl?: string
 ): Promise<ClaudeProcess> {
   const claudeProcess = new ClaudeProcess({
     workingDir,
+    wsUrl,
     onMessage: (msg: ClaudeMessage) => {
       handleClaudeMessage(client, msg);
     },
@@ -139,7 +141,7 @@ const clientIds = new Map<WebSocket, number>();
 
 export function SOCKET(
   client: WebSocket,
-  _request: IncomingMessage,
+  request: IncomingMessage,
   server: WebSocketServer
 ) {
   const clientId = ++clientCounter;
@@ -155,6 +157,11 @@ export function SOCKET(
   // Get the working directory from environment or use current
   const workingDir = process.cwd();
 
+  // Extract port from Host header to pass to MCP server
+  const host = request.headers.host || 'localhost:3000';
+  const wsUrl = `ws://${host}/api/ws`;
+  console.log(`[Claude WS] Using WebSocket URL: ${wsUrl}`);
+
   // Delay process start to survive React StrictMode's quick unmount cycle
   // This prevents starting a process for the first mount that immediately unmounts
   const startDelay = setTimeout(() => {
@@ -165,7 +172,7 @@ export function SOCKET(
       return;
     }
     console.log(`[Claude WS] Starting Claude process for client #${clientId}`);
-    startClaudeForClient(client, workingDir).catch((error) => {
+    startClaudeForClient(client, workingDir, wsUrl).catch((error) => {
       console.error('[Claude WS] Failed to start Claude:', error);
       sendToClient(client, {
         type: 'error',
@@ -195,7 +202,7 @@ export function SOCKET(
               error: 'Claude process not running. Reconnecting...',
             });
             // Try to restart
-            startClaudeForClient(client, workingDir).then(() => {
+            startClaudeForClient(client, workingDir, wsUrl).then(() => {
               if (message.text) {
                 const newProcess = clientProcesses.get(client);
                 newProcess?.sendUserMessage(message.text);
