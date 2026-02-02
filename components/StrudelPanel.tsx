@@ -15,15 +15,17 @@ export interface StrudelPanelProps {
   className?: string;
   onError?: (error: Error | null) => void;
   onPlayStateChange?: (isPlaying: boolean) => void;
+  onReady?: () => void;
 }
 
 const StrudelPanel = forwardRef<StrudelPanelHandle, StrudelPanelProps>(
-  function StrudelPanel({ initialCode, className, onError, onPlayStateChange }, ref) {
+  function StrudelPanel({ initialCode, className, onError, onPlayStateChange, onReady }, ref) {
     const editorRef = useRef<{ setCode: (code: string) => void; evaluate: (autostart?: boolean) => void; stop: () => void } | null>(null);
 
     const handleEditorReady = useCallback((editor: typeof editorRef.current) => {
       editorRef.current = editor;
-    }, []);
+      onReady?.();  // Notify parent that editor is ready
+    }, [onReady]);
 
     useImperativeHandle(ref, () => ({
       setCode: (code: string) => {

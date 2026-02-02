@@ -16,7 +16,7 @@ export default function Home() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const { ref, setCode, evaluate, stop } = useStrudel();
+  const { ref, setCode, evaluate, stop, onEditorReady } = useStrudel();
 
   const handleStrudelError = useCallback((err: Error | null) => {
     setError(err?.message || null);
@@ -145,6 +145,7 @@ note("c3 e3 g3 c4").sound("piano")._pianoroll({ fold: 1 })`}
             className="rounded-lg overflow-hidden"
             onError={handleStrudelError}
             onPlayStateChange={handlePlayStateChange}
+            onReady={onEditorReady}
           />
         </div>
         {!audioReady && <AudioStartButton onAudioReady={handleAudioReady} />}
