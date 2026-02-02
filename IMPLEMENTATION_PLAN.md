@@ -2,6 +2,24 @@
 
 A web app connecting Claude Code to Strudel.cc for AI-assisted live coding music.
 
+## Current Status
+
+**MVP: COMPLETE**
+
+All 3 phases have been implemented:
+- Phase 1: Foundation + Strudel integration (audio works)
+- Phase 2: MCP Server with bidirectional communication
+- Phase 3: Web App with WebSocket bridge
+
+### Optional Features (Not Yet Built)
+- Pattern persistence (database)
+- Session management
+- Audio recording
+- Learning/progress tracking
+- Curriculum resource
+
+---
+
 ## Design Philosophy (Learnings from Similar Projects)
 
 **Inspired by [strudel-mcp-bridge](https://github.com/phildougherty/strudel-mcp-bridge):**
@@ -18,8 +36,8 @@ A web app connecting Claude Code to Strudel.cc for AI-assisted live coding music
 
 ### MVP (Core Problem: "Claude teaches Strudel via live coding")
 - Web app with split panels (chat left, Strudel right)
-- MCP server with 3 essential tools
-- WebSocket bridge
+- MCP server with 4 essential tools
+- WebSocket bridge with bidirectional communication
 - Embedded Strudel reference
 
 ### Optional (Back Burner)
@@ -31,14 +49,14 @@ A web app connecting Claude Code to Strudel.cc for AI-assisted live coding music
 
 ---
 
-## MVP Phase 1: Foundation + Strudel Test
+## MVP Phase 1: Foundation + Strudel Test ✅ COMPLETED
 
 **Goal:** Next.js app that loads Strudel and plays audio.
 
 **Files:**
 ```
 cc_sick_beats/
-├── package.json                # Simple npm project (NO monorepo initially)
+├── package.json
 ├── tsconfig.json
 ├── next.config.js
 ├── tailwind.config.ts
@@ -46,10 +64,12 @@ cc_sick_beats/
 ├── .gitignore
 ├── app/
 │   ├── layout.tsx
-│   ├── page.tsx               # Split pane placeholder
+│   ├── page.tsx
 │   └── globals.css
-└── components/
-    └── StrudelEditor.tsx      # 'use client' component
+├── components/
+│   └── StrudelEditor.tsx
+└── types/
+    └── strudel.d.ts           # Type definitions for Strudel web component
 ```
 
 **Why no monorepo?** Start simple. Add Turborepo later if needed.
@@ -59,23 +79,30 @@ cc_sick_beats/
 'use client';
 import { useEffect, useRef } from 'react';
 
-export default function StrudelEditor() {
+interface StrudelEditorElement extends HTMLElement {
+  editor: {
+    setCode: (code: string) => void;
+    evaluate: (autostart?: boolean) => void;
+    stop: () => void;
+    code: string;
+  };
+}
+
+export function StrudelEditor({ initialCode, onReady, onError, className }) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const editorRef = useRef<any>(null);
 
   useEffect(() => {
-    const init = async () => {
-      if (!containerRef.current || editorRef.current) return;
-      const { StrudelMirror } = await import('@strudel/repl');
-      editorRef.current = new StrudelMirror({
-        root: containerRef.current,
-        initialCode: 'sound("bd sd")',
-      });
-    };
-    init();
+    async function initStrudel() {
+      await import('@strudel/repl');
+      const strudelEditor = document.createElement('strudel-editor');
+      if (initialCode) strudelEditor.setAttribute('code', initialCode);
+      containerRef.current?.appendChild(strudelEditor);
+      // Poll for editor ready state with timeout
+    }
+    initStrudel();
   }, []);
 
-  return <div ref={containerRef} className="h-full" />;
+  return <div ref={containerRef} className={className} />;
 }
 ```
 
@@ -86,9 +113,9 @@ export default function StrudelEditor() {
 
 ---
 
-## MVP Phase 2: MCP Server (Thin Bridge)
+## MVP Phase 2: MCP Server (Thin Bridge) ✅ COMPLETED
 
-**Goal:** MCP server Claude Code can connect to, with 3 tools.
+**Goal:** MCP server Claude Code can connect to, with 4 tools and 2 resources.
 
 **Files:**
 ```
@@ -98,70 +125,73 @@ packages/mcp-server/
 ├── src/
 │   ├── index.ts               # Server entry
 │   └── strudel-reference.ts   # Embedded API docs
-└── dist/                      # Compiled output
-.claude/settings.local.json
+└── build/                     # Compiled output
+.mcp.json                      # MCP configuration at project root
 ```
 
-**Tools (3 total):**
+**Tools (4 total):**
 1. `execute_pattern(code)` - Send code to web app
 2. `stop_pattern()` - Stop playback
 3. `send_message(text)` - Send explanation to chat
+4. `get_user_messages()` - Retrieve pending messages from web users (clears queue)
 
-**Resource (1 total):**
+**Resources (2 total):**
 - `strudel://reference` - Embedded Strudel API documentation
+- `strudel://user-messages` - Pending messages from web users (JSON)
 
 **Key Code - index.ts:**
 ```typescript
-import { Server } from '@modelcontextprotocol/sdk/server/index.js';
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import WebSocket from 'ws';
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import WebSocket from "ws";
+import { z } from "zod";
 
-const WS_URL = process.env.WS_URL || 'ws://localhost:3000/api/ws';
+const server = new McpServer({ name: "strudel-mcp", version: "0.1.0" });
+const WS_URL = process.env.WS_URL || "ws://localhost:3000/api/ws";
+const CONNECTION_TIMEOUT_MS = 5000;
 let ws: WebSocket | null = null;
 
-function connect() {
-  ws = new WebSocket(WS_URL);
-  ws.on('close', () => setTimeout(connect, 2000));
-}
-connect();
+// Message queue for user messages from the web app
+const userMessages: UserMessage[] = [];
 
-function send(type: string, payload: any) {
-  if (ws?.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({ type, payload }));
-  }
+function connect(): Promise<boolean> {
+  // Connection with 5-second timeout
+  // Handles incoming user_message events from web app
 }
-
-const server = new Server({ name: 'strudel', version: '1.0.0' }, {
-  capabilities: { tools: {}, resources: {} }
-});
 
 // Tool: execute_pattern
-server.setRequestHandler(CallToolRequestSchema, async (req) => {
-  if (req.params.name === 'execute_pattern') {
-    send('execute', { code: req.params.arguments.code });
-    return { content: [{ type: 'text', text: 'Pattern sent' }] };
-  }
-  // ... other tools
-});
+server.tool("execute_pattern", "Send Strudel code to the web app", { ... });
+
+// Tool: stop_pattern
+server.tool("stop_pattern", "Stop the currently playing pattern", {});
+
+// Tool: send_message
+server.tool("send_message", "Send a chat message to display", { ... });
+
+// Tool: get_user_messages
+server.tool("get_user_messages", "Get pending messages from web users", {});
 
 // Resource: strudel://reference
-server.setRequestHandler(ReadResourceRequestSchema, async (req) => {
-  if (req.params.uri === 'strudel://reference') {
-    return { contents: [{ uri: req.params.uri, text: STRUDEL_REFERENCE }] };
-  }
-});
+server.resource("strudel-reference", "strudel://reference", { ... });
 
-new StdioServerTransport().connect(server);
+// Resource: strudel://user-messages
+server.resource("user-messages", "strudel://user-messages", { ... });
+
+const transport = new StdioServerTransport();
+await server.connect(transport);
 ```
 
-**.claude/settings.local.json:**
+**.mcp.json (at project root):**
 ```json
 {
   "mcpServers": {
     "strudel": {
+      "type": "stdio",
       "command": "node",
-      "args": ["./packages/mcp-server/dist/index.js"],
-      "env": { "WS_URL": "ws://localhost:3000/api/ws" }
+      "args": ["packages/mcp-server/build/index.js"],
+      "env": {
+        "WS_URL": "ws://localhost:3000/api/ws"
+      }
     }
   }
 }
@@ -170,96 +200,117 @@ new StdioServerTransport().connect(server);
 **Verification:**
 1. `cd packages/mcp-server && npm run build`
 2. Test with MCP Inspector: `npx @modelcontextprotocol/inspector`
-3. Tools appear, resource readable
+3. Tools appear, resources readable
 4. Start Claude Code in project → MCP server recognized
 
 ---
 
-## MVP Phase 3: Web App + WebSocket Bridge
+## MVP Phase 3: Web App + WebSocket Bridge ✅ COMPLETED
 
-**Goal:** Working split-panel app that receives MCP commands.
+**Goal:** Working split-panel app that receives MCP commands and sends user messages back.
 
-**Files to Add:**
+**Files:**
 ```
 app/
-├── page.tsx                   # Split pane layout
-└── api/ws/route.ts            # WebSocket endpoint
+├── page.tsx                   # Split pane layout with keyboard shortcuts
+├── layout.tsx
+├── globals.css                # Tailwind + Strudel visualization hiding
+└── api/ws/route.ts            # WebSocket endpoint (SOCKET export)
 components/
-├── ChatPanel.tsx              # Left panel
+├── ChatPanel.tsx              # Left panel with message input
 ├── StrudelPanel.tsx           # Right panel (wraps StrudelEditor)
+├── StrudelEditor.tsx          # Strudel web component wrapper
 └── AudioStartButton.tsx       # Browser audio unlock
 hooks/
-├── useWebSocket.ts
+├── index.ts                   # Exports
+├── useWebSocket.ts            # WebSocket connection with error handling
 └── useStrudel.ts              # setCode, evaluate, stop
 lib/
-└── types.ts
+└── types.ts                   # TypeScript types for messages
+types/
+└── strudel.d.ts               # Strudel module declarations
 ```
 
-**Architecture (Simple):**
+**Architecture (Bidirectional):**
 ```
-Claude Code → MCP Server → WebSocket → Browser → Strudel
-                                    → Chat Panel
+Claude ↔ MCP Server (stdio) ↔ WebSocket ↔ Next.js Server ↔ Browser
+                                                          ↓
+                                               Strudel + Chat Panel
 ```
+
+Message flow:
+- Claude → Browser: `execute`, `stop`, `message` events
+- Browser → Claude: `user_message` events (via `get_user_messages` tool)
 
 **Key Code - app/api/ws/route.ts (using next-ws):**
 ```typescript
-const clients = new Set<WebSocket>();
+import type { WebSocket, WebSocketServer } from 'ws';
+import type { IncomingMessage } from 'http';
 
-export function UPGRADE(client: WebSocket) {
-  clients.add(client);
-
+export function SOCKET(
+  client: WebSocket,
+  _request: IncomingMessage,
+  server: WebSocketServer
+) {
   client.on('message', (data) => {
-    const msg = JSON.parse(data.toString());
-    // Broadcast to all browser clients
-    clients.forEach(c => {
+    const message = JSON.parse(data.toString());
+    // Broadcast to all OTHER clients
+    server.clients.forEach((c) => {
       if (c !== client && c.readyState === 1) {
-        c.send(JSON.stringify(msg));
+        c.send(JSON.stringify(message));
       }
     });
   });
-
-  client.on('close', () => clients.delete(client));
 }
 ```
 
 **Key Code - page.tsx:**
 ```tsx
 'use client';
-import { useState, useCallback } from 'react';
-import ChatPanel from '@/components/ChatPanel';
-import StrudelPanel from '@/components/StrudelPanel';
-import AudioStartButton from '@/components/AudioStartButton';
-import { useWebSocket } from '@/hooks/useWebSocket';
+import dynamic from 'next/dynamic';
+
+// Dynamic import for SSR compatibility
+const StrudelPanel = dynamic(() => import('@/components/StrudelPanel'), { ssr: false });
 
 export default function Home() {
-  const [messages, setMessages] = useState([]);
-  const [audioStarted, setAudioStarted] = useState(false);
-  const strudelRef = useRef(null);
+  const { ref, setCode, evaluate, stop } = useStrudel();
+  const { isConnected, sendMessage, error } = useWebSocket({
+    onExecute: (code) => { setCode(code); evaluate(true); },
+    onStop: () => stop(),
+    onMessage: (msg) => setMessages(prev => [...prev, msg]),
+  });
 
-  const handleMessage = useCallback((msg) => {
-    if (msg.type === 'execute') {
-      strudelRef.current?.setCode(msg.payload.code);
-      strudelRef.current?.evaluate();
-    } else if (msg.type === 'message') {
-      setMessages(prev => [...prev, msg.payload]);
-    } else if (msg.type === 'stop') {
-      strudelRef.current?.stop();
-    }
+  // Keyboard shortcuts: Ctrl+Enter to play, Ctrl+. to stop
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey) {
+        if (e.key === 'Enter') handlePlay();
+        else if (e.key === '.') handleStop();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  const { isConnected } = useWebSocket(handleMessage);
-
   return (
-    <>
-      {!audioStarted && <AudioStartButton onStart={() => setAudioStarted(true)} />}
-      <div className="flex h-screen">
-        <ChatPanel messages={messages} isConnected={isConnected} />
-        <StrudelPanel ref={strudelRef} />
+    <main className="flex min-h-screen">
+      <ChatPanel messages={messages} onSendMessage={sendMessage} />
+      <div className="flex-1">
+        {error && <ErrorBanner error={error} />}
+        <StrudelPanel ref={ref} />
+        {!audioReady && <AudioStartButton />}
       </div>
-    </>
+    </main>
   );
 }
 ```
+
+**Additional Features Implemented:**
+- Keyboard shortcuts (Ctrl+Enter to play, Ctrl+. to stop)
+- 5-second WebSocket connection timeout with error handling
+- Strudel syntax error display in UI (via `update` event)
+- CSS customizations hiding default Strudel full-screen visualizations
+- Dynamic component loading for SSR compatibility
 
 **Verification (MVP Complete):**
 1. `npm run dev` → app at localhost:3000
@@ -268,6 +319,7 @@ export default function Home() {
 4. Ask: "Play a simple beat"
 5. Claude uses `execute_pattern` → audio plays
 6. Claude uses `send_message` → explanation appears in chat
+7. User types in chat → Claude can read via `get_user_messages`
 
 ---
 
@@ -291,8 +343,10 @@ Add curriculum/progress only if structured learning is needed.
 
 1. **Strudel SSR**: Must use `'use client'` + dynamic imports
 2. **Audio Context**: Requires user gesture (AudioStartButton)
-3. **WebSocket**: Use `next-ws` package, requires `next-ws patch` in postinstall
+3. **WebSocket**: Use `next-ws` package with `SOCKET` export (not `UPGRADE`)
 4. **AGPL License**: Strudel is AGPL - project must be open source
+5. **Connection Timeout**: 5-second timeout prevents hanging on connection issues
+6. **Strudel Visualizations**: Hidden via CSS to prevent full-screen canvas overlays
 
 ---
 
@@ -308,18 +362,24 @@ Add curriculum/progress only if structured learning is needed.
    - Claude sends explanations via `send_message` → appears in left panel
    - Claude executes patterns via `execute_pattern` → plays in right panel
    - Claude can stop with `stop_pattern`
+   - User can reply in chat, Claude reads via `get_user_messages`
 
 ---
 
 ## File Count Comparison
 
-| Approach | Files | Lines (est) |
-|----------|-------|-------------|
+| Approach | Files | Lines |
+|----------|-------|-------|
 | Original 8-phase plan | 50+ | 3000+ |
-| MVP plan | ~15 | 500-800 |
+| MVP plan (estimated) | ~15 | 500-800 |
+| **Actual implementation** | **~15** | **~1,150** (excl. reference doc) |
 | strudel-mcp-bridge | ~5 | 336 |
 
-**Goal: Stay closer to 500-800 lines for MVP.**
+**Breakdown of actual lines:**
+- Web app (app/, components/, hooks/, lib/, types/): ~900 lines
+- MCP server (packages/mcp-server/src/): ~250 lines (excl. 320-line reference doc)
+
+The implementation stayed close to the MVP target while adding essential features like bidirectional chat, keyboard shortcuts, and error handling.
 
 ---
 
