@@ -24,6 +24,33 @@ This comprehensive testing document outlines a systematic approach to validate t
 ### Golden Rule
 Work through the structured checklists systematically. Do NOT skip items or test ad-hoc.
 
+### Critical: Test Through the User's Code Path
+
+**IMPORTANT:** When testing MCP/WebSocket integration, ALWAYS test through the **Claude Terminal** in the browser, NOT by calling MCP tools directly from Playwright.
+
+**Why?** Direct MCP calls (like `mcp__strudel__execute_pattern`) bypass part of the code path:
+- Direct MCP: Playwright → MCP Server → WebSocket → Browser
+- Claude Terminal: Browser → Claude WS → Claude CLI → MCP Server → WebSocket → Browser
+
+Testing through Claude Terminal exercises the **complete integration** and catches bugs that direct MCP calls miss (e.g., WebSocket connection issues, ref timing problems).
+
+### How to Test Through Claude Terminal
+
+1. Navigate to the app with Playwright
+2. Enable audio (click the audio button)
+3. Wait for Claude Terminal to show "Ready" status
+4. Use Playwright to type in the Claude Terminal input field
+5. Submit the message and wait for Claude's response
+6. Verify the editor updates and audio plays
+
+```typescript
+// Example: Type in Claude Terminal input
+await page.getByRole('textbox', { name: 'Chat input' }).fill('Make me a simple beat');
+await page.getByRole('textbox', { name: 'Chat input' }).press('Enter');
+// Wait for Claude to respond and execute pattern
+await page.waitForSelector('button:has-text("Playing")');
+```
+
 ### When You Find a Bug
 1. **STOP** current testing
 2. **DOCUMENT** the issue clearly
@@ -97,27 +124,42 @@ Work through the structured checklists systematically. Do NOT skip items or test
 
 ---
 
-## Phase 4: WebSocket Integration
+## Phase 4: WebSocket Integration (CRITICAL - Use Claude Terminal)
 
-### Strudel MCP Connection
-- [ ] Strudel MCP WebSocket connects on load
-- [ ] Pattern updates from MCP reflected in editor
-- [ ] Audio responds to MCP execute_pattern commands
+**WARNING:** Do NOT test this phase using direct MCP tool calls. Always test through the Claude Terminal UI to exercise the complete code path.
 
-### Claude WebSocket Connection
+### Pre-flight Checks
+- [ ] No "WebSocket connection error" banner visible
+- [ ] Console shows no WebSocket connection failures for `/api/ws`
+- [ ] Console shows no WebSocket connection failures for `/api/claude-ws`
+
+### Claude Terminal Connection
 - [ ] Terminal panel shows connection status indicator
 - [ ] Status transitions: Connecting → Ready (within ~3 seconds)
 - [ ] No rapid reconnection loop (client IDs should stabilize, not increment endlessly)
 - [ ] Reconnection attempts on disconnect (up to 5 retries with exponential backoff)
 - [ ] Error message displayed after max reconnection failures
 
-### Claude Terminal Interaction
-- [ ] Can type message in terminal input
-- [ ] Enter key sends message to Claude
-- [ ] User message appears in terminal (prefixed with ">")
-- [ ] Claude response appears after a few seconds
-- [ ] Tool use displays (e.g., "[mcp__strudel__execute_pattern]")
-- [ ] Claude can execute patterns that play audio
+### Claude Terminal → MCP → Editor Flow (THE CRITICAL TEST)
+
+This tests the complete integration path:
+
+1. [ ] Type "Make me a simple beat" in Claude Terminal input
+2. [ ] Press Enter to send message
+3. [ ] User message appears in terminal (prefixed with ">")
+4. [ ] Claude responds (may take a few seconds)
+5. [ ] Tool use displays: `[mcp__strudel__execute_pattern]` with code
+6. [ ] **Editor updates to show the new pattern code** (not default code!)
+7. [ ] **Play button changes to "Playing"** (audio starts)
+8. [ ] Audio is audible (or samples are loading in console)
+
+If step 6 or 7 fails, there's a WebSocket or ref-forwarding bug.
+
+### Additional Claude Terminal Tests
+- [ ] Can request different music styles ("classical", "techno", "ambient")
+- [ ] Can ask Claude to stop the music
+- [ ] Can ask Claude to modify the current pattern
+- [ ] Multiple requests work consecutively
 
 ---
 
@@ -177,13 +219,15 @@ Use this 10-item checklist for rapid validation:
 1. [ ] App loads at localhost:3000
 2. [ ] Two-panel layout renders (Terminal left, Editor right)
 3. [ ] Terminal panel shows "Claude Terminal" header
-4. [ ] Terminal status indicator visible
-5. [ ] Strudel editor visible with code
-6. [ ] Can type in the editor
-7. [ ] Play button clickable
-8. [ ] Stop button clickable
-9. [ ] No console errors on load
-10. [ ] No console errors after play/stop
+4. [ ] Terminal status shows "Ready" (not "Disconnected" or "Connecting...")
+5. [ ] No "WebSocket connection error" banner visible
+6. [ ] Strudel editor visible with code
+7. [ ] Play button clickable (after enabling audio)
+8. [ ] **Claude Terminal chat works: type message → Claude responds**
+9. [ ] **Claude can execute patterns: editor updates + audio plays**
+10. [ ] No WebSocket errors in console
+
+Items 8 and 9 are the most critical - they test the complete integration.
 
 ---
 
