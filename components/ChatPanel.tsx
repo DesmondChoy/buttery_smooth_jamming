@@ -44,7 +44,12 @@ function MessageBubble({ message }: { message: ChatMessage }) {
   return (
     <div className="bg-gray-700 rounded-lg p-4">
       <p className="text-white whitespace-pre-wrap">{message.text}</p>
-      <time className="text-xs text-gray-400 mt-2 block">{formattedTime}</time>
+      <time
+        dateTime={message.timestamp.toISOString()}
+        className="text-xs text-gray-400 mt-2 block"
+      >
+        {formattedTime}
+      </time>
     </div>
   );
 }
