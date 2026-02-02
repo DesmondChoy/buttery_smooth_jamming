@@ -1,11 +1,12 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState, FormEvent, KeyboardEvent } from 'react';
 import { ChatMessage } from '@/lib/types';
 
 interface ChatPanelProps {
   messages: ChatMessage[];
   isConnected: boolean;
+  onSendMessage?: (text: string) => void;
   className?: string;
 }
 
@@ -41,25 +42,54 @@ function MessageBubble({ message }: { message: ChatMessage }) {
     minute: '2-digit',
   });
 
+  const isUser = message.sender === 'user';
+
   return (
-    <div className="bg-gray-700 rounded-lg p-4">
-      <p className="text-white whitespace-pre-wrap">{message.text}</p>
-      <time
-        dateTime={message.timestamp.toISOString()}
-        className="text-xs text-gray-400 mt-2 block"
+    <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
+      <div
+        className={`max-w-[85%] rounded-lg p-4 ${
+          isUser
+            ? 'bg-blue-600 rounded-br-sm'
+            : 'bg-gray-700 rounded-bl-sm'
+        }`}
       >
-        {formattedTime}
-      </time>
+        <p className="text-white whitespace-pre-wrap">{message.text}</p>
+        <time
+          dateTime={message.timestamp.toISOString()}
+          className={`text-xs mt-2 block ${
+            isUser ? 'text-blue-200' : 'text-gray-400'
+          }`}
+        >
+          {formattedTime}
+        </time>
+      </div>
     </div>
   );
 }
 
-export function ChatPanel({ messages, isConnected, className = '' }: ChatPanelProps) {
+export function ChatPanel({ messages, isConnected, onSendMessage, className = '' }: ChatPanelProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [inputValue, setInputValue] = useState('');
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  const handleSubmit = (e: FormEvent) => {
+    e.preventDefault();
+    const trimmed = inputValue.trim();
+    if (trimmed && onSendMessage) {
+      onSendMessage(trimmed);
+      setInputValue('');
+    }
+  };
+
+  const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSubmit(e);
+    }
+  };
 
   return (
     <div className={`flex flex-col h-full bg-gray-800 ${className}`}>
@@ -85,6 +115,30 @@ export function ChatPanel({ messages, isConnected, className = '' }: ChatPanelPr
           </>
         )}
       </div>
+
+      <form onSubmit={handleSubmit} className="p-4 border-t border-gray-700">
+        <div className="flex gap-2">
+          <textarea
+            value={inputValue}
+            onChange={(e) => setInputValue(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder={isConnected ? 'Ask Claude for a beat...' : 'Disconnected...'}
+            disabled={!isConnected}
+            rows={2}
+            className="flex-1 bg-gray-700 text-white rounded-lg px-4 py-2 resize-none placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+          />
+          <button
+            type="submit"
+            disabled={!isConnected || !inputValue.trim()}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            Send
+          </button>
+        </div>
+        <p className="text-xs text-gray-500 mt-2">
+          Press Enter to send, Shift+Enter for new line
+        </p>
+      </form>
     </div>
   );
 }

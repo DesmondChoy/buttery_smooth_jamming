@@ -2,10 +2,11 @@ export interface ChatMessage {
   id: string;
   text: string;
   timestamp: Date;
+  sender: 'user' | 'assistant';
 }
 
 // WebSocket message types
-export type WSMessageType = 'execute' | 'stop' | 'message';
+export type WSMessageType = 'execute' | 'stop' | 'message' | 'user_message';
 
 export interface WSMessage<T = unknown> {
   type: WSMessageType;

@@ -18,6 +18,7 @@ export interface UseWebSocketOptions {
 export interface UseWebSocketReturn {
   isConnected: boolean;
   error: string | null;
+  sendMessage: (text: string) => void;
 }
 
 const DEFAULT_WS_URL = 'ws://localhost:3000/api/ws';
@@ -60,6 +61,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
             id: payload.id,
             text: payload.text,
             timestamp: new Date(payload.timestamp),
+            sender: 'assistant',
           };
           onMessageRef.current?.(chatMessage);
           break;
@@ -98,5 +100,16 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     };
   }, [url, handleMessage]);
 
-  return { isConnected, error };
+  const sendMessage = useCallback((text: string) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      const payload: MessagePayload = {
+        id: crypto.randomUUID(),
+        text,
+        timestamp: new Date().toISOString(),
+      };
+      wsRef.current.send(JSON.stringify({ type: 'user_message', payload }));
+    }
+  }, []);
+
+  return { isConnected, error, sendMessage };
 }
