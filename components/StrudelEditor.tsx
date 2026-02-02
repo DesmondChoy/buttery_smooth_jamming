@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 
 // Type definitions for the Strudel web component
 interface StrudelEditorElement extends HTMLElement {
@@ -26,7 +26,6 @@ export function StrudelEditor({
 }: StrudelEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<StrudelEditorElement | null>(null);
-  const [isLoaded, setIsLoaded] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -51,7 +50,6 @@ export function StrudelEditor({
         if (strudelEditor.editor && onReady) {
           onReady(strudelEditor.editor);
         }
-        setIsLoaded(true);
       });
     }
 
