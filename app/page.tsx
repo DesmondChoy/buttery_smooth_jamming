@@ -4,31 +4,38 @@ import { useState, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import { ChatPanel } from '@/components/ChatPanel';
 import { AudioStartButton } from '@/components/AudioStartButton';
-import { ChatMessage } from '@/lib/types';
+import { useWebSocket, useStrudel } from '@/hooks';
+import type { ChatMessage } from '@/lib/types';
 
-const StrudelEditor = dynamic(
-  () => import('@/components/StrudelEditor'),
+const StrudelPanel = dynamic(
+  () => import('@/components/StrudelPanel'),
   { ssr: false }
 );
 
-// Mock data for testing - remove after WebSocket integration
-const MOCK_MESSAGES: ChatMessage[] = [
-  {
-    id: '1',
-    text: 'Welcome to CC Sick Beats! I can help you create music with Strudel.',
-    timestamp: new Date(Date.now() - 60000),
-  },
-  {
-    id: '2',
-    text: 'Try pressing Ctrl+Enter to play the pattern, or ask me to modify the code!',
-    timestamp: new Date(),
-  },
-];
-
 export default function Home() {
-  const [messages] = useState<ChatMessage[]>(MOCK_MESSAGES);
-  const [isConnected] = useState(true);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [audioReady, setAudioReady] = useState(false);
+
+  const { ref, setCode, evaluate, stop } = useStrudel();
+
+  const handleExecute = useCallback((code: string) => {
+    setCode(code);
+    evaluate(true);
+  }, [setCode, evaluate]);
+
+  const handleStop = useCallback(() => {
+    stop();
+  }, [stop]);
+
+  const handleMessage = useCallback((message: ChatMessage) => {
+    setMessages(prev => [...prev, message]);
+  }, []);
+
+  const { isConnected } = useWebSocket({
+    onExecute: handleExecute,
+    onStop: handleStop,
+    onMessage: handleMessage,
+  });
 
   const handleAudioReady = useCallback(() => {
     setAudioReady(true);
@@ -47,13 +54,11 @@ export default function Home() {
           AI-assisted live coding music with Strudel
         </p>
         <div className="w-full max-w-4xl">
-          <StrudelEditor
+          <StrudelPanel
+            ref={ref}
             initialCode={`// Welcome to CC Sick Beats!
 // Press play or Ctrl+Enter to start
 note("c3 e3 g3 c4").sound("piano")`}
-            onReady={() => {
-              // Editor ready - available for future use
-            }}
             className="rounded-lg overflow-hidden"
           />
         </div>

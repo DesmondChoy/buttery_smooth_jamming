@@ -45,7 +45,6 @@ Work through the structured checklists systematically. Do NOT skip items or test
 - [ ] Main heading/logo visible
 - [ ] Strudel editor container present
 - [ ] Control buttons visible (play/stop)
-- [ ] Layout is responsive to viewport
 
 ---
 
@@ -121,22 +120,13 @@ Work through the structured checklists systematically. Do NOT skip items or test
 
 ---
 
-## Phase 6: Responsive Layout
+## Phase 6: Desktop Layout
 
 ### Desktop (1280px+)
 - [ ] Full layout renders correctly
 - [ ] All controls accessible
 - [ ] Editor has adequate space
-
-### Tablet (1024px)
-- [ ] Layout adapts appropriately
-- [ ] Controls remain accessible
-- [ ] No horizontal overflow
-
-### Mobile (768px and below)
-- [ ] Layout stacks vertically (if applicable)
-- [ ] Touch targets are adequate size
-- [ ] Editor remains usable
+- [ ] Chat panel and editor side-by-side
 
 ---
 

@@ -4,14 +4,14 @@ import { useRef, useCallback } from 'react';
 import type { StrudelPanelHandle } from '@/components/StrudelPanel';
 
 export interface UseStrudelReturn {
-  ref: React.RefObject<StrudelPanelHandle | null>;
+  ref: React.RefObject<StrudelPanelHandle>;
   setCode: (code: string) => void;
   evaluate: (autostart?: boolean) => void;
   stop: () => void;
 }
 
 export function useStrudel(): UseStrudelReturn {
-  const ref = useRef<StrudelPanelHandle | null>(null);
+  const ref = useRef<StrudelPanelHandle>(null!);
 
   const setCode = useCallback((code: string) => {
     ref.current?.setCode(code);
