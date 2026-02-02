@@ -15,19 +15,15 @@ export interface StrudelPanelProps {
   className?: string;
   onError?: (error: Error | null) => void;
   onPlayStateChange?: (isPlaying: boolean) => void;
-  onReady?: () => void;
+  onReady?: (handle: StrudelPanelHandle) => void;
 }
 
 const StrudelPanel = forwardRef<StrudelPanelHandle, StrudelPanelProps>(
   function StrudelPanel({ initialCode, className, onError, onPlayStateChange, onReady }, ref) {
     const editorRef = useRef<{ setCode: (code: string) => void; evaluate: (autostart?: boolean) => void; stop: () => void } | null>(null);
 
-    const handleEditorReady = useCallback((editor: typeof editorRef.current) => {
-      editorRef.current = editor;
-      onReady?.();  // Notify parent that editor is ready
-    }, [onReady]);
-
-    useImperativeHandle(ref, () => ({
+    // Create the handle object that will be shared via callback and ref
+    const createHandle = useCallback((): StrudelPanelHandle => ({
       setCode: (code: string) => {
         editorRef.current?.setCode(code);
       },
@@ -38,6 +34,15 @@ const StrudelPanel = forwardRef<StrudelPanelHandle, StrudelPanelProps>(
         editorRef.current?.stop();
       },
     }), []);
+
+    const handleEditorReady = useCallback((editor: typeof editorRef.current) => {
+      editorRef.current = editor;
+      // Pass the handle directly through the callback (bypasses broken ref from next/dynamic)
+      const handle = createHandle();
+      onReady?.(handle);
+    }, [onReady, createHandle]);
+
+    useImperativeHandle(ref, createHandle, [createHandle]);
 
     return (
       <StrudelEditor
