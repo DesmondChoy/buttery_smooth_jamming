@@ -65,16 +65,17 @@ export default function Home() {
     setIsPlaying(true);
   }, [evaluate]);
 
-  const handleStopClick = useCallback(() => {
-    stop();
-    setIsPlaying(false);
-  }, [stop]);
-
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Ignore if user is typing in an input/textarea
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+      // Ignore if user is typing in an input/textarea/contenteditable/code editor
+      const target = e.target as HTMLElement;
+      if (
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target.isContentEditable ||
+        target.closest('.cm-editor')
+      ) {
         return;
       }
 
@@ -87,7 +88,7 @@ export default function Home() {
         } else if (e.key === '.') {
           e.preventDefault();
           if (audioReady && isPlaying) {
-            handleStopClick();
+            handleStop();
           }
         }
       }
@@ -95,7 +96,7 @@ export default function Home() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [audioReady, isPlaying, handlePlay, handleStopClick]);
+  }, [audioReady, isPlaying, handlePlay, handleStop]);
 
   return (
     <main className="flex min-h-screen">
@@ -139,7 +140,7 @@ export default function Home() {
             {isPlaying ? '▶ Playing' : '▶ Play'}
           </button>
           <button
-            onClick={handleStopClick}
+            onClick={handleStop}
             disabled={!audioReady || !isPlaying}
             className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
