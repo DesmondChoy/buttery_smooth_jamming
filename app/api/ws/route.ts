@@ -1,5 +1,12 @@
 import type { WebSocket, WebSocketServer } from 'ws';
 import type { IncomingMessage } from 'http';
+import { NextResponse } from 'next/server';
+
+// Required GET export for next-ws to recognize this as a WebSocket route
+export function GET() {
+  // This should never be called - next-ws intercepts WebSocket upgrades
+  return NextResponse.json({ error: 'WebSocket endpoint' }, { status: 400 });
+}
 
 export function SOCKET(
   client: WebSocket,
