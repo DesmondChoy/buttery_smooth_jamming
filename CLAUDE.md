@@ -1,5 +1,17 @@
 # Agent Instructions
 
+## Package Management
+
+Use **uv** for all Python package operations:
+
+```bash
+uv add <package>      # Add a dependency
+uv sync               # Install all dependencies from pyproject.toml
+uv run <command>      # Run a command in the project environment
+```
+
+## Issue Tracking
+
 This project uses **bd** (beads) for issue tracking. Run `bd onboard` to get started.
 
 ## Quick Reference
