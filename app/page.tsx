@@ -45,8 +45,8 @@ export default function Home() {
             initialCode={`// Welcome to CC Sick Beats!
 // Press play or Ctrl+Enter to start
 note("c3 e3 g3 c4").sound("piano")`}
-            onReady={(editor) => {
-              console.log('Strudel editor ready:', editor);
+            onReady={() => {
+              // Editor ready - available for future use
             }}
             className="rounded-lg overflow-hidden"
           />
