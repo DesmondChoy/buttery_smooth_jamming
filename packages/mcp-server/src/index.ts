@@ -12,6 +12,7 @@ const server = new McpServer({
 
 // WebSocket connection management
 const WS_URL = process.env.WS_URL || "ws://localhost:3000/api/ws";
+const CONNECTION_TIMEOUT_MS = 5000;
 let ws: WebSocket | null = null;
 let connectPromise: Promise<boolean> | null = null;
 
@@ -34,15 +35,28 @@ function connect(): Promise<boolean> {
   }
 
   connectPromise = new Promise((resolve) => {
-    ws = new WebSocket(WS_URL);
+    const socket = new WebSocket(WS_URL);
+    ws = socket;
 
-    ws.on("open", () => {
+    // Set up connection timeout
+    const timeoutId = setTimeout(() => {
+      if (socket.readyState !== WebSocket.OPEN) {
+        console.error(`WebSocket connection timeout after ${CONNECTION_TIMEOUT_MS}ms`);
+        socket.terminate(); // Force close hanging connection
+        connectPromise = null;
+        ws = null;
+        resolve(false);
+      }
+    }, CONNECTION_TIMEOUT_MS);
+
+    socket.on("open", () => {
+      clearTimeout(timeoutId);
       connectPromise = null;
       console.error("WebSocket connected to", WS_URL);
       resolve(true);
     });
 
-    ws.on("message", (data) => {
+    socket.on("message", (data) => {
       try {
         const msg = JSON.parse(data.toString());
         if (msg.type === "user_message" && msg.payload?.text) {
@@ -58,13 +72,15 @@ function connect(): Promise<boolean> {
       }
     });
 
-    ws.on("error", (error) => {
+    socket.on("error", (error) => {
+      clearTimeout(timeoutId);
       connectPromise = null;
       console.error("WebSocket error:", error.message);
       resolve(false);
     });
 
-    ws.on("close", () => {
+    socket.on("close", () => {
+      clearTimeout(timeoutId);
       connectPromise = null;
       ws = null;
       console.error("WebSocket disconnected");
@@ -81,7 +97,7 @@ function send(
   if (ws?.readyState !== WebSocket.OPEN) {
     return {
       success: false,
-      error: `WebSocket not connected. Ensure the web app is running at ${WS_URL}`,
+      error: `Cannot connect to web app at ${WS_URL}.\nPlease ensure the web app is running (npm run dev).`,
     };
   }
 
@@ -165,17 +181,23 @@ server.tool(
   "Get pending messages from web users (clears queue after reading)",
   {},
   async () => {
-    await connect();
+    const connected = await connect();
     const messages = [...userMessages];
     userMessages.length = 0; // Clear queue
+
+    let statusNote = "";
+    if (!connected) {
+      statusNote = "\n\n(Note: Not connected to web app. Only showing locally queued messages.)";
+    }
+
     return {
       content: [
         {
           type: "text",
           text:
             messages.length > 0
-              ? JSON.stringify(messages, null, 2)
-              : "No new messages",
+              ? JSON.stringify(messages, null, 2) + statusNote
+              : "No new messages" + statusNote,
         },
       ],
     };
