@@ -37,10 +37,16 @@ function EmptyState() {
 }
 
 function MessageBubble({ message }: { message: ChatMessage }) {
-  const formattedTime = message.timestamp.toLocaleTimeString([], {
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  const [formattedTime, setFormattedTime] = useState<string>('');
+
+  useEffect(() => {
+    setFormattedTime(
+      message.timestamp.toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+    );
+  }, [message.timestamp]);
 
   const isUser = message.sender === 'user';
 
