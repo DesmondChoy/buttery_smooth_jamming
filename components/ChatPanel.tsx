@@ -37,16 +37,10 @@ function EmptyState() {
 }
 
 function MessageBubble({ message }: { message: ChatMessage }) {
-  const [formattedTime, setFormattedTime] = useState<string>('');
-
-  useEffect(() => {
-    setFormattedTime(
-      message.timestamp.toLocaleTimeString([], {
-        hour: '2-digit',
-        minute: '2-digit',
-      })
-    );
-  }, [message.timestamp]);
+  const formattedTime = message.timestamp.toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 
   const isUser = message.sender === 'user';
 
@@ -65,6 +59,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
           className={`text-xs mt-2 block ${
             isUser ? 'text-blue-200' : 'text-gray-400'
           }`}
+          suppressHydrationWarning
         >
           {formattedTime}
         </time>
