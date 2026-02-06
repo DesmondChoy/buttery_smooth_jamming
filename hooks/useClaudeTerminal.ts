@@ -25,12 +25,13 @@ interface UseClaudeTerminalOptions {
   onToolUse?: (toolName: string, toolInput: Record<string, unknown>) => void;
 }
 
-interface UseClaudeTerminalReturn {
+export interface UseClaudeTerminalReturn {
   lines: TerminalLine[];
   status: ClaudeStatus;
   isConnected: boolean;
   error: string | null;
   sendMessage: (text: string) => void;
+  sendJamTick: (round: number) => void;
   clearLines: () => void;
 }
 
@@ -246,6 +247,12 @@ export function useClaudeTerminal(
     }
   }, [addLine, connect]);
 
+  const sendJamTick = useCallback((round: number) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'jam_tick', round }));
+    }
+  }, []);
+
   const clearLines = useCallback(() => {
     setLines([]);
     currentAssistantLineRef.current = null;
@@ -257,6 +264,7 @@ export function useClaudeTerminal(
     isConnected,
     error,
     sendMessage,
+    sendJamTick,
     clearLines,
   };
 }

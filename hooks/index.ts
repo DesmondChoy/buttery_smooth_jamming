@@ -5,4 +5,7 @@ export { useStrudel } from './useStrudel';
 export type { UseStrudelReturn } from './useStrudel';
 
 export { useClaudeTerminal } from './useClaudeTerminal';
-export type { ClaudeStatus, TerminalLine } from './useClaudeTerminal';
+export type { ClaudeStatus, TerminalLine, UseClaudeTerminalReturn } from './useClaudeTerminal';
+
+export { useJamSession } from './useJamSession';
+export type { UseJamSessionReturn } from './useJamSession';

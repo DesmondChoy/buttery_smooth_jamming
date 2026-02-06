@@ -1,9 +1,14 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback, FormEvent, KeyboardEvent } from 'react';
-import { useClaudeTerminal, type ClaudeStatus, type TerminalLine } from '@/hooks/useClaudeTerminal';
+import type { ClaudeStatus, TerminalLine } from '@/hooks/useClaudeTerminal';
 
 interface TerminalPanelProps {
+  lines: TerminalLine[];
+  status: ClaudeStatus;
+  isConnected: boolean;
+  sendMessage: (text: string) => void;
+  clearLines: () => void;
   onToolUse?: (toolName: string, toolInput: Record<string, unknown>) => void;
   className?: string;
 }
@@ -92,15 +97,14 @@ function TerminalLineDisplay({ line }: { line: TerminalLine }) {
   );
 }
 
-export function TerminalPanel({ onToolUse, className = '' }: TerminalPanelProps) {
-  const {
-    lines,
-    status,
-    isConnected,
-    sendMessage,
-    clearLines,
-  } = useClaudeTerminal({ onToolUse });
-
+export function TerminalPanel({
+  lines,
+  status,
+  isConnected,
+  sendMessage,
+  clearLines,
+  className = '',
+}: TerminalPanelProps) {
   const [inputValue, setInputValue] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);

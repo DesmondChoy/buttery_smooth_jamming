@@ -3,8 +3,9 @@
 import { useState, useCallback, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import { TerminalPanel } from '@/components/TerminalPanel';
+import { JamControls } from '@/components/JamControls';
 import { AudioStartButton } from '@/components/AudioStartButton';
-import { useWebSocket, useStrudel } from '@/hooks';
+import { useWebSocket, useStrudel, useClaudeTerminal, useJamSession } from '@/hooks';
 
 const StrudelPanel = dynamic(
   () => import('@/components/StrudelPanel'),
@@ -17,6 +18,21 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
 
   const { ref, setCode, evaluate, stop, onEditorReady } = useStrudel();
+
+  // Handle tool calls from Claude terminal
+  const handleToolUse = useCallback((toolName: string, toolInput: Record<string, unknown>) => {
+    // The actual execute_pattern calls come through the MCP server WebSocket
+    // This handler is for displaying purposes / additional actions
+    console.log('[Page] Tool use:', toolName, toolInput);
+  }, []);
+
+  // Lift useClaudeTerminal to page level so sendJamTick is accessible
+  const claude = useClaudeTerminal({ onToolUse: handleToolUse });
+
+  const jam = useJamSession({
+    sendJamTick: claude.sendJamTick,
+    isClaudeConnected: claude.isConnected,
+  });
 
   const handleStrudelError = useCallback((err: Error | null) => {
     setError(err?.message || null);
@@ -41,14 +57,11 @@ export default function Home() {
   const { error: wsError } = useWebSocket({
     onExecute: handleExecute,
     onStop: handleStop,
+    onAgentThought: jam.handleAgentThought,
+    onAgentStatus: jam.handleAgentStatus,
+    onMusicalContextUpdate: jam.handleMusicalContextUpdate,
+    onJamStateUpdate: jam.handleJamStateUpdate,
   });
-
-  // Handle tool calls from Claude terminal
-  const handleToolUse = useCallback((toolName: string, toolInput: Record<string, unknown>) => {
-    // The actual execute_pattern calls come through the MCP server WebSocket
-    // This handler is for displaying purposes / additional actions
-    console.log('[Page] Tool use:', toolName, toolInput);
-  }, []);
 
   const handleAudioReady = useCallback(() => {
     setAudioReady(true);
@@ -95,7 +108,11 @@ export default function Home() {
   return (
     <main className="flex h-screen overflow-hidden">
       <TerminalPanel
-        onToolUse={handleToolUse}
+        lines={claude.lines}
+        status={claude.status}
+        isConnected={claude.isConnected}
+        sendMessage={claude.sendMessage}
+        clearLines={claude.clearLines}
         className="w-1/3 min-w-[300px] border-r border-gray-700"
       />
       <div className="flex-1 flex flex-col items-center p-8 relative overflow-y-auto">
@@ -135,6 +152,19 @@ export default function Home() {
             Ctrl+Enter to play • Ctrl+. to stop
           </span>
         </div>
+
+        {/* Jam session controls */}
+        <JamControls
+          isJamming={jam.isJamming}
+          currentRound={jam.currentRound}
+          roundProgress={jam.roundProgress}
+          roundDuration={jam.roundDuration}
+          isClaudeConnected={claude.isConnected}
+          onStartJam={jam.startJam}
+          onStopJam={jam.stopJam}
+          onRoundDurationChange={jam.setRoundDuration}
+          className="w-full max-w-4xl mb-4"
+        />
 
         <div className="w-full max-w-4xl">
           <StrudelPanel
