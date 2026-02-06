@@ -24,6 +24,56 @@ interface UserMessage {
 }
 const userMessages: UserMessage[] = [];
 
+// Jam session state (types duplicated from lib/types.ts — MCP server can't import from lib/)
+
+interface MusicalContext {
+  key: string;
+  scale: string[];
+  chordProgression: string[];
+  bpm: number;
+  timeSignature: string;
+  energy: number;
+}
+
+interface AgentState {
+  name: string;
+  emoji: string;
+  pattern: string;
+  fallbackPattern: string;
+  thoughts: string;
+  reaction: string;
+  lastUpdated: string;
+  status: 'idle' | 'thinking' | 'error' | 'timeout';
+}
+
+interface JamState {
+  sessionId: string;
+  currentRound: number;
+  musicalContext: MusicalContext;
+  agents: Record<string, AgentState>;
+}
+
+const jamState: JamState = {
+  sessionId: "jam-001",
+  currentRound: 0,
+  musicalContext: {
+    key: "C minor",
+    scale: ["c", "d", "eb", "f", "g", "ab", "bb"],
+    chordProgression: ["Cm", "Ab", "Eb", "Bb"],
+    bpm: 120,
+    timeSignature: "4/4",
+    energy: 5,
+  },
+  agents: {
+    drums:  { name: "BEAT",   emoji: "🥁",  pattern: "", fallbackPattern: "", thoughts: "", reaction: "", status: "idle", lastUpdated: "" },
+    bass:   { name: "GROOVE", emoji: "🎸",  pattern: "", fallbackPattern: "", thoughts: "", reaction: "", status: "idle", lastUpdated: "" },
+    melody: { name: "ARIA",   emoji: "🎹",  pattern: "", fallbackPattern: "", thoughts: "", reaction: "", status: "idle", lastUpdated: "" },
+    fx:     { name: "GLITCH", emoji: "🎛️", pattern: "", fallbackPattern: "", thoughts: "", reaction: "", status: "idle", lastUpdated: "" },
+  },
+};
+
+const VALID_AGENTS = Object.keys(jamState.agents);
+
 function connect(): Promise<boolean> {
   if (ws?.readyState === WebSocket.OPEN) {
     return Promise.resolve(true);
