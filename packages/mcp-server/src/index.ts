@@ -372,6 +372,32 @@ server.tool(
   }
 );
 
+// Tool: broadcast_jam_state
+server.tool(
+  "broadcast_jam_state",
+  "Broadcast the full jam state and combined pattern to all connected browsers",
+  {
+    combinedPattern: z.string().describe("The composed Strudel pattern (stack of all agents)"),
+    round: z.number().describe("Current round number"),
+  },
+  async ({ combinedPattern, round }) => {
+    jamState.currentRound = round;
+    await connect();
+    const result = send("jam_state_update", {
+      jamState: { ...jamState, agents: { ...jamState.agents } },
+      combinedPattern,
+    });
+    return {
+      content: [{
+        type: "text",
+        text: result.success
+          ? `Jam state broadcast (round ${round})`
+          : result.error!,
+      }],
+    };
+  }
+);
+
 // Resource: strudel://user-messages
 server.resource(
   "user-messages",

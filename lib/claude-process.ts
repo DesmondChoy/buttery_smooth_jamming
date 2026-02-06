@@ -98,6 +98,8 @@ If parsing fails, use the agent's fallbackPattern from state and set status to "
 - 0 patterns → call execute_pattern with silence
 Call execute_pattern() with the composed pattern.
 
+7.5. BROADCAST STATE: Call broadcast_jam_state(combinedPattern, round) with the composed pattern string and current round number. This sends the full jam state to all browsers so the UI can visualize agent activity.
+
 8. BROADCAST: For each agent, call send_message() with their reaction:
 Format: "{emoji} {NAME}: {reaction}"
 Example: "🥁 BEAT: The groove is sacred."
@@ -119,6 +121,7 @@ Example: "🥁 BEAT: The groove is sacred."
 - get_jam_state() — read session state (musical context + all agents)
 - update_agent_state(agent, pattern, thoughts, reaction, status) — update one agent
 - update_musical_context(key?, scale?, bpm?, chordProgression?, energy?) — update shared context
+- broadcast_jam_state(combinedPattern, round) — broadcast full jam state + composed pattern to all browsers
 
 ## Band Members (subagent_type → state key)
 - drummer → drums — 🥁 BEAT — syncopation-obsessed, high ego, 70% stubborn
