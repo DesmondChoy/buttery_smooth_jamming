@@ -25,3 +25,32 @@ export interface MessagePayload {
   text: string;
   timestamp: string;
 }
+
+// Jam session types (multi-agent band)
+
+export interface MusicalContext {
+  key: string;
+  scale: string[];
+  chordProgression: string[];
+  bpm: number;
+  timeSignature: string;
+  energy: number;
+}
+
+export interface AgentState {
+  name: string;
+  emoji: string;
+  pattern: string;
+  fallbackPattern: string;
+  thoughts: string;
+  reaction: string;
+  lastUpdated: string;
+  status: 'idle' | 'thinking' | 'error' | 'timeout';
+}
+
+export interface JamState {
+  sessionId: string;
+  currentRound: number;
+  musicalContext: MusicalContext;
+  agents: Record<string, AgentState>;
+}
