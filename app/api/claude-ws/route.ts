@@ -19,8 +19,9 @@ const clientProcesses = new Map<WebSocket, ClaudeProcess>();
 
 // Message types for browser <-> server communication
 interface BrowserMessage {
-  type: 'user_input' | 'stop' | 'ping';
+  type: 'user_input' | 'stop' | 'ping' | 'jam_tick';
   text?: string;
+  round?: number;
 }
 
 interface ServerMessage {
@@ -219,6 +220,20 @@ export function SOCKET(
         case 'stop':
           claudeProcess?.stop();
           break;
+
+        case 'jam_tick': {
+          const round = message.round ?? 0;
+          if (claudeProcess?.isRunning()) {
+            sendToClient(client, { type: 'status', status: 'thinking' });
+            claudeProcess.sendUserMessage(`[JAM_TICK] Round ${round}. Run one jam round.`);
+          } else {
+            sendToClient(client, {
+              type: 'error',
+              error: 'Claude process not running for jam tick.',
+            });
+          }
+          break;
+        }
 
         case 'ping':
           sendToClient(client, { type: 'pong' });

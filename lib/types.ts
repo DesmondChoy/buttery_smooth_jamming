@@ -6,7 +6,13 @@ export interface ChatMessage {
 }
 
 // WebSocket message types
-export type WSMessageType = 'execute' | 'stop' | 'message' | 'user_message';
+export type WSMessageType =
+  | 'execute' | 'stop' | 'message' | 'user_message'
+  | 'jam_state_update'
+  | 'agent_thought'
+  | 'musical_context_update'
+  | 'agent_status'
+  | 'jam_tick';
 
 export interface WSMessage<T = unknown> {
   type: WSMessageType;
@@ -24,6 +30,30 @@ export interface MessagePayload {
   id: string;
   text: string;
   timestamp: string;
+}
+
+export interface AgentThoughtPayload {
+  agent: string;
+  emoji: string;
+  thought: string;
+  reaction: string;
+  pattern: string;
+  compliedWithBoss: boolean;
+  timestamp: string;
+}
+
+export interface JamStatePayload {
+  jamState: JamState;
+  combinedPattern: string;
+}
+
+export interface AgentStatusPayload {
+  agent: string;
+  status: 'idle' | 'thinking' | 'error' | 'timeout';
+}
+
+export interface MusicalContextPayload {
+  musicalContext: MusicalContext;
 }
 
 // Jam session types (multi-agent band)

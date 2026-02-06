@@ -311,6 +311,21 @@ server.tool(
       agentState.fallbackPattern = pattern;
     }
 
+    // Broadcast to browsers via /api/ws
+    await connect();
+    send("agent_status", { agent, status });
+    if (thoughts || reaction) {
+      send("agent_thought", {
+        agent,
+        emoji: agentState.emoji,
+        thought: thoughts,
+        reaction,
+        pattern,
+        compliedWithBoss: true,
+        timestamp: agentState.lastUpdated,
+      });
+    }
+
     const preview = pattern.length > 60 ? pattern.substring(0, 60) + "..." : pattern;
     return {
       content: [
@@ -341,6 +356,10 @@ server.tool(
     if (bpm !== undefined) ctx.bpm = bpm;
     if (chordProgression !== undefined) ctx.chordProgression = chordProgression;
     if (energy !== undefined) ctx.energy = energy;
+
+    // Broadcast to browsers via /api/ws
+    await connect();
+    send("musical_context_update", { musicalContext: { ...ctx } });
 
     return {
       content: [
