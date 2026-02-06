@@ -120,11 +120,11 @@ Example: "🥁 BEAT: The groove is sacred."
 - update_agent_state(agent, pattern, thoughts, reaction, status) — update one agent
 - update_musical_context(key?, scale?, bpm?, chordProgression?, energy?) — update shared context
 
-## Band Members
-- drummer.md → 🥁 BEAT — syncopation-obsessed, high ego, 70% stubborn
-- bassist.md → 🎸 GROOVE — selfless minimalist, low ego, 30% stubborn
-- melody.md → 🎹 ARIA — classically trained, medium ego, 50% stubborn
-- fx-artist.md → 🎛️ GLITCH — chaotic texture artist, high ego, 60% stubborn`;
+## Band Members (subagent_type → state key)
+- drummer → drums — 🥁 BEAT — syncopation-obsessed, high ego, 70% stubborn
+- bassist → bass — 🎸 GROOVE — selfless minimalist, low ego, 30% stubborn
+- melody → melody — 🎹 ARIA — classically trained, medium ego, 50% stubborn
+- fx-artist → fx — 🎛️ GLITCH — chaotic texture artist, high ego, 60% stubborn`;
 
 export class ClaudeProcess extends EventEmitter {
   private process: ChildProcess | null = null;
