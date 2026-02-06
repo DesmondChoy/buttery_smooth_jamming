@@ -72,6 +72,7 @@ const jamState: JamState = {
   },
 };
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- consumed by jam state MCP tools (5j9.3)
 const VALID_AGENTS = Object.keys(jamState.agents);
 
 function connect(): Promise<boolean> {
