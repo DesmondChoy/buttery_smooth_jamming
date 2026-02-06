@@ -72,7 +72,6 @@ const jamState: JamState = {
   },
 };
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars -- consumed by jam state MCP tools (5j9.3)
 const VALID_AGENTS = Object.keys(jamState.agents);
 
 function connect(): Promise<boolean> {
@@ -249,6 +248,105 @@ server.tool(
             messages.length > 0
               ? JSON.stringify(messages, null, 2) + statusNote
               : "No new messages" + statusNote,
+        },
+      ],
+    };
+  }
+);
+
+// Tool: get_jam_state
+server.tool(
+  "get_jam_state",
+  "Get the current jam session state including musical context and all agent states",
+  {},
+  async () => {
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(jamState, null, 2),
+        },
+      ],
+    };
+  }
+);
+
+// Tool: update_agent_state
+server.tool(
+  "update_agent_state",
+  "Update a specific agent's state (pattern, thoughts, reaction, status)",
+  {
+    agent: z.string().describe("Agent role: drums, bass, melody, or fx"),
+    pattern: z.string().describe("Strudel code for this agent"),
+    thoughts: z.string().describe("Agent's musical reasoning"),
+    reaction: z.string().describe("Agent's reaction to the current jam"),
+    status: z
+      .enum(["idle", "thinking", "error", "timeout"])
+      .optional()
+      .default("idle")
+      .describe("Agent status"),
+  },
+  async ({ agent, pattern, thoughts, reaction, status }) => {
+    if (!VALID_AGENTS.includes(agent)) {
+      return {
+        isError: true,
+        content: [
+          {
+            type: "text",
+            text: `Invalid agent "${agent}". Must be one of: ${VALID_AGENTS.join(", ")}`,
+          },
+        ],
+      };
+    }
+
+    const agentState = jamState.agents[agent];
+    agentState.pattern = pattern;
+    agentState.thoughts = thoughts;
+    agentState.reaction = reaction;
+    agentState.status = status;
+    agentState.lastUpdated = new Date().toISOString();
+
+    // Only update fallbackPattern when status is "idle" (valid pattern)
+    if (status === "idle") {
+      agentState.fallbackPattern = pattern;
+    }
+
+    const preview = pattern.length > 60 ? pattern.substring(0, 60) + "..." : pattern;
+    return {
+      content: [
+        {
+          type: "text",
+          text: `Updated ${agent} (${agentState.name}): ${preview}`,
+        },
+      ],
+    };
+  }
+);
+
+// Tool: update_musical_context
+server.tool(
+  "update_musical_context",
+  "Update the shared musical context (key, scale, bpm, chords, energy)",
+  {
+    key: z.string().optional().describe("Musical key, e.g. 'C minor', 'D major'"),
+    scale: z.array(z.string()).optional().describe("Scale notes, e.g. ['c','d','eb','f','g','ab','bb']"),
+    bpm: z.number().optional().describe("Tempo in beats per minute"),
+    chordProgression: z.array(z.string()).optional().describe("Chord progression, e.g. ['Cm','Ab','Eb','Bb']"),
+    energy: z.number().min(1).max(10).optional().describe("Energy level from 1 (chill) to 10 (intense)"),
+  },
+  async ({ key, scale, bpm, chordProgression, energy }) => {
+    const ctx = jamState.musicalContext;
+    if (key !== undefined) ctx.key = key;
+    if (scale !== undefined) ctx.scale = scale;
+    if (bpm !== undefined) ctx.bpm = bpm;
+    if (chordProgression !== undefined) ctx.chordProgression = chordProgression;
+    if (energy !== undefined) ctx.energy = energy;
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(ctx, null, 2),
         },
       ],
     };
