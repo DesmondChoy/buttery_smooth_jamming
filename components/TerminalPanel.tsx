@@ -9,7 +9,6 @@ interface TerminalPanelProps {
   isConnected: boolean;
   sendMessage: (text: string) => void;
   clearLines: () => void;
-  onToolUse?: (toolName: string, toolInput: Record<string, unknown>) => void;
   className?: string;
 }
 
