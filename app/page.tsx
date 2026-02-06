@@ -93,12 +93,12 @@ export default function Home() {
   }, [audioReady, isPlaying, handlePlay, handleStop]);
 
   return (
-    <main className="flex min-h-screen">
+    <main className="flex h-screen overflow-hidden">
       <TerminalPanel
         onToolUse={handleToolUse}
         className="w-1/3 min-w-[300px] border-r border-gray-700"
       />
-      <div className="flex-1 flex flex-col items-center p-8 relative">
+      <div className="flex-1 flex flex-col items-center p-8 relative overflow-y-auto">
         <h1 className="text-4xl font-bold mb-4">CC Sick Beats</h1>
         <p className="text-gray-400 text-lg mb-8">
           AI-assisted live coding music with Strudel
