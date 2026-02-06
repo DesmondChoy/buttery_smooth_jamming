@@ -72,6 +72,8 @@ await page.waitForSelector('button:has-text("Playing")');
 - [ ] Main heading/logo visible
 - [ ] Strudel editor container present
 - [ ] Control buttons visible (play/stop)
+- [ ] JamControls panel visible (with Start Jam button)
+- [ ] Keyboard shortcut hints visible ("Ctrl+Enter to play • Ctrl+. to stop")
 
 ---
 
@@ -212,9 +214,69 @@ If step 6 or 7 fails, there's a WebSocket or ref-forwarding bug.
 
 ---
 
+## Phase 8: Jam Controls
+
+### Static Rendering
+- [ ] JamControls panel visible below Play/Stop buttons
+- [ ] "Start Jam" button visible
+- [ ] Round duration slider visible
+- [ ] Duration label shows default "Round: 16s"
+
+### Connection Gate
+- [ ] "Start Jam" button disabled when Claude status is NOT "Ready"
+- [ ] Helper text "Connect to Claude to start a jam" shown when disconnected
+- [ ] "Start Jam" button enabled when Claude terminal shows "Ready"
+
+### Duration Slider
+- [ ] Slider has correct range (8s to 30s)
+- [ ] Moving slider updates the duration label (e.g., "Round: 20s")
+- [ ] Slider is interactive during both idle and jamming states
+
+### Jam Session Lifecycle (requires Claude connection)
+- [ ] Clicking "Start Jam" → button changes to "Stop Jam"
+- [ ] Round counter appears: "Round: 1"
+- [ ] Time remaining appears: "Next: Xs"
+- [ ] Progress bar animates from left to right
+- [ ] Terminal shows Claude processing the jam tick
+- [ ] Clicking "Stop Jam" → returns to "Start Jam" state
+- [ ] Progress bar disappears on stop
+- [ ] Round counter disappears on stop
+
+---
+
+## Phase 9: Jam WebSocket Events (During Active Jam)
+
+**Prerequisite:** Start a jam session (Phase 8 lifecycle tests must pass first).
+
+### Agent Status Broadcasts
+- [ ] Open browser DevTools → Network → WS tab → filter `/api/ws`
+- [ ] During jam round, `agent_status` messages appear (one per agent)
+- [ ] Each contains `{ agent: "drums"|"bass"|"melody"|"fx", status: "thinking"|"idle" }`
+
+### Agent Thought Broadcasts
+- [ ] `agent_thought` messages appear with agent reactions
+- [ ] Each contains `{ agent, emoji, thought, reaction, pattern, timestamp }`
+- [ ] Terminal shows agent reactions as chat messages (e.g., "🥁 BEAT: ...")
+
+### Musical Context Updates
+- [ ] `musical_context_update` messages appear if boss directives change context
+- [ ] Contains `{ musicalContext: { key, scale, bpm, ... } }`
+
+### Jam State Broadcasts
+- [ ] `jam_state_update` messages appear at end of each round
+- [ ] Contains full `{ jamState: {...}, combinedPattern: "stack(...)" }`
+- [ ] `currentRound` increments each round
+
+### Console Health
+- [ ] No WebSocket errors in console during jam
+- [ ] No rapid reconnection loops
+- [ ] Messages flow consistently across rounds
+
+---
+
 ## Quick Smoke Test
 
-Use this 10-item checklist for rapid validation:
+Use this 13-item checklist for rapid validation:
 
 1. [ ] App loads at localhost:3000
 2. [ ] Two-panel layout renders (Terminal left, Editor right)
@@ -226,6 +288,9 @@ Use this 10-item checklist for rapid validation:
 8. [ ] **Claude Terminal chat works: type message → Claude responds**
 9. [ ] **Claude can execute patterns: editor updates + audio plays**
 10. [ ] No WebSocket errors in console
+11. [ ] JamControls panel visible with "Start Jam" button
+12. [ ] "Start Jam" button disabled when Claude not connected, enabled when ready
+13. [ ] Starting a jam → round counter appears, progress bar animates
 
 Items 8 and 9 are the most critical - they test the complete integration.
 
