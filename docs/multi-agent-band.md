@@ -85,7 +85,7 @@ Transform CC Sick Beats into an **autonomous AI jam session** where band members
 ## Phase 1: In-Memory Jam State + MCP Tools
 
 ### Rationale
-File-based blackboard has race conditions with 4 parallel writers. Anthropic, OpenAI, and Microsoft all use message passing in production multi-agent systems. In-memory state in the MCP server eliminates file I/O and follows the existing `userMessages` pattern already in `packages/mcp-server/src/index.ts:25`.
+In-memory state in the MCP server eliminates file I/O, avoids race conditions with parallel writers, and follows the existing `userMessages` pattern already in `packages/mcp-server/src/index.ts`.
 
 ### Files to Create
 - *None* — state lives in-memory in MCP server
@@ -115,13 +115,7 @@ interface AgentState {
   thoughts: string;
   reaction: string;
   lastUpdated: string;
-  enabled: boolean;
   status: 'idle' | 'thinking' | 'error' | 'timeout';
-}
-
-interface BossDirective {
-  text: string;
-  timestamp: string;
 }
 
 interface JamState {
@@ -129,8 +123,6 @@ interface JamState {
   currentRound: number;
   musicalContext: MusicalContext;
   agents: Record<string, AgentState>;
-  bossDirectives: BossDirective[];  // Recent boss chat (last 5)
-  jamHistory: string[];             // Summary of last N rounds
 }
 ```
 
@@ -149,25 +141,20 @@ const jamState: JamState = {
     energy: 5
   },
   agents: {
-    drums: { name: "BEAT", emoji: "🥁", pattern: "", fallbackPattern: "", thoughts: "", reaction: "", enabled: true, status: "idle", lastUpdated: "" },
-    bass: { name: "GROOVE", emoji: "🎸", pattern: "", fallbackPattern: "", thoughts: "", reaction: "", enabled: true, status: "idle", lastUpdated: "" },
-    melody: { name: "ARIA", emoji: "🎹", pattern: "", fallbackPattern: "", thoughts: "", reaction: "", enabled: true, status: "idle", lastUpdated: "" },
-    fx: { name: "GLITCH", emoji: "🎛️", pattern: "", fallbackPattern: "", thoughts: "", reaction: "", enabled: true, status: "idle", lastUpdated: "" }
-  },
-  bossDirectives: [],
-  jamHistory: []
+    drums: { name: "BEAT", emoji: "🥁", pattern: "", fallbackPattern: "", thoughts: "", reaction: "", status: "idle", lastUpdated: "" },
+    bass: { name: "GROOVE", emoji: "🎸", pattern: "", fallbackPattern: "", thoughts: "", reaction: "", status: "idle", lastUpdated: "" },
+    melody: { name: "ARIA", emoji: "🎹", pattern: "", fallbackPattern: "", thoughts: "", reaction: "", status: "idle", lastUpdated: "" },
+    fx: { name: "GLITCH", emoji: "🎛️", pattern: "", fallbackPattern: "", thoughts: "", reaction: "", status: "idle", lastUpdated: "" }
+  }
 };
 ```
 
-### MCP Tools
+### MCP Tools (3 new tools)
 
 | Tool | Purpose | Notes |
 |------|---------|-------|
-| `read_jam_state()` | Get full jam state | Returns in-memory state. Called by orchestrator only. |
+| `get_jam_state()` | Get full jam state | Returns in-memory state. Called by orchestrator only. |
 | `update_agent_state(agent, pattern, thoughts, reaction)` | Update an agent's state | **Called by orchestrator ONLY** after collecting subagent JSON. Updates `fallbackPattern` when pattern is valid. Sets `status`. |
-| `add_boss_directive(text)` | Boss adds a directive | Triggered from UI chat input. |
-| `compose_and_play()` | Combine enabled patterns and execute | Validates patterns before execution. Uses `fallbackPattern` for agents with `status: 'error'` or `'timeout'`. |
-| `toggle_agent(agent, enabled)` | Mute/unmute an agent | Triggered from UI band panel. |
 | `update_musical_context(key?, scale?, bpm?, chordProgression?, energy?)` | Update shared musical context | Called by orchestrator when boss directs key/style changes. |
 
 ---
@@ -182,9 +169,6 @@ Each band member is a `.claude/agents/*.md` file invoked by the orchestrator via
 - `.claude/agents/bassist.md`
 - `.claude/agents/melody.md`
 - `.claude/agents/fx-artist.md`
-
-### Files Explicitly NOT Created
-- ~~`.claude/agents/jam-orchestrator.md`~~ — **Removed.** Subagents cannot spawn other subagents (Anthropic docs). The orchestrator role is handled by the top-level Claude process via the system prompt in `lib/claude-process.ts`.
 
 ### Shared Prompt Sections (included in ALL agent prompts)
 
@@ -386,18 +370,18 @@ This phase absorbs the role from the deleted `jam-orchestrator.md` subagent. The
 const JAM_SESSION_PROMPT = `You are the JAM ORCHESTRATOR for an autonomous AI band.
 
 ## Architecture Rules
-- ONLY YOU call MCP tools (read_jam_state, update_agent_state, compose_and_play, etc.)
+- ONLY YOU call MCP tools (get_jam_state, update_agent_state, execute_pattern, etc.)
 - Subagents receive TEXT context and return JSON. They CANNOT call tools.
 - You are the top-level process. You spawn subagents via the Task tool.
 
 ## Round Procedure
 When you receive a [JAM_TICK] message, execute one jam round:
 
-1. **Read state**: read_jam_state() — get current patterns, thoughts, musical context, boss directives
+1. **Read state**: get_jam_state() + get_user_messages() — get current patterns, thoughts, musical context, and any boss directives from the chat
 2. **Construct context**: For each agent, build a text summary:
    - Current musical context (key, scale, BPM, energy, chord progression)
    - Other agents' current patterns and last thoughts
-   - Any pending boss directives
+   - Any pending boss directives (from get_user_messages)
    - The agent's own last pattern (for incremental evolution)
 3. **Spawn 4 Haiku subagents in parallel** (single message, 4 Task tool calls):
    - Use the agent definition files (.claude/agents/drummer.md, bassist.md, melody.md, fx-artist.md)
@@ -407,7 +391,7 @@ When you receive a [JAM_TICK] message, execute one jam round:
 5. **Update state**: update_agent_state() for each agent via MCP
    - If a pattern is valid, update both pattern and fallbackPattern
    - If invalid or agent errored, keep fallbackPattern, set status to 'error'
-6. **Compose and play**: compose_and_play() — combines enabled patterns, uses fallbacks for errored agents
+6. **Compose and play**: Build a stack() combining all agent patterns (use fallbackPattern for errored/timed-out agents), then call execute_pattern() to play it
 7. **Broadcast thoughts**: send_message() for each agent's thoughts/reactions to the UI chat
 
 ## Musical Context Management
@@ -442,44 +426,24 @@ Don't force compliance — let their personalities show!
 But note: personality affects thoughts/reactions, NOT key/scale adherence.
 
 ## MCP Tools Available
-- read_jam_state() — Get full jam state (musical context + all agents + directives)
+- get_jam_state() — Get full jam state (musical context + all agents)
+- get_user_messages() — Get pending boss directives from the chat UI
 - update_agent_state(agent, pattern, thoughts, reaction) — Update agent after collecting response
 - update_musical_context(...) — Update key, scale, BPM, chord progression, energy
-- add_boss_directive(text) — Record boss input
-- compose_and_play() — Combine patterns and execute (with fallback handling)
-- toggle_agent(agent, enabled) — Mute/unmute
 - send_message(text) — Broadcast to UI chat
-- execute_pattern(code) — Direct Strudel execution (used by compose_and_play internally)
+- execute_pattern(code) — Send Strudel code to the web app for execution
+
+## Pattern Composition (YOUR responsibility)
+You compose the combined pattern yourself. Example for a full band:
+  stack(
+    s("bd*4").bank("RolandTR909"),           // 🥁 BEAT
+    note("c2 c2 g2 g2").s("sawtooth"),       // 🎸 GROOVE
+    note("eb4 g4 ab4").s("piano"),           // 🎹 ARIA
+    s("hh*8").delay(0.3).room(0.5)           // 🎛️ GLITCH
+  )
+For errored/timed-out agents, substitute their fallbackPattern. For agents with no pattern, omit them.
+If only one agent has a pattern, play it solo (no stack). If none, play silence.
 `;
-```
-
-### Pattern Composition Function
-```typescript
-// packages/mcp-server/src/index.ts
-function composeJamPattern(jamState: JamState): string {
-  const enabled = Object.entries(jamState.agents)
-    .filter(([_, agent]) => agent.enabled);
-
-  const withPatterns = enabled.map(([key, agent]) => {
-    // Use fallback if agent errored/timed out
-    const pattern = (agent.status === 'error' || agent.status === 'timeout')
-      ? agent.fallbackPattern
-      : agent.pattern;
-    return { key, agent, pattern };
-  }).filter(({ pattern }) => pattern && pattern !== 'silence');
-
-  if (withPatterns.length === 0) return 'silence';
-  if (withPatterns.length === 1) {
-    const { agent, pattern } = withPatterns[0];
-    return `// ${agent.emoji} ${agent.name} solo\n${pattern}`;
-  }
-
-  return `// 🎭 Full band jam\nstack(\n${
-    withPatterns.map(({ agent, pattern }) =>
-      `  ${pattern}  // ${agent.emoji} ${agent.name}`
-    ).join(',\n')
-  }\n)`;
-}
 ```
 
 ---
@@ -495,12 +459,11 @@ function composeJamPattern(jamState: JamState): string {
 ```typescript
 export type WSMessageType =
   | 'execute' | 'stop' | 'message' | 'user_message'
-  | 'jam_state_update'       // Full jam state sync (renamed from blackboard_update)
+  | 'jam_state_update'       // Full jam state sync
   | 'agent_thought'          // Single agent's thought bubble
   | 'musical_context_update' // Musical context changed
   | 'agent_status'           // Agent status change (thinking/error/timeout)
-  | 'jam_tick'               // Web-based jam clock trigger
-  | 'boss_directive';        // Boss chat input
+  | 'jam_tick';              // Web-based jam clock trigger
 
 export interface AgentThoughtPayload {
   agent: string;
@@ -531,7 +494,7 @@ export interface MusicalContextPayload {
 ```
 Web App                    Claude Process / MCP Server
    │                           │
-   │──── boss_directive ──────▶│  (Boss types in chat)
+   │──── user_message ─────────▶│  (Boss types in chat — uses existing pipeline)
    │──── jam_tick ────────────▶│  (Periodic jam clock)
    │                           │
    │◀─── jam_state_update ─────│  (After each jam round)
@@ -551,10 +514,6 @@ The original bash loop (`claude --print` per round) starts a fresh Claude proces
 ### Files to Create
 - `components/JamControls.tsx` — Start/Stop/Tempo + timer logic
 - `hooks/useJamSession.ts` — Jam clock state management
-
-### Files Explicitly NOT Created
-- ~~`scripts/jam-loop.sh`~~ — **Removed.** Bash loop loses context each round.
-- ~~`scripts/jam-round.ts`~~ — **Removed.** Round logic lives in orchestrator prompt.
 
 ### Mechanism
 ```
@@ -587,7 +546,7 @@ At 120 BPM, 16s = 8 bars — a natural musical phrase length.
 - `components/JamChat.tsx` — Agent thoughts + boss input
 - `components/JamControls.tsx` — Start/Stop/Tempo (also Phase 5)
 - `components/MusicalContextBar.tsx` — Displays key, scale, BPM, chord progression
-- `hooks/useJamState.ts` — Jam state hook (renamed from useBlackboard)
+- `hooks/useJamState.ts` — Jam state hook
 - `hooks/useJamSession.ts` — Jam session orchestration (also Phase 5)
 
 ### Files to Modify
@@ -676,14 +635,13 @@ At 120 BPM, 16s = 8 bars — a natural musical phrase length.
 | File | Action | Description |
 |------|--------|-------------|
 | **Jam State (Phase 1)** | | |
-| `packages/mcp-server/src/index.ts` | Modify | Add in-memory jam state + 6 MCP tools |
+| `packages/mcp-server/src/index.ts` | Modify | Add in-memory jam state + 3 MCP tools (get_jam_state, update_agent_state, update_musical_context) |
 | `lib/types.ts` | Modify | Add JamState, AgentState, MusicalContext types |
 | **Subagent Prompts (Phase 2)** | | |
 | `.claude/agents/drummer.md` | Create | 🥁 BEAT — high ego drummer (model: haiku) |
 | `.claude/agents/bassist.md` | Create | 🎸 GROOVE — minimalist bassist (model: haiku) |
 | `.claude/agents/melody.md` | Create | 🎹 ARIA — experimental melodist (model: haiku) |
 | `.claude/agents/fx-artist.md` | Create | 🎛️ GLITCH — chaotic FX artist (model: haiku) |
-| ~~`.claude/agents/jam-orchestrator.md`~~ | ~~Create~~ | **REMOVED** — subagent nesting prohibited |
 | **Orchestrator Prompt (Phase 3)** | | |
 | `lib/claude-process.ts` | Modify | Add JAM_SESSION_PROMPT with round procedure |
 | **WebSocket Protocol (Phase 4)** | | |
@@ -693,19 +651,13 @@ At 120 BPM, 16s = 8 bars — a natural musical phrase length.
 | **Web-Based Jam Clock (Phase 5)** | | |
 | `components/JamControls.tsx` | Create | Start/Stop/Tempo + jam clock timer |
 | `hooks/useJamSession.ts` | Create | Jam clock state management |
-| ~~`scripts/jam-loop.sh`~~ | ~~Create~~ | **REMOVED** — bash loop loses context |
-| ~~`scripts/jam-round.ts`~~ | ~~Create~~ | **REMOVED** — round logic in orchestrator prompt |
 | **Jam Session UI (Phase 6)** | | |
 | `app/page.tsx` | Modify | New jam session layout |
 | `components/BandPanel.tsx` | Create | Band member grid |
 | `components/BandMemberCard.tsx` | Create | Individual member display |
 | `components/JamChat.tsx` | Create | Agent thoughts + boss input |
 | `components/MusicalContextBar.tsx` | Create | Key/scale/BPM/chord display |
-| `hooks/useJamState.ts` | Create | Jam state hook (replaces useBlackboard) |
-| **Files NOT Created** | | |
-| ~~`.jam-session/blackboard.json`~~ | — | **REMOVED** — in-memory state eliminates file I/O |
-| ~~`lib/blackboard.ts`~~ | — | **REMOVED** — no file-based blackboard |
-| ~~`hooks/useBlackboard.ts`~~ | — | Renamed → `hooks/useJamState.ts` |
+| `hooks/useJamState.ts` | Create | Jam state hook |
 
 ---
 
@@ -715,9 +667,9 @@ At 120 BPM, 16s = 8 bars — a natural musical phrase length.
 ```bash
 # Test in-memory state and MCP tools:
 # 1. Start app, verify MCP server initializes jam state in memory
-# 2. Call read_jam_state() — should return initial state with MusicalContext
+# 2. Call get_jam_state() — should return initial state with MusicalContext
 # 3. Call update_agent_state("drums", "s(\"bd*4\")", "Testing", "OK")
-# 4. Call read_jam_state() — should show drums pattern + fallbackPattern updated
+# 4. Call get_jam_state() — should show drums pattern + fallbackPattern updated
 # 5. Call update_musical_context(key: "D major", scale: [...]) — verify state updates
 ```
 
@@ -735,11 +687,11 @@ At 120 BPM, 16s = 8 bars — a natural musical phrase length.
 ```bash
 # Test orchestrator spawns agents correctly:
 # 1. Send [JAM_TICK] to Claude process
-# 2. Verify orchestrator calls read_jam_state()
+# 2. Verify orchestrator calls get_jam_state() + get_user_messages()
 # 3. Verify 4 Haiku subagents spawned in parallel
 # 4. Verify each agent receives text context (not MCP access)
 # 5. Verify orchestrator calls update_agent_state() for each
-# 6. Verify compose_and_play() executes combined pattern
+# 6. Verify orchestrator composes stack() pattern and calls execute_pattern()
 # 7. Verify thoughts broadcast to UI
 ```
 
