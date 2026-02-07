@@ -145,6 +145,7 @@ function send(
   payload: object
 ): { success: boolean; error?: string } {
   if (ws?.readyState !== WebSocket.OPEN) {
+    console.error(`[MCP send] WebSocket not open (state: ${ws?.readyState ?? 'null'}), cannot send ${type}`);
     return {
       success: false,
       error: `Cannot connect to web app at ${WS_URL}.\nPlease ensure the web app is running (npm run dev).`,
@@ -155,11 +156,29 @@ function send(
     ws.send(JSON.stringify({ type, payload }));
     return { success: true };
   } catch (error) {
+    console.error(`[MCP send] Failed to send ${type}:`, error instanceof Error ? error.message : String(error));
     return {
       success: false,
       error: `Failed to send message: ${error instanceof Error ? error.message : String(error)}`,
     };
   }
+}
+
+async function sendWithRetry(
+  type: string,
+  payload: object
+): Promise<{ success: boolean; error?: string }> {
+  let result = send(type, payload);
+  if (!result.success) {
+    // Force reconnect and retry once
+    ws?.terminate();
+    ws = null;
+    const connected = await connect();
+    if (connected) {
+      result = send(type, payload);
+    }
+  }
+  return result;
 }
 
 // Tool: execute_pattern
@@ -311,11 +330,11 @@ server.tool(
       agentState.fallbackPattern = pattern;
     }
 
-    // Broadcast to browsers via /api/ws
+    // Broadcast to browsers via /api/ws (with retry on failure)
     await connect();
-    send("agent_status", { agent, status });
+    await sendWithRetry("agent_status", { agent, status });
     if (thoughts || reaction) {
-      send("agent_thought", {
+      await sendWithRetry("agent_thought", {
         agent,
         emoji: agentState.emoji,
         thought: thoughts,

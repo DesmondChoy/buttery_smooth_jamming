@@ -38,6 +38,7 @@ export interface UseJamSessionReturn {
   stopJam: () => void;
   setRoundDuration: (ms: number) => void;
   addBossDirective: (text: string) => void;
+  addChatMessage: (msg: Omit<JamChatMessage, 'id' | 'timestamp'>) => void;
   clearChatMessages: () => void;
 
   // Callbacks (wire into useWebSocket in page.tsx)
@@ -315,6 +316,7 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
     stopJam,
     setRoundDuration,
     addBossDirective,
+    addChatMessage,
     clearChatMessages,
 
     handleAgentThought,

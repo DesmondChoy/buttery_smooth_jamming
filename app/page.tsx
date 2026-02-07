@@ -54,10 +54,52 @@ export default function Home() {
     setIsPlaying(false);
   }, [stop]);
 
+  // Handle incoming chat messages from MCP send_message broadcasts
+  const handleWsMessage = useCallback((msg: { id: string; text: string; timestamp: Date; sender: string }) => {
+    if (!jam.isJamming) return;
+
+    // Parse agent emoji + name from text format: "🥁 BEAT: ..." or "🎵 Round N: ..."
+    const agentPatterns: Record<string, { agent: string; name: string; emoji: string }> = {
+      '🥁': { agent: 'drums', name: 'BEAT', emoji: '🥁' },
+      '🎸': { agent: 'bass', name: 'GROOVE', emoji: '🎸' },
+      '🎹': { agent: 'melody', name: 'ARIA', emoji: '🎹' },
+      '🎛️': { agent: 'fx', name: 'GLITCH', emoji: '🎛️' },
+    };
+
+    const text = msg.text;
+    let matched = false;
+    for (const [emoji, info] of Object.entries(agentPatterns)) {
+      if (text.startsWith(emoji)) {
+        // Strip "🥁 BEAT: " prefix from text
+        const colonIdx = text.indexOf(':');
+        const cleanText = colonIdx > -1 ? text.slice(colonIdx + 1).trim() : text;
+        jam.addChatMessage({
+          type: 'agent_reaction',
+          agent: info.agent,
+          agentName: info.name,
+          emoji: info.emoji,
+          text: cleanText,
+          round: jam.currentRound,
+        });
+        matched = true;
+        break;
+      }
+    }
+
+    if (!matched) {
+      jam.addChatMessage({
+        type: 'system',
+        text,
+        round: jam.currentRound,
+      });
+    }
+  }, [jam.isJamming, jam.currentRound, jam.addChatMessage]);
+
   // Keep the WebSocket connection for MCP server to send execute/stop commands
   const { error: wsError } = useWebSocket({
     onExecute: handleExecute,
     onStop: handleStop,
+    onMessage: handleWsMessage,
     onAgentThought: jam.handleAgentThought,
     onAgentStatus: jam.handleAgentStatus,
     onMusicalContextUpdate: jam.handleMusicalContextUpdate,
