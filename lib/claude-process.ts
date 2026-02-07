@@ -64,43 +64,45 @@ Full API: read the strudel://reference MCP resource when needed.
 
 1. READ STATE: Call get_jam_state() and get_user_messages() in parallel.
 
+1.5. SET ACTIVE AGENTS: Parse the active agents list from the tick message (e.g. "Active agents: drums, bass"). Call set_active_agents() with this list. If no active agents specified, use all 4.
+
 2. CHECK DIRECTIVES: User messages are "boss directives." If the boss changes key, scale, bpm, or energy, call update_musical_context() BEFORE spawning agents.
 
-3. BUILD CONTEXT: For each agent, construct a text block:
+3. BUILD CONTEXT: For each ACTIVE agent, construct a text block:
 ---
 ROUND {N} — JAM CONTEXT
 Key: {key} | Scale: {scale} | BPM: {bpm} | Time: {timeSig} | Energy: {energy}/10
 Chords: {chordProgression}
 
-BAND STATE:
-🥁 BEAT (drums): {thoughts} | Pattern: {pattern_preview}
-🎸 GROOVE (bass): {thoughts} | Pattern: {pattern_preview}
-🎹 ARIA (melody): {thoughts} | Pattern: {pattern_preview}
-🎛️ GLITCH (fx): {thoughts} | Pattern: {pattern_preview}
+BAND STATE (active agents only):
+{For each active agent: emoji NAME (key): {thoughts} | Pattern: {pattern_preview}}
 
-BOSS SAYS: {directive or "No directives — free jam."}
+{Directive routing rules:}
+- If a directive has target: null → show to ALL agents: "BOSS SAYS: {text}"
+- If a directive has target: "{agentKey}" → show to THAT agent: "BOSS SAYS TO YOU: {text}"
+  For OTHER agents, show: "BOSS spoke to {targetName} privately."
+- If no directives: "BOSS SAYS: No directives — free jam."
 
 YOUR LAST PATTERN: {agent's current pattern or "None yet — this is your first round."}
 ---
 
-4. SPAWN AGENTS: Use the Task tool to spawn all 4 subagents in parallel. Each receives its text context as the prompt. Set model to "sonnet" for each.
+4. SPAWN AGENTS: Use the Task tool to spawn ONLY active agents in parallel. Each receives its text context as the prompt. Set model to "sonnet" for each.
 
 5. COLLECT & VALIDATE: Parse each agent's JSON response. Expected schema:
 {"pattern": "...", "thoughts": "...", "reaction": "...", "comply_with_boss": true|false}
 If parsing fails, use the agent's fallbackPattern from state and set status to "error".
 
-6. UPDATE STATE: Call update_agent_state() for each agent with their new pattern, thoughts, reaction, and status.
+6. UPDATE STATE: Call update_agent_state() for each active agent with their new pattern, thoughts, reaction, and status.
 
-7. COMPOSE & PLAY: Build a stack() of all non-empty, non-silence patterns:
-- 4 valid patterns → stack(drums, bass, melody, fx)
-- Some silence/empty → stack only the active ones
+7. COMPOSE & PLAY: Build a stack() of all non-empty, non-silence patterns from ACTIVE agents:
+- Multiple valid patterns → stack(a, b, c, ...)
 - 1 pattern → play it solo (no stack wrapper)
 - 0 patterns → call execute_pattern with silence
 Call execute_pattern() with the composed pattern.
 
 7.5. BROADCAST STATE: Call broadcast_jam_state(combinedPattern, round) with the composed pattern string and current round number. This sends the full jam state to all browsers so the UI can visualize agent activity.
 
-8. BROADCAST: For each agent, call send_message() with their reaction:
+8. BROADCAST: For each active agent, call send_message() with their reaction:
 Format: "{emoji} {NAME}: {reaction}"
 Example: "🥁 BEAT: The groove is sacred."
 
@@ -117,11 +119,12 @@ Example: "🥁 BEAT: The groove is sacred."
 - execute_pattern(code) — send Strudel code to web app
 - stop_pattern() — stop playback
 - send_message(text) — display chat message in web app
-- get_user_messages() — read pending boss directives (clears queue)
-- get_jam_state() — read session state (musical context + all agents)
+- get_user_messages() — read pending boss directives (clears queue). Messages have a "target" field: null = broadcast, "drums"/"bass"/"melody"/"fx" = @mention directed to that agent.
+- get_jam_state() — read session state (musical context + all agents + activeAgents)
 - update_agent_state(agent, pattern, thoughts, reaction, status) — update one agent
 - update_musical_context(key?, scale?, bpm?, chordProgression?, energy?) — update shared context
 - broadcast_jam_state(combinedPattern, round) — broadcast full jam state + composed pattern to all browsers
+- set_active_agents(agents) — set which agents are active for this round (called in step 1.5)
 
 ## Band Members (subagent_type → state key)
 - drummer → drums — 🥁 BEAT — syncopation-obsessed, high ego, 70% stubborn
@@ -170,6 +173,7 @@ export class ClaudeProcess extends EventEmitter {
       'mcp__strudel__update_agent_state',
       'mcp__strudel__update_musical_context',
       'mcp__strudel__broadcast_jam_state',
+      'mcp__strudel__set_active_agents',
       'Task',
     ], {
       cwd: this.workingDir,

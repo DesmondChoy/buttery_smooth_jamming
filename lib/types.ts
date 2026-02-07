@@ -83,6 +83,7 @@ export interface JamState {
   currentRound: number;
   musicalContext: MusicalContext;
   agents: Record<string, AgentState>;
+  activeAgents: string[];
 }
 
 export interface JamChatMessage {
@@ -94,6 +95,21 @@ export interface JamChatMessage {
   text: string;
   pattern?: string;        // optional code snippet
   compliedWithBoss?: boolean;
+  targetAgent?: string;    // @mention-directed boss directive target
   round: number;
   timestamp: Date;
 }
+
+// Consolidated agent metadata — single source of truth for names, emojis, colors
+export const AGENT_META: Record<string, {
+  key: string;
+  name: string;
+  emoji: string;
+  mention: string;
+  colors: { border: string; accent: string; bg: string; bgSolid: string };
+}> = {
+  drums:  { key: 'drums',  name: 'BEAT',   emoji: '🥁', mention: '@BEAT',   colors: { border: 'border-red-500/50',    accent: 'text-red-400',    bg: 'bg-red-500/10',    bgSolid: 'bg-red-900/50' } },
+  bass:   { key: 'bass',   name: 'GROOVE', emoji: '🎸', mention: '@GROOVE', colors: { border: 'border-blue-500/50',   accent: 'text-blue-400',   bg: 'bg-blue-500/10',   bgSolid: 'bg-blue-900/50' } },
+  melody: { key: 'melody', name: 'ARIA',   emoji: '🎹', mention: '@ARIA',   colors: { border: 'border-purple-500/50', accent: 'text-purple-400', bg: 'bg-purple-500/10', bgSolid: 'bg-purple-900/50' } },
+  fx:     { key: 'fx',     name: 'GLITCH', emoji: '🎛️', mention: '@GLITCH', colors: { border: 'border-green-500/50',  accent: 'text-green-400',  bg: 'bg-green-500/10',  bgSolid: 'bg-green-900/50' } },
+};

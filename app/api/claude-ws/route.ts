@@ -22,6 +22,7 @@ interface BrowserMessage {
   type: 'user_input' | 'stop' | 'ping' | 'jam_tick';
   text?: string;
   round?: number;
+  activeAgents?: string[];
 }
 
 interface ServerMessage {
@@ -223,9 +224,11 @@ export function SOCKET(
 
         case 'jam_tick': {
           const round = message.round ?? 0;
+          const agents = message.activeAgents;
           if (claudeProcess?.isRunning()) {
             sendToClient(client, { type: 'status', status: 'thinking' });
-            claudeProcess.sendUserMessage(`[JAM_TICK] Round ${round}. Run one jam round.`);
+            const agentInfo = agents?.length ? ` Active agents: ${agents.join(', ')}.` : '';
+            claudeProcess.sendUserMessage(`[JAM_TICK] Round ${round}.${agentInfo} Run one jam round.`);
           } else {
             sendToClient(client, {
               type: 'error',

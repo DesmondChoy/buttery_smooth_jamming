@@ -21,6 +21,7 @@ interface UserMessage {
   id: string;
   text: string;
   timestamp: string;
+  target?: string | null;
 }
 const userMessages: UserMessage[] = [];
 
@@ -51,6 +52,7 @@ interface JamState {
   currentRound: number;
   musicalContext: MusicalContext;
   agents: Record<string, AgentState>;
+  activeAgents: string[];
 }
 
 const jamState: JamState = {
@@ -70,7 +72,27 @@ const jamState: JamState = {
     melody: { name: "ARIA",   emoji: "🎹",  pattern: "", fallbackPattern: "", thoughts: "", reaction: "", status: "idle", lastUpdated: "" },
     fx:     { name: "GLITCH", emoji: "🎛️", pattern: "", fallbackPattern: "", thoughts: "", reaction: "", status: "idle", lastUpdated: "" },
   },
+  activeAgents: ['drums', 'bass', 'melody', 'fx'],
 };
+
+// @mention parser: case-insensitive, maps @BEAT→drums, @GROOVE→bass, etc.
+const MENTION_TO_AGENT: Record<string, string> = {
+  '@beat': 'drums',
+  '@groove': 'bass',
+  '@aria': 'melody',
+  '@glitch': 'fx',
+};
+
+function parseMention(text: string): string | null {
+  const lower = text.toLowerCase();
+  for (const [mention, agent] of Object.entries(MENTION_TO_AGENT)) {
+    // Check if text starts with @mention (followed by space or end of string)
+    if (lower.startsWith(mention) && (lower.length === mention.length || lower[mention.length] === ' ')) {
+      return agent;
+    }
+  }
+  return null;
+}
 
 const VALID_AGENTS = Object.keys(jamState.agents);
 
@@ -110,12 +132,15 @@ function connect(): Promise<boolean> {
       try {
         const msg = JSON.parse(data.toString());
         if (msg.type === "user_message" && msg.payload?.text) {
+          const text = String(msg.payload.text);
+          const target = parseMention(text);
           userMessages.push({
             id: msg.payload.id || randomUUID(),
-            text: msg.payload.text,
+            text,
             timestamp: msg.payload.timestamp || new Date().toISOString(),
+            target,
           });
-          console.error("Received user message:", String(msg.payload.text).substring(0, 50));
+          console.error("Received user message:", text.substring(0, 50), target ? `(target: ${target})` : '');
         }
       } catch (err) {
         console.error("Failed to parse incoming message:", err);
@@ -402,8 +427,12 @@ server.tool(
   async ({ combinedPattern, round }) => {
     jamState.currentRound = round;
 
-    // Auto-set agents with patterns to 'playing' (preserve error/timeout)
-    for (const agent of Object.values(jamState.agents)) {
+    // Auto-set active agents with patterns to 'playing' (preserve error/timeout)
+    for (const [key, agent] of Object.entries(jamState.agents)) {
+      if (!jamState.activeAgents.includes(key)) {
+        agent.status = 'idle';
+        continue;
+      }
       if (agent.status === 'error' || agent.status === 'timeout') continue;
       agent.status = agent.pattern ? 'playing' : 'idle';
     }
@@ -419,6 +448,47 @@ server.tool(
         text: result.success
           ? `Jam state broadcast (round ${round})`
           : result.error!,
+      }],
+    };
+  }
+);
+
+// Tool: set_active_agents
+server.tool(
+  "set_active_agents",
+  "Set which agents are active for this jam session",
+  {
+    agents: z.array(z.string()).describe("Array of agent keys to activate, e.g. ['drums', 'bass']"),
+  },
+  async ({ agents }) => {
+    const invalid = agents.filter(a => !VALID_AGENTS.includes(a));
+    if (invalid.length > 0) {
+      return {
+        isError: true,
+        content: [{
+          type: "text",
+          text: `Invalid agent(s): ${invalid.join(', ')}. Must be: ${VALID_AGENTS.join(', ')}`,
+        }],
+      };
+    }
+
+    jamState.activeAgents = agents;
+
+    // Reset inactive agents to idle with empty pattern
+    for (const key of VALID_AGENTS) {
+      if (!agents.includes(key)) {
+        const agent = jamState.agents[key];
+        agent.status = 'idle';
+        agent.pattern = '';
+        agent.thoughts = '';
+        agent.reaction = '';
+      }
+    }
+
+    return {
+      content: [{
+        type: "text",
+        text: `Active agents set to: ${agents.join(', ')}`,
       }],
     };
   }

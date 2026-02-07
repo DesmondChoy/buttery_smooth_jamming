@@ -31,7 +31,7 @@ export interface UseClaudeTerminalReturn {
   isConnected: boolean;
   error: string | null;
   sendMessage: (text: string) => void;
-  sendJamTick: (round: number) => void;
+  sendJamTick: (round: number, activeAgents?: string[]) => void;
   clearLines: () => void;
 }
 
@@ -247,9 +247,9 @@ export function useClaudeTerminal(
     }
   }, [addLine, connect]);
 
-  const sendJamTick = useCallback((round: number) => {
+  const sendJamTick = useCallback((round: number, activeAgents?: string[]) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: 'jam_tick', round }));
+      wsRef.current.send(JSON.stringify({ type: 'jam_tick', round, activeAgents }));
     }
   }, []);
 

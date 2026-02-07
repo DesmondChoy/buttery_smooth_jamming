@@ -17,8 +17,10 @@ const MAX_ROUND_DURATION = 30000;
 const PROGRESS_INTERVAL = 100; // ms between progress bar updates
 const MAX_CHAT_MESSAGES = 500;
 
+const ALL_AGENTS = ['drums', 'bass', 'melody', 'fx'];
+
 interface UseJamSessionOptions {
-  sendJamTick: (round: number) => void;
+  sendJamTick: (round: number, activeAgents?: string[]) => void;
   isClaudeConnected: boolean;
   roundDuration?: number;
 }
@@ -32,15 +34,20 @@ export interface UseJamSessionReturn {
   roundProgress: number;
   roundDuration: number;
   chatMessages: JamChatMessage[];
+  selectedAgents: string[];
+  showAgentSelection: boolean;
 
   // Actions
   startJam: () => void;
   stopJam: () => void;
   setRoundDuration: (ms: number) => void;
-  addBossDirective: (text: string) => void;
+  addBossDirective: (text: string, targetAgent?: string) => void;
   addChatMessage: (msg: Omit<JamChatMessage, 'id' | 'timestamp'>) => void;
   clearChatMessages: () => void;
   triggerEarlyTick: () => void;
+  requestStartJam: () => void;
+  confirmStartJam: (agents: string[]) => void;
+  cancelStartJam: () => void;
 
   // Callbacks (wire into useWebSocket in page.tsx)
   handleAgentThought: (payload: AgentThoughtPayload) => void;
@@ -75,6 +82,8 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
   const [roundProgress, setRoundProgress] = useState(0);
   const [roundDuration, setRoundDurationState] = useState(initialDuration);
   const [chatMessages, setChatMessages] = useState<JamChatMessage[]>([]);
+  const [selectedAgents, setSelectedAgents] = useState<string[]>([...ALL_AGENTS]);
+  const [showAgentSelection, setShowAgentSelection] = useState(false);
 
   // Refs for interval management
   const tickIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -85,6 +94,7 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
   const roundRef = useRef(0);
   const roundDurationRef = useRef(roundDuration);
   const sendJamTickRef = useRef(sendJamTick);
+  const selectedAgentsRef = useRef(selectedAgents);
 
   const addChatMessage = useCallback((msg: Omit<JamChatMessage, 'id' | 'timestamp'>) => {
     setChatMessages((prev) => {
@@ -93,10 +103,11 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
     });
   }, []);
 
-  const addBossDirective = useCallback((text: string) => {
+  const addBossDirective = useCallback((text: string, targetAgent?: string) => {
     addChatMessage({
       type: 'boss_directive',
       text,
+      targetAgent,
       round: roundRef.current,
     });
   }, [addChatMessage]);
@@ -113,6 +124,10 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
   useEffect(() => {
     sendJamTickRef.current = sendJamTick;
   }, [sendJamTick]);
+
+  useEffect(() => {
+    selectedAgentsRef.current = selectedAgents;
+  }, [selectedAgents]);
 
   const clearAllIntervals = useCallback(() => {
     if (tickIntervalRef.current) {
@@ -140,7 +155,7 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
     roundStartTimeRef.current = Date.now();
     setRoundProgress(0);
 
-    sendJamTickRef.current(round);
+    sendJamTickRef.current(round, selectedAgentsRef.current);
 
     // Safety valve: reset processing flag if stuck for 2x round duration
     if (processingTimeoutRef.current) {
@@ -203,6 +218,31 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
       return reset;
     });
   }, [clearAllIntervals, clearChatMessages]);
+
+  const requestStartJam = useCallback(() => {
+    if (!isClaudeConnected) return;
+    setShowAgentSelection(true);
+  }, [isClaudeConnected]);
+
+  const confirmStartJam = useCallback((agents: string[]) => {
+    setSelectedAgents(agents);
+    selectedAgentsRef.current = agents;
+    setShowAgentSelection(false);
+
+    // Now start the jam
+    setIsJamming(true);
+    roundRef.current = 0;
+    processingRef.current = false;
+    roundStartTimeRef.current = Date.now();
+
+    sendTick();
+    startTickInterval();
+    startProgressInterval();
+  }, [sendTick, startTickInterval, startProgressInterval]);
+
+  const cancelStartJam = useCallback(() => {
+    setShowAgentSelection(false);
+  }, []);
 
   const setRoundDuration = useCallback((ms: number) => {
     const clamped = Math.max(MIN_ROUND_DURATION, Math.min(MAX_ROUND_DURATION, ms));
@@ -326,6 +366,8 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
     roundProgress,
     roundDuration,
     chatMessages,
+    selectedAgents,
+    showAgentSelection,
 
     startJam,
     stopJam,
@@ -334,6 +376,9 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
     addChatMessage,
     clearChatMessages,
     triggerEarlyTick,
+    requestStartJam,
+    confirmStartJam,
+    cancelStartJam,
 
     handleAgentThought,
     handleAgentStatus,

@@ -1,12 +1,15 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import dynamic from 'next/dynamic';
+import { AGENT_META } from '@/lib/types';
 import { TerminalPanel } from '@/components/TerminalPanel';
 import { JamControls } from '@/components/JamControls';
-import { BandPanel } from '@/components/BandPanel';
-import { MusicalContextBar } from '@/components/MusicalContextBar';
-import { JamChat } from '@/components/JamChat';
+import { JamTopBar } from '@/components/JamTopBar';
+import { AgentColumn } from '@/components/AgentColumn';
+import { BossInputBar } from '@/components/BossInputBar';
+import { PatternDisplay } from '@/components/PatternDisplay';
+import { AgentSelectionModal } from '@/components/AgentSelectionModal';
 import { AudioStartButton } from '@/components/AudioStartButton';
 import { useWebSocket, useStrudel, useClaudeTerminal, useJamSession } from '@/hooks';
 
@@ -36,7 +39,28 @@ export default function Home() {
   });
 
   // Destructure stable callbacks to satisfy React Compiler + exhaustive-deps
-  const { addChatMessage, addBossDirective, triggerEarlyTick } = jam;
+  const { addChatMessage, addBossDirective, triggerEarlyTick, requestStartJam, confirmStartJam, cancelStartJam, chatMessages, selectedAgents } = jam;
+
+  // Per-agent message filtering: each agent sees their own thoughts/reactions
+  // plus boss directives (both broadcast and targeted)
+  const agentMessages = useMemo(() => {
+    const result: Record<string, typeof chatMessages> = {};
+    for (const key of selectedAgents) {
+      result[key] = chatMessages.filter((msg) => {
+        if (msg.type === 'agent_thought' || msg.type === 'agent_reaction') {
+          return msg.agent === key;
+        }
+        if (msg.type === 'boss_directive') {
+          return !msg.targetAgent || msg.targetAgent === key;
+        }
+        if (msg.type === 'system') {
+          return true;
+        }
+        return false;
+      });
+    }
+    return result;
+  }, [chatMessages, selectedAgents]);
 
   const handleStrudelError = useCallback((err: Error | null) => {
     setError(err?.message || null);
@@ -61,26 +85,18 @@ export default function Home() {
   const handleWsMessage = useCallback((msg: { id: string; text: string; timestamp: Date; sender: string }) => {
     if (!jam.isJamming) return;
 
-    // Parse agent emoji + name from text format: "🥁 BEAT: ..." or "🎵 Round N: ..."
-    const agentPatterns: Record<string, { agent: string; name: string; emoji: string }> = {
-      '🥁': { agent: 'drums', name: 'BEAT', emoji: '🥁' },
-      '🎸': { agent: 'bass', name: 'GROOVE', emoji: '🎸' },
-      '🎹': { agent: 'melody', name: 'ARIA', emoji: '🎹' },
-      '🎛️': { agent: 'fx', name: 'GLITCH', emoji: '🎛️' },
-    };
-
     const text = msg.text;
     let matched = false;
-    for (const [emoji, info] of Object.entries(agentPatterns)) {
-      if (text.startsWith(emoji)) {
+    for (const [key, meta] of Object.entries(AGENT_META)) {
+      if (text.startsWith(meta.emoji)) {
         // Strip "🥁 BEAT: " prefix from text
         const colonIdx = text.indexOf(':');
         const cleanText = colonIdx > -1 ? text.slice(colonIdx + 1).trim() : text;
         addChatMessage({
           type: 'agent_reaction',
-          agent: info.agent,
-          agentName: info.name,
-          emoji: info.emoji,
+          agent: key,
+          agentName: meta.name,
+          emoji: meta.emoji,
           text: cleanText,
           round: jam.currentRound,
         });
@@ -118,8 +134,8 @@ export default function Home() {
     setIsPlaying(true);
   }, [evaluate]);
 
-  const handleSendDirective = useCallback((text: string) => {
-    addBossDirective(text);
+  const handleSendDirective = useCallback((text: string, targetAgent?: string) => {
+    addBossDirective(text, targetAgent);
     sendWsMessage(text);
     triggerEarlyTick();
   }, [addBossDirective, sendWsMessage, triggerEarlyTick]);
@@ -162,32 +178,46 @@ export default function Home() {
       {/* Top section: swaps based on jam mode */}
       <div className="flex flex-1 min-h-0">
         {jam.isJamming ? (
-          <>
-            {/* Jam mode: left sidebar with band info */}
-            <aside className="w-[380px] min-w-[320px] border-r border-gray-700 overflow-y-auto p-4 space-y-4 shrink-0 bg-gray-900">
-              <BandPanel agentStates={jam.agentStates} />
-              <JamControls
-                isJamming={jam.isJamming}
-                currentRound={jam.currentRound}
-                roundProgress={jam.roundProgress}
-                roundDuration={jam.roundDuration}
-                isClaudeConnected={claude.isConnected}
-                onStartJam={jam.startJam}
-                onStopJam={jam.stopJam}
-                onRoundDurationChange={jam.setRoundDuration}
-              />
-              <MusicalContextBar musicalContext={jam.musicalContext} />
-            </aside>
-
-            {/* Jam mode: chat area */}
-            <JamChat
-              messages={jam.chatMessages}
-              isJamming={jam.isJamming}
-              isConnected={claude.isConnected}
-              onSendDirective={handleSendDirective}
-              className="flex-1"
+          <div className="flex flex-col flex-1 min-h-0">
+            {/* Top bar: controls + musical context */}
+            <JamTopBar
+              currentRound={jam.currentRound}
+              roundProgress={jam.roundProgress}
+              roundDuration={jam.roundDuration}
+              musicalContext={jam.musicalContext}
+              onStopJam={jam.stopJam}
+              onRoundDurationChange={jam.setRoundDuration}
             />
-          </>
+
+            {/* Agent columns grid */}
+            <div
+              className="flex-1 min-h-0 grid gap-px bg-gray-700"
+              style={{ gridTemplateColumns: `repeat(${jam.selectedAgents.length}, 1fr)` }}
+            >
+              {jam.selectedAgents.map((key) => (
+                <AgentColumn
+                  key={key}
+                  agentKey={key}
+                  agentState={jam.agentStates[key]}
+                  messages={agentMessages[key] ?? []}
+                />
+              ))}
+            </div>
+
+            {/* Boss input bar */}
+            <BossInputBar
+              selectedAgents={jam.selectedAgents}
+              isConnected={claude.isConnected}
+              isJamming={jam.isJamming}
+              onSendDirective={handleSendDirective}
+            />
+
+            {/* Pattern display */}
+            <PatternDisplay
+              agentStates={jam.agentStates}
+              selectedAgents={jam.selectedAgents}
+            />
+          </div>
         ) : (
           <>
             {/* Normal mode: terminal on left */}
@@ -246,7 +276,7 @@ export default function Home() {
                 roundProgress={jam.roundProgress}
                 roundDuration={jam.roundDuration}
                 isClaudeConnected={claude.isConnected}
-                onStartJam={jam.startJam}
+                onStartJam={requestStartJam}
                 onStopJam={jam.stopJam}
                 onRoundDurationChange={jam.setRoundDuration}
                 className="w-full max-w-4xl mb-4"
@@ -257,7 +287,7 @@ export default function Home() {
       </div>
 
       {/* Bottom: StrudelPanel always rendered (prevents audio interruption on mode switch) */}
-      <div className="border-t border-gray-700 shrink-0">
+      <div className={`border-t border-gray-700 shrink-0 ${jam.isJamming ? 'h-0 overflow-hidden' : ''}`}>
         <StrudelPanel
           ref={ref}
           initialCode={`// Welcome to CC Sick Beats!
@@ -269,6 +299,15 @@ note("c3 e3 g3 c4").sound("piano")._pianoroll({ fold: 1 })`}
           onReady={onEditorReady}
         />
       </div>
+
+      {/* Agent selection modal */}
+      {jam.showAgentSelection && (
+        <AgentSelectionModal
+          onConfirm={confirmStartJam}
+          onCancel={cancelStartJam}
+          initialSelection={jam.selectedAgents}
+        />
+      )}
 
       {!audioReady && <AudioStartButton onAudioReady={handleAudioReady} />}
     </main>
