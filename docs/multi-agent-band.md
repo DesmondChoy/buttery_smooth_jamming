@@ -839,3 +839,243 @@ this.process = spawn('claude', [
 10. **Cost efficiency**: Session runs sustainably within Claude Max rate limits (Haiku subagents, creativity threshold)
 11. **Visual feedback**: UI shows band panel, jam chat, musical context, and combined pattern
 12. **All inference via Claude Code**: No direct API calls — orchestrator + subagents all via Claude Code
+
+---
+
+## Architecture Evolution: Orchestrator (v1) → Per-Agent Persistent Processes (v2)
+
+### The Problem: 22-29s Directive Latency
+
+The v1 architecture (Phases 1-6 above) used a **single orchestrator Claude process** that spawned Haiku subagents via the `Task` tool on every directive. While functionally correct, directive-to-music-change latency was **22-29 seconds** — far too slow for a "live" jam session.
+
+### Diagnosis: Timing Instrumentation
+
+Added `startTimer`/`logTiming`/`endTimer` to `app/api/claude-ws/route.ts` to measure each stage of the pipeline:
+
+```
+[TIMING] 0ms    BOSS_DIRECTIVE received
+[TIMING] +3200ms  Orchestrator inference starts (reading state, building context)
+[TIMING] +8500ms  Task tool invocation (spawning subagent)
+[TIMING] +14200ms Subagent response received
+[TIMING] +18800ms Orchestrator inference resumes (processing response)
+[TIMING] +22100ms MCP tool calls (update_agent_state, execute_pattern, broadcast)
+[TIMING] +24500ms Pattern reaches browser
+```
+
+**Root causes identified:**
+
+1. **Task tool overhead (~5-8s per invocation)**: Each `Task` call reconstructs the full conversation from a JSONL transcript file, loads ~20k tokens of system prompt + tool definitions, and makes a fresh API call. Even with `resume`, transcript parsing is expensive.
+
+2. **Sequential round-trips (3+ per directive)**: The orchestrator needed: inference → Task spawn → wait for subagent → inference again → MCP tool calls. At ~5-10s per round-trip, this was irreducible.
+
+3. **Tool definition bloat**: Each subagent loaded all MCP tool definitions (~20k tokens) despite never using them. This inflated both token count and cold-start time.
+
+4. **Single-threaded orchestrator**: The orchestrator had to serialize its own inference between subagent invocations — it couldn't overlap its own thinking with subagent execution.
+
+### Intermediate Fixes (v1.1 — Directive-Driven Architecture)
+
+Before the full v2 rewrite, we attempted to optimize v1:
+
+- **Removed round-based tick timer** — directives sent directly to Claude as `[BOSS_DIRECTIVE]` conversation turns, bypassing the MCP message queue and tick timer
+- **Targeted spawning** — `@BEAT` spawns only 1 subagent instead of all 4
+- **Upgraded subagents from Haiku to Sonnet** — better musical reasoning
+
+This reduced latency to ~15-20s for targeted directives but the fundamental `Task` tool overhead remained.
+
+### The Fix: Per-Agent Persistent Processes (v2)
+
+**Core insight:** Instead of spawning fresh subagents per directive, keep a **dedicated `claude --print --model haiku` process per agent** alive for the entire jam session. Route directives **deterministically** (no LLM inference needed for routing) directly to the target agent's stdin.
+
+```
+v1 (22-29s):
+  BossInputBar → claude-ws → Orchestrator (Sonnet) → Task tool → Subagent (Sonnet)
+    → Orchestrator → MCP tools → /api/ws → Browser
+
+v2 (5-7s):
+  BossInputBar → claude-ws → AgentProcessManager → Agent stdin (Haiku) → stdout
+    → Manager composes stack() → broadcast callback → Browser
+```
+
+**Key design decisions:**
+
+#### 1. Persistent stdin/stdout pipes via `stream-json`
+```typescript
+spawn('claude', [
+  '--print', '--verbose', '--model', 'haiku',
+  '--input-format', 'stream-json',   // Multi-turn over persistent pipe
+  '--output-format', 'stream-json',
+  '--system-prompt', agentPersona,    // From .claude/agents/*.md
+  '--no-session-persistence',
+  '--tools', '',                      // Disable all built-in tools
+  '--strict-mcp-config',             // Don't load project MCP servers
+])
+```
+
+Each agent process stays alive across all directives. The `stream-json` protocol allows sending new user messages to the same process's stdin, and Claude internally maintains the full conversation history. Agents remember previous patterns, previous directives, and build genuine conversational memory.
+
+**Important flag notes:**
+- `--verbose` is **required** when using `--output-format stream-json` with `--print`
+- `--tools '' --strict-mcp-config` eliminates ~20k tokens of tool definitions, resulting in `"tools":[],"mcp_servers":[]`
+
+#### 2. Deterministic routing (no LLM for routing)
+```typescript
+// AgentProcessManager.handleDirective()
+const targets = targetAgent && this.agents.has(targetAgent)
+  ? [targetAgent]                                              // @BEAT → drums only
+  : activeAgents.filter((k) => this.agents.has(k));           // broadcast → all
+```
+
+The `@mention` parsing happens in the MCP server's `parseMention()` function. By the time the directive reaches the manager, the `targetAgent` field is already set. No orchestrator inference needed.
+
+#### 3. Server-side pattern composition (no LLM for composition)
+```typescript
+private composePatterns(): string {
+  const patterns = this.activeAgents
+    .map((k) => this.agentPatterns[k])
+    .filter((p) => p && p !== 'silence');
+  if (patterns.length === 0) return 'silence';
+  if (patterns.length === 1) return patterns[0];
+  return `stack(${patterns.join(', ')})`;
+}
+```
+
+Pattern composition is deterministic TypeScript, not LLM inference. The v1 orchestrator had to reason about which patterns to include in the `stack()` call — now it's a simple filter.
+
+#### 4. Broadcast callback pattern (not WebSocket client)
+
+**Bug discovered during Playwright testing:** The initial v2 implementation used a `ws` WebSocket client inside `AgentProcessManager` to connect to `/api/ws` and broadcast state updates. The connection succeeded, but `send()` crashed with:
+
+```
+TypeError: bufferUtil.mask is not a function
+```
+
+**Root cause:** The `ws` library includes native C++ addons (`bufferUtil`, `utf-8-validate`) for performance. When Next.js webpack bundles server-side code, it can't properly handle these native addons. The WebSocket *connected* (the handshake is pure JS) but *sending* failed (the data masking uses the native addon).
+
+**Fix:** Replace the WebSocket client with a closure passed from the route handler:
+
+```typescript
+// In claude-ws/route.ts — the route handler has direct access to the client WebSocket
+const broadcastToClient = (message: { type: string; payload: unknown }) => {
+  if (client.readyState === 1) {  // WebSocket.OPEN
+    client.send(JSON.stringify(message));  // Uses the native ws from next-ws, not webpack-bundled
+  }
+};
+const manager = new AgentProcessManager({ workingDir, broadcast: broadcastToClient });
+```
+
+This is cleaner architecturally too — the manager doesn't need to know about WebSocket connections, URLs, or reconnection logic. It just calls the callback.
+
+#### 5. Message pipeline through the browser
+
+The broadcast callback sends messages directly on the client's WebSocket connection, but they arrive in `useClaudeTerminal` (which handles all claude-ws messages). A forwarding layer was needed:
+
+```
+AgentProcessManager.broadcast()
+  → claude-ws client.send()
+    → useClaudeTerminal.handleMessage()  [routes jam types via onJamBroadcast ref]
+      → page.tsx useEffect                [dispatches to correct handler]
+        → jam.handleAgentThought()    (updates agent column UI)
+        → jam.handleAgentStatus()     (updates thinking/idle indicators)
+        → handleExecute()             (sends composed pattern to Strudel)
+        → jam.handleJamStateUpdate()  (syncs full jam state)
+```
+
+### Current Implementation (v2)
+
+#### Files
+
+| File | Role |
+|------|------|
+| `lib/agent-process-manager.ts` | **New.** Core manager class. Spawns per-agent Claude processes, routes directives to stdin, parses JSON from stdout, composes patterns, broadcasts via callback. |
+| `app/api/claude-ws/route.ts` | **Modified.** Routes `jam_tick` (jam start), `boss_directive`, and `stop_jam` to AgentProcessManager. Orchestrator process still used for normal Strudel assistant mode. |
+| `lib/claude-process.ts` | **Modified.** System prompt stripped from ~150 lines to ~20 lines. Now a pure Strudel assistant — no jam orchestration logic, no `Task` tool, no band member definitions. |
+| `app/page.tsx` | **Modified.** Wires jam broadcast messages from `useClaudeTerminal` to `useJamSession` handlers via `jamBroadcastRef`. |
+| `hooks/useClaudeTerminal.ts` | **Modified.** Forwards `agent_thought`, `agent_status`, `execute`, `jam_state_update` messages via `onJamBroadcast` callback. Added `sendStopJam`. |
+| `hooks/useJamSession.ts` | **Modified.** Calls `sendStopJam()` on jam stop to kill agent processes server-side. |
+
+#### Agent Process Lifecycle
+
+```
+Jam Start (user clicks "Start Jam" → selects agents → confirms)
+  │
+  ├─ Browser sends: { type: 'jam_tick', activeAgents: ['drums','bass','melody','fx'] }
+  │
+  ├─ claude-ws creates AgentProcessManager with broadcast callback
+  │
+  ├─ Manager spawns 4 claude processes (parallel)
+  │   ├─ drums:  claude --print --model haiku --system-prompt <drummer.md>
+  │   ├─ bass:   claude --print --model haiku --system-prompt <bassist.md>
+  │   ├─ melody: claude --print --model haiku --system-prompt <melody.md>
+  │   └─ fx:     claude --print --model haiku --system-prompt <fx-artist.md>
+  │
+  ├─ Manager sends initial jam context to each agent's stdin
+  │   "JAM START — CONTEXT\nKey: C minor | Scale: ... | BPM: 120 | Energy: 5/10\n..."
+  │
+  ├─ Agents respond with JSON: { pattern, thoughts, reaction, comply_with_boss }
+  │
+  ├─ Manager composes: stack(drums_pattern, bass_pattern, melody_pattern, fx_pattern)
+  │
+  └─ Manager broadcasts: agent_thought × 4, agent_status × 4, execute, jam_state_update
+
+Boss Directive (user types in BossInputBar)
+  │
+  ├─ Browser sends: { type: 'boss_directive', text: '@BEAT double time', targetAgent: 'drums' }
+  │
+  ├─ Manager routes deterministically: targetAgent='drums' → only drums process
+  │
+  ├─ Manager sets drums status to 'thinking' → broadcasts agent_status
+  │
+  ├─ Manager sends directive context to drums stdin:
+  │   "DIRECTIVE from the boss.\nBOSS SAYS TO YOU: double time\n
+  │    Your current pattern: s('bd ~ sd ~')...\nOther agents: bass=..., melody=..., fx=..."
+  │
+  ├─ Drums responds with updated JSON (maintains context from previous turns)
+  │
+  ├─ Manager recomposes stack() with updated drums pattern, others unchanged
+  │
+  └─ Manager broadcasts: agent_thought, agent_status, execute, jam_state_update
+
+Stop Jam (user clicks "Stop")
+  │
+  ├─ Browser sends: { type: 'stop_jam' }
+  │
+  ├─ Manager sends SIGTERM to all agent processes
+  │
+  ├─ Processes exit cleanly (confirmed via process exit handlers)
+  │
+  └─ UI returns to normal mode (Strudel assistant)
+```
+
+#### Measured Latency (Playwright Testing)
+
+| Operation | v1 Latency | v2 Latency | Improvement |
+|-----------|-----------|-----------|-------------|
+| Jam start (4 agents) | ~30-45s | **6.7s** | ~5-7x |
+| Targeted directive (1 agent) | 22-29s | **5.3s** | ~4-5x |
+| Broadcast directive (4 agents) | 25-35s | **7.0s** | ~4-5x |
+
+Remaining latency is primarily Haiku inference time on multi-turn context. The architectural overhead (routing, composition, broadcasting) is negligible.
+
+#### What's Preserved from v1
+
+- **Agent personas** (`.claude/agents/*.md`) — identical prompts, just loaded as `--system-prompt` instead of Task tool definitions
+- **Agent response schema** — `{ pattern, thoughts, reaction, comply_with_boss }` unchanged
+- **Musical context** — same `MusicalContext` type, same default values
+- **Pattern composition** — same `stack()` logic, now in TypeScript instead of LLM reasoning
+- **WebSocket message types** — `agent_thought`, `agent_status`, `execute`, `jam_state_update` unchanged
+- **UI components** — JamTopBar, AgentColumn, BossInputBar, PatternDisplay all unchanged
+- **MCP server** — all tools kept intact (unused during jams, still available for normal assistant mode)
+- **Normal Strudel assistant** — orchestrator process still runs for non-jam interactions
+
+#### What's Different from v1
+
+| Aspect | v1 (Orchestrator) | v2 (Persistent Processes) |
+|--------|-------------------|--------------------------|
+| Agent invocation | `Task` tool per directive | Persistent stdin/stdout pipe |
+| Agent model | Sonnet (upgraded from Haiku) | Haiku (fast enough now) |
+| Routing | LLM inference (orchestrator decides) | Deterministic (code routes by targetAgent) |
+| Pattern composition | LLM reasoning | TypeScript `composePatterns()` |
+| State broadcasting | MCP tools → /api/ws → browser | Callback closure → browser directly |
+| Agent context | Fresh per invocation | Accumulates across jam session |
+| Orchestrator role during jams | Central coordinator | Bypassed entirely |
+| Tool definitions per agent | ~20k tokens (all MCP tools) | 0 tokens (`--tools ''`) |
