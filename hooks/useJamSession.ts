@@ -4,6 +4,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import type {
   AgentState,
   MusicalContext,
+  JamChatMessage,
   AgentThoughtPayload,
   AgentStatusPayload,
   MusicalContextPayload,
@@ -14,6 +15,7 @@ const DEFAULT_ROUND_DURATION = 16000; // 8 bars @ 120 BPM
 const MIN_ROUND_DURATION = 8000;
 const MAX_ROUND_DURATION = 30000;
 const PROGRESS_INTERVAL = 100; // ms between progress bar updates
+const MAX_CHAT_MESSAGES = 500;
 
 interface UseJamSessionOptions {
   sendJamTick: (round: number) => void;
@@ -29,11 +31,14 @@ export interface UseJamSessionReturn {
   musicalContext: MusicalContext;
   roundProgress: number;
   roundDuration: number;
+  chatMessages: JamChatMessage[];
 
   // Actions
   startJam: () => void;
   stopJam: () => void;
   setRoundDuration: (ms: number) => void;
+  addBossDirective: (text: string) => void;
+  clearChatMessages: () => void;
 
   // Callbacks (wire into useWebSocket in page.tsx)
   handleAgentThought: (payload: AgentThoughtPayload) => void;
@@ -67,6 +72,7 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
   const [musicalContext, setMusicalContext] = useState<MusicalContext>(DEFAULT_MUSICAL_CONTEXT);
   const [roundProgress, setRoundProgress] = useState(0);
   const [roundDuration, setRoundDurationState] = useState(initialDuration);
+  const [chatMessages, setChatMessages] = useState<JamChatMessage[]>([]);
 
   // Refs for interval management
   const tickIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -77,6 +83,25 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
   const roundRef = useRef(0);
   const roundDurationRef = useRef(roundDuration);
   const sendJamTickRef = useRef(sendJamTick);
+
+  const addChatMessage = useCallback((msg: Omit<JamChatMessage, 'id' | 'timestamp'>) => {
+    setChatMessages((prev) => {
+      const next = [...prev, { ...msg, id: crypto.randomUUID(), timestamp: new Date() }];
+      return next.length > MAX_CHAT_MESSAGES ? next.slice(-MAX_CHAT_MESSAGES) : next;
+    });
+  }, []);
+
+  const addBossDirective = useCallback((text: string) => {
+    addChatMessage({
+      type: 'boss_directive',
+      text,
+      round: roundRef.current,
+    });
+  }, [addChatMessage]);
+
+  const clearChatMessages = useCallback(() => {
+    setChatMessages([]);
+  }, []);
 
   // Keep refs in sync
   useEffect(() => {
@@ -167,7 +192,8 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
     clearAllIntervals();
     processingRef.current = false;
     setRoundProgress(0);
-  }, [clearAllIntervals]);
+    clearChatMessages();
+  }, [clearAllIntervals, clearChatMessages]);
 
   const setRoundDuration = useCallback((ms: number) => {
     const clamped = Math.max(MIN_ROUND_DURATION, Math.min(MAX_ROUND_DURATION, ms));
@@ -196,6 +222,31 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
     setAgentStates((prev) => {
       const agent = prev[payload.agent];
       if (!agent) return prev;
+
+      // Push thought as chat message
+      addChatMessage({
+        type: 'agent_thought',
+        agent: payload.agent,
+        agentName: agent.name,
+        emoji: agent.emoji,
+        text: payload.thought,
+        pattern: payload.pattern || undefined,
+        compliedWithBoss: payload.compliedWithBoss,
+        round: roundRef.current,
+      });
+
+      // Push reaction as separate message if non-empty and different from thought
+      if (payload.reaction && payload.reaction !== payload.thought) {
+        addChatMessage({
+          type: 'agent_reaction',
+          agent: payload.agent,
+          agentName: agent.name,
+          emoji: agent.emoji,
+          text: payload.reaction,
+          round: roundRef.current,
+        });
+      }
+
       return {
         ...prev,
         [payload.agent]: {
@@ -208,7 +259,7 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
         },
       };
     });
-  }, []);
+  }, [addChatMessage]);
 
   const handleAgentStatus = useCallback((payload: AgentStatusPayload) => {
     setAgentStates((prev) => {
@@ -254,10 +305,13 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
     musicalContext,
     roundProgress,
     roundDuration,
+    chatMessages,
 
     startJam,
     stopJam,
     setRoundDuration,
+    addBossDirective,
+    clearChatMessages,
 
     handleAgentThought,
     handleAgentStatus,

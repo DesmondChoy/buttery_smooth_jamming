@@ -84,3 +84,16 @@ export interface JamState {
   musicalContext: MusicalContext;
   agents: Record<string, AgentState>;
 }
+
+export interface JamChatMessage {
+  id: string;
+  type: 'agent_thought' | 'agent_reaction' | 'boss_directive' | 'system';
+  agent?: string;          // 'drums' | 'bass' | 'melody' | 'fx'
+  agentName?: string;      // 'BEAT' | 'GROOVE' | 'ARIA' | 'GLITCH'
+  emoji?: string;
+  text: string;
+  pattern?: string;        // optional code snippet
+  compliedWithBoss?: boolean;
+  round: number;
+  timestamp: Date;
+}
