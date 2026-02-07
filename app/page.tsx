@@ -35,6 +35,9 @@ export default function Home() {
     isClaudeConnected: claude.isConnected,
   });
 
+  // Destructure stable callbacks to satisfy React Compiler + exhaustive-deps
+  const { addChatMessage, addBossDirective, triggerEarlyTick } = jam;
+
   const handleStrudelError = useCallback((err: Error | null) => {
     setError(err?.message || null);
   }, []);
@@ -73,7 +76,7 @@ export default function Home() {
         // Strip "🥁 BEAT: " prefix from text
         const colonIdx = text.indexOf(':');
         const cleanText = colonIdx > -1 ? text.slice(colonIdx + 1).trim() : text;
-        jam.addChatMessage({
+        addChatMessage({
           type: 'agent_reaction',
           agent: info.agent,
           agentName: info.name,
@@ -87,13 +90,13 @@ export default function Home() {
     }
 
     if (!matched) {
-      jam.addChatMessage({
+      addChatMessage({
         type: 'system',
         text,
         round: jam.currentRound,
       });
     }
-  }, [jam.isJamming, jam.currentRound, jam.addChatMessage]);
+  }, [jam, addChatMessage]);
 
   // Keep the WebSocket connection for MCP server to send execute/stop commands
   const { error: wsError, sendMessage: sendWsMessage } = useWebSocket({
@@ -116,10 +119,10 @@ export default function Home() {
   }, [evaluate]);
 
   const handleSendDirective = useCallback((text: string) => {
-    jam.addBossDirective(text);
+    addBossDirective(text);
     sendWsMessage(text);
-    jam.triggerEarlyTick();
-  }, [jam.addBossDirective, sendWsMessage, jam.triggerEarlyTick]);
+    triggerEarlyTick();
+  }, [addBossDirective, sendWsMessage, triggerEarlyTick]);
 
   // Keyboard shortcuts
   useEffect(() => {
