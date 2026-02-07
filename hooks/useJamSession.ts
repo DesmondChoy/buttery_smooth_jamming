@@ -90,6 +90,7 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
   const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const processingRef = useRef(false);
   const processingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const pendingEarlyTickRef = useRef(false);
   const roundStartTimeRef = useRef(0);
   const roundRef = useRef(0);
   const roundDurationRef = useRef(roundDuration);
@@ -208,6 +209,7 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
     setIsJamming(false);
     clearAllIntervals();
     processingRef.current = false;
+    pendingEarlyTickRef.current = false;
     setRoundProgress(0);
     clearChatMessages();
     setAgentStates(prev => {
@@ -250,7 +252,12 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
   }, []);
 
   const triggerEarlyTick = useCallback(() => {
-    if (!isJamming || processingRef.current) return;
+    if (!isJamming) return;
+    if (processingRef.current) {
+      // Defer: fire a tick as soon as current round finishes
+      pendingEarlyTickRef.current = true;
+      return;
+    }
     sendTick();
     startTickInterval();     // Reset interval so next tick is full roundDuration away
     startProgressInterval(); // Reset progress bar
@@ -356,7 +363,15 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
     // Reset progress for next round
     roundStartTimeRef.current = Date.now();
     setRoundProgress(0);
-  }, []);
+
+    // If a boss directive arrived mid-round, fire a tick immediately
+    if (pendingEarlyTickRef.current) {
+      pendingEarlyTickRef.current = false;
+      sendTick();
+      startTickInterval();
+      startProgressInterval();
+    }
+  }, [sendTick, startTickInterval, startProgressInterval]);
 
   return {
     isJamming,

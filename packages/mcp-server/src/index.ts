@@ -427,16 +427,6 @@ server.tool(
   async ({ combinedPattern, round }) => {
     jamState.currentRound = round;
 
-    // Auto-set active agents with patterns to 'playing' (preserve error/timeout)
-    for (const [key, agent] of Object.entries(jamState.agents)) {
-      if (!jamState.activeAgents.includes(key)) {
-        agent.status = 'idle';
-        continue;
-      }
-      if (agent.status === 'error' || agent.status === 'timeout') continue;
-      agent.status = agent.pattern ? 'playing' : 'idle';
-    }
-
     await connect();
     const result = send("jam_state_update", {
       jamState: { ...jamState, agents: { ...jamState.agents } },
