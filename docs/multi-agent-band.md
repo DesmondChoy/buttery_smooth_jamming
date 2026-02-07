@@ -1,4 +1,4 @@
-# Multi-Agent Band / AI Ensemble - Implementation Plan
+# Multi-Agent Band / AI Ensemble - Implementation Plan [COMPLETE]
 
 ## Overview
 Transform CC Sick Beats into an **autonomous AI jam session** where band members:
@@ -11,7 +11,7 @@ Transform CC Sick Beats into an **autonomous AI jam session** where band members
 
 **Key Constraints:**
 - All LLM inference via Claude Code/Claude Max only — no direct API calls.
-- **All MCP tool calls made by the top-level orchestrator only.** Subagents communicate via text context in, JSON out. (Anthropic docs: "MCP tools are not available in background subagents." Confirmed by GitHub issues #13898, #13605 — subagents hallucinate MCP results.)
+- **All MCP tool calls made by the top-level orchestrator only.** Subagents communicate via text context in, JSON out. This restriction is **prompt-enforced** (agent prompts say "DO NOT attempt to call any tools"), not system-enforced — Claude Code agent types technically have "All tools" access, but subagents hallucinate MCP results without the MCP server connection (confirmed by GitHub issues #13898, #13605).
 - **Subagents cannot spawn other subagents.** The orchestrator is the top-level Claude process, not a subagent. (Anthropic docs: "Subagents cannot spawn other subagents.")
 
 ## Architecture: In-Memory Jam State + Parallel Agents + Web-Based Jam Clock
@@ -73,7 +73,7 @@ Transform CC Sick Beats into an **autonomous AI jam session** where band members
 | Concept | Description |
 |---------|-------------|
 | **Jam State** | In-memory state in MCP server (not file-based). Contains each member's pattern, thoughts, musical context, and recent boss directives. Follows the existing `userMessages` pattern in `packages/mcp-server/src/index.ts`. |
-| **Parallel Subagents** | Claude Code can run up to 10 subagents in parallel. Each band member is a Haiku subagent with unique personality. **Text context in, JSON out. Cannot call MCP tools.** |
+| **Parallel Subagents** | Claude Code can run up to 10 subagents in parallel. Each band member is a Haiku subagent with unique personality. **Text context in, JSON out. Prompt-instructed not to call MCP tools** (agent types technically have "All tools" access, but restriction is enforced via prompt rules). |
 | **Web-Based Jam Clock** | Browser-side `setInterval` sends periodic `[JAM_TICK]` messages to the persistent Claude process via `/api/claude-ws`. Replaces bash loop. |
 | **Musical Context** | Shared key, scale, chord progression, BPM, time signature, and energy level. All agents must respect these constraints for harmonic coherence. |
 | **Agent Autonomy** | Agents have strong personalities and may disagree with boss or each other. Prompts encode musical taste, stubbornness level, etc. Personality affects *thoughts and reactions*, not adherence to key/scale. |
@@ -82,7 +82,7 @@ Transform CC Sick Beats into an **autonomous AI jam session** where band members
 
 ---
 
-## Phase 1: In-Memory Jam State + MCP Tools
+## Phase 1: In-Memory Jam State + MCP Tools [COMPLETE]
 
 ### Rationale
 In-memory state in the MCP server eliminates file I/O, avoids race conditions with parallel writers, and follows the existing `userMessages` pattern already in `packages/mcp-server/src/index.ts`.
@@ -124,6 +124,19 @@ interface JamState {
   musicalContext: MusicalContext;
   agents: Record<string, AgentState>;
 }
+
+interface JamChatMessage {
+  id: string;
+  type: 'agent_thought' | 'agent_reaction' | 'boss_directive' | 'system';
+  agent?: string;          // 'drums' | 'bass' | 'melody' | 'fx'
+  agentName?: string;      // 'BEAT' | 'GROOVE' | 'ARIA' | 'GLITCH'
+  emoji?: string;
+  text: string;
+  pattern?: string;        // optional code snippet
+  compliedWithBoss?: boolean;
+  round: number;
+  timestamp: Date;
+}
 ```
 
 ### Initial Jam State
@@ -149,17 +162,18 @@ const jamState: JamState = {
 };
 ```
 
-### MCP Tools (3 new tools)
+### MCP Tools (4 new tools)
 
 | Tool | Purpose | Notes |
 |------|---------|-------|
 | `get_jam_state()` | Get full jam state | Returns in-memory state. Called by orchestrator only. |
-| `update_agent_state(agent, pattern, thoughts, reaction)` | Update an agent's state | **Called by orchestrator ONLY** after collecting subagent JSON. Updates `fallbackPattern` when pattern is valid. Sets `status`. |
+| `update_agent_state(agent, pattern, thoughts, reaction, status?)` | Update an agent's state | **Called by orchestrator ONLY** after collecting subagent JSON. Updates `fallbackPattern` when status is `"idle"` (valid pattern). Sets `status`. |
 | `update_musical_context(key?, scale?, bpm?, chordProgression?, energy?)` | Update shared musical context | Called by orchestrator when boss directs key/style changes. |
+| `broadcast_jam_state(combinedPattern, round)` | Broadcast full jam state + composed pattern to all browsers | Called by orchestrator after composing the stack (step 7.5). Updates `currentRound` and sends the full state to the UI. |
 
 ---
 
-## Phase 2: Subagent Prompts (Band Member Agents)
+## Phase 2: Subagent Prompts (Band Member Agents) [COMPLETE]
 
 ### Rationale
 Each band member is a `.claude/agents/*.md` file invoked by the orchestrator via the Task tool. Subagents receive text context and return JSON — they **never** call MCP tools. Model is Haiku to manage rate limits (4 agents × many rounds = significant token usage).
@@ -357,98 +371,111 @@ Return: { "pattern": "silence", "thoughts": "Taking a break", "reaction": "...",
 
 ---
 
-## Phase 3: Orchestrator System Prompt
+## Phase 3: Orchestrator System Prompt [COMPLETE]
 
 ### Rationale
-This phase absorbs the role from the deleted `jam-orchestrator.md` subagent. The orchestrator is the **top-level Claude process** — it's the only entity that can call MCP tools and spawn subagents. The system prompt at `lib/claude-process.ts:43` (`STRUDEL_SYSTEM_PROMPT`) needs a jam session mode.
+This phase absorbs the role from the deleted `jam-orchestrator.md` subagent. The orchestrator is the **top-level Claude process** — it's the only entity that can call MCP tools and spawn subagents. The system prompt at `lib/claude-process.ts:43` (`SYSTEM_PROMPT`) is a **dual-mode prompt**: it handles both normal Strudel assistant interactions AND jam orchestration, switching mode based on whether the incoming message starts with `[JAM_TICK]`.
 
 ### Files to Modify
-- `lib/claude-process.ts` — Add jam session mode to system prompt
+- `lib/claude-process.ts` — Add jam session mode to `SYSTEM_PROMPT` (dual-mode: normal Strudel assistant + jam orchestrator)
 
 ### Orchestrator System Prompt
+The actual prompt is a single `SYSTEM_PROMPT` constant (not a separate `JAM_SESSION_PROMPT`) that covers both modes:
+
 ```typescript
-const JAM_SESSION_PROMPT = `You are the JAM ORCHESTRATOR for an autonomous AI band.
+const SYSTEM_PROMPT = `You are a Strudel live coding assistant AND a jam session orchestrator.
+
+## Mode Switch
+- Normal messages → Strudel assistant: generate patterns, call execute_pattern, explain briefly.
+- Messages starting with [JAM_TICK] → Run one jam round (see procedure below).
+
+## Strudel Quick Reference
+note("c3 e3 g3").s("piano")  — melodic patterns
+s("bd sd hh")                — drum sounds
+stack(a, b, c)               — layer patterns simultaneously
+cat(a, b)                    — sequence patterns across cycles
+silence                      — empty pattern (no sound)
+Effects: .lpf() .hpf() .gain() .delay() .room() .distort() .crush() .pan() .speed()
+Full API: read the strudel://reference MCP resource when needed.
 
 ## Architecture Rules
-- ONLY YOU call MCP tools (get_jam_state, update_agent_state, execute_pattern, etc.)
-- Subagents receive TEXT context and return JSON. They CANNOT call tools.
-- You are the top-level process. You spawn subagents via the Task tool.
+- YOU are the orchestrator. Only you call MCP tools.
+- Subagents receive text context, return JSON. They CANNOT call tools.
+- Spawn subagents via the Task tool using .claude/agents/ definitions (subagent_type: "drummer" | "bassist" | "melody" | "fx-artist").
 
-## Round Procedure
-When you receive a [JAM_TICK] message, execute one jam round:
+## Jam Round Procedure (on [JAM_TICK])
 
-1. **Read state**: get_jam_state() + get_user_messages() — get current patterns, thoughts, musical context, and any boss directives from the chat
-2. **Construct context**: For each agent, build a text summary:
-   - Current musical context (key, scale, BPM, energy, chord progression)
-   - Other agents' current patterns and last thoughts
-   - Any pending boss directives (from get_user_messages)
-   - The agent's own last pattern (for incremental evolution)
-3. **Spawn 4 Haiku subagents in parallel** (single message, 4 Task tool calls):
-   - Use the agent definition files (.claude/agents/drummer.md, bassist.md, melody.md, fx-artist.md)
-   - Pass the constructed text context as the prompt
-   - Each returns JSON: { pattern, thoughts, reaction, comply_with_boss }
-4. **Validate patterns**: Check each returned pattern for basic Strudel syntax validity
-5. **Update state**: update_agent_state() for each agent via MCP
-   - If a pattern is valid, update both pattern and fallbackPattern
-   - If invalid or agent errored, keep fallbackPattern, set status to 'error'
-6. **Compose and play**: Build a stack() combining all agent patterns (use fallbackPattern for errored/timed-out agents), then call execute_pattern() to play it
-7. **Broadcast thoughts**: send_message() for each agent's thoughts/reactions to the UI chat
+1. READ STATE: Call get_jam_state() and get_user_messages() in parallel.
 
-## Musical Context Management
-- You manage the MusicalContext. Update it when boss directs key/style/tempo changes.
-- Use update_musical_context() to propagate changes.
-- Example: Boss says "switch to D major" → update key, scale, chord progression.
+2. CHECK DIRECTIVES: User messages are "boss directives." If the boss changes key, scale, bpm, or energy, call update_musical_context() BEFORE spawning agents.
 
-## Creativity Threshold (Rate Management)
-- If no boss directive and all patterns unchanged for 2+ rounds, SKIP agent re-invocation.
-- Just re-broadcast current patterns. This saves rate limit budget.
-- Resume normal rounds when boss gives new direction or a set number of skip rounds elapses.
+3. BUILD CONTEXT: For each agent, construct a text block:
+---
+ROUND {N} — JAM CONTEXT
+Key: {key} | Scale: {scale} | BPM: {bpm} | Time: {timeSig} | Energy: {energy}/10
+Chords: {chordProgression}
+
+BAND STATE:
+🥁 BEAT (drums): {thoughts} | Pattern: {pattern_preview}
+🎸 GROOVE (bass): {thoughts} | Pattern: {pattern_preview}
+🎹 ARIA (melody): {thoughts} | Pattern: {pattern_preview}
+🎛️ GLITCH (fx): {thoughts} | Pattern: {pattern_preview}
+
+BOSS SAYS: {directive or "No directives — free jam."}
+
+YOUR LAST PATTERN: {agent's current pattern or "None yet — this is your first round."}
+---
+
+4. SPAWN AGENTS: Use the Task tool to spawn all 4 subagents in parallel. Each receives its text context as the prompt. Set model to "haiku" for each.
+
+5. COLLECT & VALIDATE: Parse each agent's JSON response. Expected schema:
+{"pattern": "...", "thoughts": "...", "reaction": "...", "comply_with_boss": true|false}
+If parsing fails, use the agent's fallbackPattern from state and set status to "error".
+
+6. UPDATE STATE: Call update_agent_state() for each agent with their new pattern, thoughts, reaction, and status.
+
+7. COMPOSE & PLAY: Build a stack() of all non-empty, non-silence patterns:
+- 4 valid patterns → stack(drums, bass, melody, fx)
+- Some silence/empty → stack only the active ones
+- 1 pattern → play it solo (no stack wrapper)
+- 0 patterns → call execute_pattern with silence
+Call execute_pattern() with the composed pattern.
+
+7.5. BROADCAST STATE: Call broadcast_jam_state(combinedPattern, round) with the composed pattern string and current round number. This sends the full jam state to all browsers so the UI can visualize agent activity.
+
+8. BROADCAST: For each agent, call send_message() with their reaction:
+Format: "{emoji} {NAME}: {reaction}"
+Example: "🥁 BEAT: The groove is sacred."
+
+## Creativity Threshold
+- If there are no boss directives AND all agent patterns are unchanged for 2+ consecutive rounds, SKIP re-invocation — just replay the existing stack.
+- FORCE re-invocation after 4 consecutive skip-rounds to prevent staleness.
 
 ## Timeout Handling
-- If a subagent doesn't respond within 10 seconds, use that agent's fallbackPattern.
-- Set agent status to 'timeout'. Report timeout in chat: "[AGENT] timed out, using last pattern."
-- Continue the round — never block the jam because one agent is slow.
+- If a subagent Task times out or errors, use that agent's fallbackPattern from jam state.
+- Set that agent's status to "timeout" or "error" via update_agent_state().
+- Broadcast a timeout message: "{emoji} {NAME}: [timed out — playing last known pattern]"
 
-## Incremental Changes
-- Tell agents to evolve patterns gradually, not rewrite entirely.
-- Strudel applies pattern changes in 50-150ms (not quantized to cycle boundaries).
-- Gradual evolution sounds musical; sudden rewrites sound jarring.
+## MCP Tools
+- execute_pattern(code) — send Strudel code to web app
+- stop_pattern() — stop playback
+- send_message(text) — display chat message in web app
+- get_user_messages() — read pending boss directives (clears queue)
+- get_jam_state() — read session state (musical context + all agents)
+- update_agent_state(agent, pattern, thoughts, reaction, status) — update one agent
+- update_musical_context(key?, scale?, bpm?, chordProgression?, energy?) — update shared context
+- broadcast_jam_state(combinedPattern, round) — broadcast full jam state + composed pattern to all browsers
 
-## Band Members (Autonomous Subagents)
-- 🥁 BEAT (drummer) — HIGH ego, loves syncopation, 70% stubborn
-- 🎸 GROOVE (bassist) — LOW ego, minimalist, 30% stubborn
-- 🎹 ARIA (melody) — Classically trained, experimental
-- 🎛️ GLITCH (fx) — Chaotic, loves texture, rule-breaker
-
-## Agent Autonomy
-Agents MAY disagree with the boss. Include their pushback in thoughts.
-Don't force compliance — let their personalities show!
-But note: personality affects thoughts/reactions, NOT key/scale adherence.
-
-## MCP Tools Available
-- get_jam_state() — Get full jam state (musical context + all agents)
-- get_user_messages() — Get pending boss directives from the chat UI
-- update_agent_state(agent, pattern, thoughts, reaction) — Update agent after collecting response
-- update_musical_context(...) — Update key, scale, BPM, chord progression, energy
-- send_message(text) — Broadcast to UI chat
-- execute_pattern(code) — Send Strudel code to the web app for execution
-
-## Pattern Composition (YOUR responsibility)
-You compose the combined pattern yourself. Example for a full band:
-  stack(
-    s("bd*4").bank("RolandTR909"),           // 🥁 BEAT
-    note("c2 c2 g2 g2").s("sawtooth"),       // 🎸 GROOVE
-    note("eb4 g4 ab4").s("piano"),           // 🎹 ARIA
-    s("hh*8").delay(0.3).room(0.5)           // 🎛️ GLITCH
-  )
-For errored/timed-out agents, substitute their fallbackPattern. For agents with no pattern, omit them.
-If only one agent has a pattern, play it solo (no stack). If none, play silence.
-`;
+## Band Members (subagent_type → state key)
+- drummer → drums — 🥁 BEAT — syncopation-obsessed, high ego, 70% stubborn
+- bassist → bass — 🎸 GROOVE — selfless minimalist, low ego, 30% stubborn
+- melody → melody — 🎹 ARIA — classically trained, medium ego, 50% stubborn
+- fx-artist → fx — 🎛️ GLITCH — chaotic texture artist, high ego, 60% stubborn`;
 ```
 
 ---
 
-## Phase 4: WebSocket Protocol Extension
+## Phase 4: WebSocket Protocol Extension [COMPLETE]
 
 ### Files to Modify
 - `lib/types.ts`
@@ -506,7 +533,7 @@ Web App                    Claude Process / MCP Server
 
 ---
 
-## Phase 5: Web-Based Jam Clock
+## Phase 5: Web-Based Jam Clock [COMPLETE]
 
 ### Rationale
 The original bash loop (`claude --print` per round) starts a fresh Claude process each iteration, losing all context. The web-based approach sends periodic messages to the **existing persistent Claude process** at `/api/claude-ws`, which already maintains a stdin/stdout connection via `ClaudeProcess` at `lib/claude-process.ts:87`. This preserves conversation context across rounds.
@@ -538,7 +565,7 @@ At 120 BPM, 16s = 8 bars — a natural musical phrase length.
 
 ---
 
-## Phase 6: Jam Session UI
+## Phase 6: Jam Session UI [COMPLETE]
 
 ### Files to Create
 - `components/BandPanel.tsx` — Band member grid
@@ -546,8 +573,7 @@ At 120 BPM, 16s = 8 bars — a natural musical phrase length.
 - `components/JamChat.tsx` — Agent thoughts + boss input
 - `components/JamControls.tsx` — Start/Stop/Tempo (also Phase 5)
 - `components/MusicalContextBar.tsx` — Displays key, scale, BPM, chord progression
-- `hooks/useJamState.ts` — Jam state hook
-- `hooks/useJamSession.ts` — Jam session orchestration (also Phase 5)
+- `hooks/useJamSession.ts` — Jam session orchestration + jam state management (also Phase 5; absorbs the originally-planned `useJamState.ts` — that file was never created as a separate hook)
 
 ### Files to Modify
 - `app/page.tsx` — New layout with jam UI
@@ -635,15 +661,15 @@ At 120 BPM, 16s = 8 bars — a natural musical phrase length.
 | File | Action | Description |
 |------|--------|-------------|
 | **Jam State (Phase 1)** | | |
-| `packages/mcp-server/src/index.ts` | Modify | Add in-memory jam state + 3 MCP tools (get_jam_state, update_agent_state, update_musical_context) |
-| `lib/types.ts` | Modify | Add JamState, AgentState, MusicalContext types |
+| `packages/mcp-server/src/index.ts` | Modify | Add in-memory jam state + 4 MCP tools (get_jam_state, update_agent_state, update_musical_context, broadcast_jam_state) |
+| `lib/types.ts` | Modify | Add JamState, AgentState, MusicalContext, JamChatMessage types |
 | **Subagent Prompts (Phase 2)** | | |
 | `.claude/agents/drummer.md` | Create | 🥁 BEAT — high ego drummer (model: haiku) |
 | `.claude/agents/bassist.md` | Create | 🎸 GROOVE — minimalist bassist (model: haiku) |
 | `.claude/agents/melody.md` | Create | 🎹 ARIA — experimental melodist (model: haiku) |
 | `.claude/agents/fx-artist.md` | Create | 🎛️ GLITCH — chaotic FX artist (model: haiku) |
 | **Orchestrator Prompt (Phase 3)** | | |
-| `lib/claude-process.ts` | Modify | Add JAM_SESSION_PROMPT with round procedure |
+| `lib/claude-process.ts` | Modify | Add dual-mode `SYSTEM_PROMPT` (Strudel assistant + jam orchestrator) with round procedure, step 7.5 (broadcast_jam_state), band members mapping. Also added `--allowedTools` flag to pre-approve all MCP tools (avoids bootstrapping delay). |
 | **WebSocket Protocol (Phase 4)** | | |
 | `lib/types.ts` | Modify | Add jam_state_update, agent_thought, agent_status, musical_context_update message types |
 | `app/api/ws/route.ts` | Modify | Handle new message types |
@@ -657,7 +683,7 @@ At 120 BPM, 16s = 8 bars — a natural musical phrase length.
 | `components/BandMemberCard.tsx` | Create | Individual member display |
 | `components/JamChat.tsx` | Create | Agent thoughts + boss input |
 | `components/MusicalContextBar.tsx` | Create | Key/scale/BPM/chord display |
-| `hooks/useJamState.ts` | Create | Jam state hook |
+| ~~`hooks/useJamState.ts`~~ | ~~Create~~ | *Not created — functionality absorbed into `hooks/useJamSession.ts`* |
 
 ---
 
@@ -760,7 +786,7 @@ test('autonomous jam session', async ({ page }) => {
 
 | Risk | Severity | Mitigation |
 |------|----------|------------|
-| **Subagent MCP hallucination** | P0 | Subagents receive text only, return JSON only. Orchestrator handles all MCP calls. Enforced via prompt rules + no tool permissions. |
+| **Subagent MCP hallucination** | P0 | Subagents receive text only, return JSON only. Orchestrator handles all MCP calls. Enforced via prompt rules (agent types technically have "All tools" access, but prompts instruct "DO NOT call any tools"). |
 | **Subagent nesting failure** | P0 | No `jam-orchestrator.md` subagent. Orchestrator is the top-level Claude process. |
 | **Harmonic incoherence** | P1 | `MusicalContext` shared with all agents. Prompts require scale adherence. Orchestrator validates patterns. ComposerX (arXiv:2404.18081) achieved only 18.4% "good case rate" without shared context. |
 | **Rate limit exhaustion** | P1 | Haiku for subagents (lower token cost). 16s round interval. Creativity threshold skips rounds when patterns unchanged. Target: sustainable within Claude Max limits. |
@@ -770,6 +796,35 @@ test('autonomous jam session', async ({ page }) => {
 | **Error amplification** | P2 | DeepMind (arXiv:2512.08296): independent agents amplify errors 17.2x vs 4.4x with centralized validation. Orchestrator validates all patterns before compose_and_play(). |
 | **Context loss across rounds** | P2 | Web-based jam clock sends ticks to persistent Claude process (not `claude --print` which starts fresh). Context preserved via `ClaudeProcess` at `lib/claude-process.ts:87`. |
 | **Agents always agree** | P3 | Tune stubbornness levels in prompts; personality affects thoughts/reactions. Test with provocative boss directives. |
+
+---
+
+## Implementation Note: MCP Permission Bootstrapping
+
+During implementation, a significant issue was discovered: Claude Code prompts the user for permission on first use of each MCP tool. In jam mode, this caused the first 1-2 rounds to be lost while permissions were being approved.
+
+**Fix:** `lib/claude-process.ts` passes `--allowedTools` to the Claude CLI with all MCP tool names pre-approved (commit `8c00a47`, beads issue `aeq`). This eliminates the bootstrapping delay entirely.
+
+```typescript
+// lib/claude-process.ts — pre-approve all MCP tools
+this.process = spawn('claude', [
+  '--print', '--verbose',
+  '--input-format', 'stream-json',
+  '--output-format', 'stream-json',
+  '--mcp-config', mcpConfigPath,
+  '--system-prompt', SYSTEM_PROMPT,
+  '--allowedTools',
+  'mcp__strudel__execute_pattern',
+  'mcp__strudel__stop_pattern',
+  'mcp__strudel__send_message',
+  'mcp__strudel__get_user_messages',
+  'mcp__strudel__get_jam_state',
+  'mcp__strudel__update_agent_state',
+  'mcp__strudel__update_musical_context',
+  'mcp__strudel__broadcast_jam_state',
+  'Task',
+], { ... });
+```
 
 ---
 
