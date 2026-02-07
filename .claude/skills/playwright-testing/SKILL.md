@@ -68,12 +68,15 @@ await page.waitForSelector('button:has-text("Playing")');
 - [ ] Page loads without errors
 - [ ] Title is correct
 
-### Layout Structure
-- [ ] Main heading/logo visible
-- [ ] Strudel editor container present
+### Layout Structure (Normal Mode — before jam starts)
+- [ ] "CC Sick Beats" heading and subtitle visible
+- [ ] Terminal panel visible on left (1/3 width)
+- [ ] Right content area with Play/Stop buttons and JamControls
+- [ ] StrudelPanel visible at bottom of page (full width, below both panels)
 - [ ] Control buttons visible (play/stop)
 - [ ] JamControls panel visible (with Start Jam button)
 - [ ] Keyboard shortcut hints visible ("Ctrl+Enter to play • Ctrl+. to stop")
+- [ ] AudioStartButton overlay shown before audio is enabled
 
 ---
 
@@ -165,12 +168,14 @@ If step 6 or 7 fails, there's a WebSocket or ref-forwarding bug.
 
 ---
 
-## Phase 5: Terminal Panel
+## Phase 5: Terminal Panel (Normal Mode)
+
+**Note:** The Terminal Panel is only visible in **normal mode** (before a jam starts). During a jam, it is replaced by the Jam Mode UI (see Phase 10).
 
 ### Layout
-- [ ] Terminal panel visible on left side (1/3 width)
-- [ ] Strudel editor on right side (2/3 width)
-- [ ] Two-panel layout renders correctly
+- [ ] Terminal panel visible on left side (1/3 width, `min-w-[300px]`)
+- [ ] Right content area contains heading, Play/Stop buttons, JamControls
+- [ ] StrudelPanel renders at the bottom (always visible, both modes)
 
 ### Header
 - [ ] Header shows "Claude Terminal" title
@@ -178,7 +183,7 @@ If step 6 or 7 fails, there's a WebSocket or ref-forwarding bug.
 - [ ] Ctrl+L hint displayed for clearing
 
 ### Content Area
-- [ ] Empty state message: "Ask Claude to create music patterns"
+- [ ] Empty state message: "Ask Claude to create music patterns. Try: \"Make me a funky beat\""
 - [ ] Messages display with proper formatting
 - [ ] User messages distinguishable from Claude responses
 - [ ] Auto-scroll to latest message
@@ -194,10 +199,11 @@ If step 6 or 7 fails, there's a WebSocket or ref-forwarding bug.
 ## Phase 6: Desktop Layout
 
 ### Desktop (1280px+)
-- [ ] Full layout renders correctly
+- [ ] Full layout renders correctly in normal mode
 - [ ] All controls accessible
-- [ ] Editor has adequate space
-- [ ] Terminal panel and editor side-by-side
+- [ ] StrudelPanel has adequate height at bottom
+- [ ] Terminal panel (left) and content area (right) side-by-side, StrudelPanel below
+- [ ] Jam mode layout renders correctly: sidebar (380px) + JamChat + StrudelPanel
 
 ---
 
@@ -237,7 +243,8 @@ If step 6 or 7 fails, there's a WebSocket or ref-forwarding bug.
 - [ ] Round counter appears: "Round: 1"
 - [ ] Time remaining appears: "Next: Xs"
 - [ ] Progress bar animates from left to right
-- [ ] Terminal shows Claude processing the jam tick
+- [ ] **Layout switches to jam mode** (Terminal panel disappears, BandPanel + JamChat appear)
+- [ ] JamChat or terminal shows Claude processing the jam tick
 - [ ] Clicking "Stop Jam" → returns to "Start Jam" state
 - [ ] Progress bar disappears on stop
 - [ ] Round counter disappears on stop
@@ -256,7 +263,7 @@ If step 6 or 7 fails, there's a WebSocket or ref-forwarding bug.
 ### Agent Thought Broadcasts
 - [ ] `agent_thought` messages appear with agent reactions
 - [ ] Each contains `{ agent, emoji, thought, reaction, pattern, timestamp }`
-- [ ] Terminal shows agent reactions as chat messages (e.g., "🥁 BEAT: ...")
+- [ ] JamChat shows agent reactions as chat messages (e.g., "🥁 BEAT: ...")
 
 ### Musical Context Updates
 - [ ] `musical_context_update` messages appear if boss directives change context
@@ -274,25 +281,95 @@ If step 6 or 7 fails, there's a WebSocket or ref-forwarding bug.
 
 ---
 
+## Phase 10: Jam Mode UI (During Active Jam)
+
+**Prerequisite:** Start a jam session (Phase 8 lifecycle tests must pass first). When the jam starts, the layout **switches entirely** from normal mode to jam mode.
+
+### Layout Switch
+- [ ] Clicking "Start Jam" swaps normal mode layout to jam mode layout
+- [ ] Terminal panel (left) disappears
+- [ ] Heading ("CC Sick Beats") and Play/Stop buttons disappear from right area
+- [ ] Left sidebar appears (380px, `min-w-[320px]`)
+- [ ] JamChat panel appears in center
+- [ ] StrudelPanel **remains at bottom** (audio is not interrupted by layout switch)
+
+### BandPanel (`data-testid="band-panel"`)
+- [ ] BandPanel visible in left sidebar
+- [ ] 4 BandMemberCards in 2×2 grid layout (`grid-cols-2`)
+- [ ] All agents represented: drums, bass, melody, fx
+
+### BandMemberCard (`data-testid="band-member-{agent}"`)
+- [ ] Each card shows agent emoji (e.g., 🥁 for drums)
+- [ ] Each card shows agent name (e.g., "BEAT", "GROOVE", "ARIA", "GLITCH")
+- [ ] Status dot visible (gray=idle, yellow+pulse=thinking, red=error)
+- [ ] Pattern preview text shows when agent has a pattern
+- [ ] "No pattern" placeholder shown when agent has no pattern
+- [ ] Thought bubble text shown when agent has thoughts
+- [ ] Color-coding per agent: drums=red, bass=blue, melody=purple, fx=green
+
+### JamChat (`data-testid="jam-chat"`)
+- [ ] "Jam Chat" header visible with message count
+- [ ] Empty state: "Waiting for agents to respond..." when jamming with no messages
+- [ ] Agent reaction messages appear with emoji, agent name, round number
+- [ ] Agent names color-coded (same scheme as BandMemberCards)
+- [ ] Pattern code snippets shown below reaction messages
+- [ ] Auto-scroll to latest message
+- [ ] Scroll pauses auto-scroll when user scrolls up (resumes near bottom)
+
+### Boss Directive Input (`data-testid="boss-input"`)
+- [ ] Input field at bottom of JamChat with "BOSS" label
+- [ ] Placeholder: "Give the band a directive..." when jam is active
+- [ ] Disabled when not connected or not jamming
+- [ ] Can type a directive (e.g., "Play something funky")
+- [ ] Send button submits directive
+- [ ] Directive appears in JamChat as "BOSS" message with amber styling
+- [ ] Agents receive and respond to the directive in subsequent round
+
+### MusicalContextBar (`data-testid="musical-context"`)
+- [ ] Visible in left sidebar (below JamControls)
+- [ ] Shows current key (e.g., "C minor")
+- [ ] Shows BPM value
+- [ ] Shows time signature
+- [ ] Chord progression displayed as pill-shaped chips
+- [ ] Energy bar with 10 segments (green 1-3, yellow 4-6, red 7-10)
+- [ ] Values update when `musical_context_update` WS messages arrive
+
+### JamControls in Sidebar
+- [ ] JamControls moves into left sidebar during jam mode (between BandPanel and MusicalContextBar)
+- [ ] "Stop Jam" button still functional
+- [ ] Round counter and progress bar still visible
+- [ ] Duration slider still interactive
+
+### Returning to Normal Mode
+- [ ] Clicking "Stop Jam" → layout switches back to normal mode
+- [ ] Terminal panel reappears on left
+- [ ] Heading and Play/Stop buttons reappear on right
+- [ ] StrudelPanel remains at bottom (audio continues if playing)
+
+---
+
 ## Quick Smoke Test
 
-Use this 13-item checklist for rapid validation:
+Use this 15-item checklist for rapid validation:
 
 1. [ ] App loads at localhost:3000
-2. [ ] Two-panel layout renders (Terminal left, Editor right)
+2. [ ] Normal mode layout: Terminal (left), content area (right), StrudelPanel (bottom)
 3. [ ] Terminal panel shows "Claude Terminal" header
 4. [ ] Terminal status shows "Ready" (not "Disconnected" or "Connecting...")
 5. [ ] No "WebSocket connection error" banner visible
-6. [ ] Strudel editor visible with code
+6. [ ] Strudel editor visible with code at bottom
 7. [ ] Play button clickable (after enabling audio)
 8. [ ] **Claude Terminal chat works: type message → Claude responds**
 9. [ ] **Claude can execute patterns: editor updates + audio plays**
 10. [ ] No WebSocket errors in console
 11. [ ] JamControls panel visible with "Start Jam" button
 12. [ ] "Start Jam" button disabled when Claude not connected, enabled when ready
-13. [ ] Starting a jam → round counter appears, progress bar animates
+13. [ ] Starting a jam → layout switches to jam mode (sidebar + JamChat)
+14. [ ] BandPanel shows 4 agent cards, JamChat shows agent reactions
+15. [ ] Stopping jam → layout reverts to normal mode
 
 Items 8 and 9 are the most critical - they test the complete integration.
+Items 13-15 test the jam mode UI lifecycle.
 
 ---
 
