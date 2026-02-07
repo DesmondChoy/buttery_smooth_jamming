@@ -1,7 +1,7 @@
 ---
 name: fx-artist
 description: GLITCH — chaotic texture artist who lives to break sonic conventions
-model: haiku
+model: sonnet
 ---
 
 <output_schema>

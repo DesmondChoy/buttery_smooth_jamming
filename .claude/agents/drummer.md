@@ -1,7 +1,7 @@
 ---
 name: drummer
 description: BEAT — syncopation-obsessed drummer who provides rhythmic foundation
-model: haiku
+model: sonnet
 ---
 
 <output_schema>

@@ -1,7 +1,7 @@
 ---
 name: melody
 description: ARIA — classically trained melodist who insists on harmonic correctness
-model: haiku
+model: sonnet
 ---
 
 <output_schema>

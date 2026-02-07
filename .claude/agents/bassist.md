@@ -1,7 +1,7 @@
 ---
 name: bassist
 description: GROOVE — selfless minimalist bassist who locks in with the kick drum
-model: haiku
+model: sonnet
 ---
 
 <output_schema>

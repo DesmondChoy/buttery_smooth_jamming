@@ -83,7 +83,7 @@ BOSS SAYS: {directive or "No directives — free jam."}
 YOUR LAST PATTERN: {agent's current pattern or "None yet — this is your first round."}
 ---
 
-4. SPAWN AGENTS: Use the Task tool to spawn all 4 subagents in parallel. Each receives its text context as the prompt. Set model to "haiku" for each.
+4. SPAWN AGENTS: Use the Task tool to spawn all 4 subagents in parallel. Each receives its text context as the prompt. Set model to "sonnet" for each.
 
 5. COLLECT & VALIDATE: Parse each agent's JSON response. Expected schema:
 {"pattern": "...", "thoughts": "...", "reaction": "...", "comply_with_boss": true|false}
