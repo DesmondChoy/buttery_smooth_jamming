@@ -219,34 +219,10 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
   // --- Callbacks for useWebSocket ---
 
   const handleAgentThought = useCallback((payload: AgentThoughtPayload) => {
+    // Update agent state
     setAgentStates((prev) => {
       const agent = prev[payload.agent];
       if (!agent) return prev;
-
-      // Push thought as chat message
-      addChatMessage({
-        type: 'agent_thought',
-        agent: payload.agent,
-        agentName: agent.name,
-        emoji: agent.emoji,
-        text: payload.thought,
-        pattern: payload.pattern || undefined,
-        compliedWithBoss: payload.compliedWithBoss,
-        round: roundRef.current,
-      });
-
-      // Push reaction as separate message if non-empty and different from thought
-      if (payload.reaction && payload.reaction !== payload.thought) {
-        addChatMessage({
-          type: 'agent_reaction',
-          agent: payload.agent,
-          agentName: agent.name,
-          emoji: agent.emoji,
-          text: payload.reaction,
-          round: roundRef.current,
-        });
-      }
-
       return {
         ...prev,
         [payload.agent]: {
@@ -259,6 +235,34 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
         },
       };
     });
+
+    // Push chat messages separately (not inside state updater to keep it pure)
+    // Read agent info from DEFAULT_AGENTS since it's static
+    const agentInfo = DEFAULT_AGENTS[payload.agent];
+    if (!agentInfo) return;
+
+    addChatMessage({
+      type: 'agent_thought',
+      agent: payload.agent,
+      agentName: agentInfo.name,
+      emoji: agentInfo.emoji,
+      text: payload.thought,
+      pattern: payload.pattern || undefined,
+      compliedWithBoss: payload.compliedWithBoss,
+      round: roundRef.current,
+    });
+
+    // Push reaction as separate message if non-empty and different from thought
+    if (payload.reaction && payload.reaction !== payload.thought) {
+      addChatMessage({
+        type: 'agent_reaction',
+        agent: payload.agent,
+        agentName: agentInfo.name,
+        emoji: agentInfo.emoji,
+        text: payload.reaction,
+        round: roundRef.current,
+      });
+    }
   }, [addChatMessage]);
 
   const handleAgentStatus = useCallback((payload: AgentStatusPayload) => {
