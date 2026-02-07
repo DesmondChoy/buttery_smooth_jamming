@@ -96,7 +96,7 @@ export default function Home() {
   }, [jam.isJamming, jam.currentRound, jam.addChatMessage]);
 
   // Keep the WebSocket connection for MCP server to send execute/stop commands
-  const { error: wsError } = useWebSocket({
+  const { error: wsError, sendMessage: sendWsMessage } = useWebSocket({
     onExecute: handleExecute,
     onStop: handleStop,
     onMessage: handleWsMessage,
@@ -117,8 +117,9 @@ export default function Home() {
 
   const handleSendDirective = useCallback((text: string) => {
     jam.addBossDirective(text);
-    claude.sendMessage(text);
-  }, [jam.addBossDirective, claude.sendMessage]);
+    sendWsMessage(text);
+    jam.triggerEarlyTick();
+  }, [jam.addBossDirective, sendWsMessage, jam.triggerEarlyTick]);
 
   // Keyboard shortcuts
   useEffect(() => {

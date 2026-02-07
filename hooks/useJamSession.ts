@@ -40,6 +40,7 @@ export interface UseJamSessionReturn {
   addBossDirective: (text: string) => void;
   addChatMessage: (msg: Omit<JamChatMessage, 'id' | 'timestamp'>) => void;
   clearChatMessages: () => void;
+  triggerEarlyTick: () => void;
 
   // Callbacks (wire into useWebSocket in page.tsx)
   handleAgentThought: (payload: AgentThoughtPayload) => void;
@@ -194,12 +195,26 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
     processingRef.current = false;
     setRoundProgress(0);
     clearChatMessages();
+    setAgentStates(prev => {
+      const reset = { ...prev };
+      for (const key of Object.keys(reset)) {
+        reset[key] = { ...reset[key], status: 'idle' };
+      }
+      return reset;
+    });
   }, [clearAllIntervals, clearChatMessages]);
 
   const setRoundDuration = useCallback((ms: number) => {
     const clamped = Math.max(MIN_ROUND_DURATION, Math.min(MAX_ROUND_DURATION, ms));
     setRoundDurationState(clamped);
   }, []);
+
+  const triggerEarlyTick = useCallback(() => {
+    if (!isJamming || processingRef.current) return;
+    sendTick();
+    startTickInterval();     // Reset interval so next tick is full roundDuration away
+    startProgressInterval(); // Reset progress bar
+  }, [isJamming, sendTick, startTickInterval, startProgressInterval]);
 
   // Restart interval when roundDuration changes mid-jam
   useEffect(() => {
@@ -318,6 +333,7 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
     addBossDirective,
     addChatMessage,
     clearChatMessages,
+    triggerEarlyTick,
 
     handleAgentThought,
     handleAgentStatus,
