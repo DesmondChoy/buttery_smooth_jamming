@@ -443,9 +443,7 @@ Call execute_pattern() with the composed pattern.
 
 7.5. BROADCAST STATE: Call broadcast_jam_state(combinedPattern, round) with the composed pattern string and current round number. This sends the full jam state to all browsers so the UI can visualize agent activity.
 
-8. BROADCAST: For each agent, call send_message() with their reaction:
-Format: "{emoji} {NAME}: {reaction}"
-Example: "🥁 BEAT: The groove is sacred."
+Note: Agent reactions are broadcast via update_agent_state() → agent_thought WebSocket event. No separate send_message() call is needed for reactions.
 
 ## Creativity Threshold
 - If there are no boss directives AND all agent patterns are unchanged for 2+ consecutive rounds, SKIP re-invocation — just replay the existing stack.
@@ -453,8 +451,7 @@ Example: "🥁 BEAT: The groove is sacred."
 
 ## Timeout Handling
 - If a subagent Task times out or errors, use that agent's fallbackPattern from jam state.
-- Set that agent's status to "timeout" or "error" via update_agent_state().
-- Broadcast a timeout message: "{emoji} {NAME}: [timed out — playing last known pattern]"
+- Set that agent's status to "timeout" or "error" via update_agent_state(). Use reaction: "[timed out — playing last known pattern]".
 
 ## MCP Tools
 - execute_pattern(code) — send Strudel code to web app

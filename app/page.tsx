@@ -2,7 +2,6 @@
 
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import dynamic from 'next/dynamic';
-import { AGENT_META } from '@/lib/types';
 import { TerminalPanel } from '@/components/TerminalPanel';
 import { JamControls } from '@/components/JamControls';
 import { JamTopBar } from '@/components/JamTopBar';
@@ -82,36 +81,14 @@ export default function Home() {
   }, [stop]);
 
   // Handle incoming chat messages from MCP send_message broadcasts
+  // Agent reactions flow through update_agent_state → agent_thought, not send_message
   const handleWsMessage = useCallback((msg: { id: string; text: string; timestamp: Date; sender: string }) => {
     if (!jam.isJamming) return;
-
-    const text = msg.text;
-    let matched = false;
-    for (const [key, meta] of Object.entries(AGENT_META)) {
-      if (text.startsWith(meta.emoji)) {
-        // Strip "🥁 BEAT: " prefix from text
-        const colonIdx = text.indexOf(':');
-        const cleanText = colonIdx > -1 ? text.slice(colonIdx + 1).trim() : text;
-        addChatMessage({
-          type: 'agent_reaction',
-          agent: key,
-          agentName: meta.name,
-          emoji: meta.emoji,
-          text: cleanText,
-          round: jam.currentRound,
-        });
-        matched = true;
-        break;
-      }
-    }
-
-    if (!matched) {
-      addChatMessage({
-        type: 'system',
-        text,
-        round: jam.currentRound,
-      });
-    }
+    addChatMessage({
+      type: 'system',
+      text: msg.text,
+      round: jam.currentRound,
+    });
   }, [jam, addChatMessage]);
 
   // Keep the WebSocket connection for MCP server to send execute/stop commands
