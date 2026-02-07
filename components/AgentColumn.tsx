@@ -119,7 +119,7 @@ export function AgentColumn({ agentKey, agentState, messages }: AgentColumnProps
   if (!meta) return null;
 
   return (
-    <div className="flex flex-col min-h-0 bg-gray-900">
+    <div className="flex flex-col min-h-0 min-w-0 overflow-hidden bg-gray-900">
       {/* Header */}
       <div className={`flex items-center justify-between px-3 py-2 border-b border-gray-700 ${meta.colors.bgSolid} shrink-0`}>
         <div className="flex items-center gap-2">
@@ -133,7 +133,7 @@ export function AgentColumn({ agentKey, agentState, messages }: AgentColumnProps
       <div
         ref={scrollRef}
         onScroll={handleScroll}
-        className="flex-1 overflow-y-auto space-y-0.5 py-1"
+        className="flex-1 overflow-y-auto overflow-x-hidden space-y-0.5 py-1"
       >
         {messages.length === 0 ? (
           <div className="text-gray-600 italic text-xs px-2 py-4 text-center">

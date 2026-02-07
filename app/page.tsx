@@ -176,9 +176,9 @@ export default function Home() {
   return (
     <main className="flex flex-col h-screen overflow-hidden">
       {/* Top section: swaps based on jam mode */}
-      <div className="flex flex-1 min-h-0">
+      <div className="flex flex-1 min-h-0 min-w-0">
         {jam.isJamming ? (
-          <div className="flex flex-col flex-1 min-h-0">
+          <div className="flex flex-col flex-1 min-h-0 min-w-0">
             {/* Top bar: controls + musical context */}
             <JamTopBar
               currentRound={jam.currentRound}
@@ -191,8 +191,8 @@ export default function Home() {
 
             {/* Agent columns grid */}
             <div
-              className="flex-1 min-h-0 grid gap-px bg-gray-700"
-              style={{ gridTemplateColumns: `repeat(${jam.selectedAgents.length}, 1fr)` }}
+              className="flex-1 min-h-0 grid gap-px bg-gray-700 overflow-hidden"
+              style={{ gridTemplateColumns: `repeat(${jam.selectedAgents.length}, minmax(0, 1fr))` }}
             >
               {jam.selectedAgents.map((key) => (
                 <AgentColumn
