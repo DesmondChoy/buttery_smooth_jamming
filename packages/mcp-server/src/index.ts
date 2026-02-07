@@ -422,10 +422,12 @@ server.tool(
   "Broadcast the full jam state and combined pattern to all connected browsers",
   {
     combinedPattern: z.string().describe("The composed Strudel pattern (stack of all agents)"),
-    round: z.number().describe("Current round number"),
+    round: z.number().optional().describe("Optional round number (legacy, not used in directive-driven mode)"),
   },
   async ({ combinedPattern, round }) => {
-    jamState.currentRound = round;
+    if (round !== undefined) {
+      jamState.currentRound = round;
+    }
 
     await connect();
     const result = send("jam_state_update", {
@@ -436,7 +438,7 @@ server.tool(
       content: [{
         type: "text",
         text: result.success
-          ? `Jam state broadcast (round ${round})`
+          ? `Jam state broadcast`
           : result.error!,
       }],
     };

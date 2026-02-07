@@ -32,6 +32,7 @@ export interface UseClaudeTerminalReturn {
   error: string | null;
   sendMessage: (text: string) => void;
   sendJamTick: (round: number, activeAgents?: string[]) => void;
+  sendBossDirective: (text: string, targetAgent?: string, activeAgents?: string[]) => void;
   clearLines: () => void;
 }
 
@@ -253,6 +254,14 @@ export function useClaudeTerminal(
     }
   }, []);
 
+  const sendBossDirective = useCallback((text: string, targetAgent?: string, activeAgents?: string[]) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        type: 'boss_directive', text, targetAgent, activeAgents,
+      }));
+    }
+  }, []);
+
   const clearLines = useCallback(() => {
     setLines([]);
     currentAssistantLineRef.current = null;
@@ -265,6 +274,7 @@ export function useClaudeTerminal(
     error,
     sendMessage,
     sendJamTick,
+    sendBossDirective,
     clearLines,
   };
 }

@@ -38,7 +38,7 @@ export default function Home() {
   });
 
   // Destructure stable callbacks to satisfy React Compiler + exhaustive-deps
-  const { addChatMessage, addBossDirective, triggerEarlyTick, requestStartJam, confirmStartJam, cancelStartJam, chatMessages, selectedAgents } = jam;
+  const { addChatMessage, addBossDirective, requestStartJam, confirmStartJam, cancelStartJam, chatMessages, selectedAgents } = jam;
 
   // Per-agent message filtering: each agent sees their own thoughts/reactions
   // plus boss directives (both broadcast and targeted)
@@ -87,12 +87,12 @@ export default function Home() {
     addChatMessage({
       type: 'system',
       text: msg.text,
-      round: jam.currentRound,
+      round: 0,
     });
-  }, [jam, addChatMessage]);
+  }, [jam.isJamming, addChatMessage]);
 
   // Keep the WebSocket connection for MCP server to send execute/stop commands
-  const { error: wsError, sendMessage: sendWsMessage } = useWebSocket({
+  const { error: wsError } = useWebSocket({
     onExecute: handleExecute,
     onStop: handleStop,
     onMessage: handleWsMessage,
@@ -113,9 +113,8 @@ export default function Home() {
 
   const handleSendDirective = useCallback((text: string, targetAgent?: string) => {
     addBossDirective(text, targetAgent);
-    sendWsMessage(text);
-    triggerEarlyTick();
-  }, [addBossDirective, sendWsMessage, triggerEarlyTick]);
+    claude.sendBossDirective(text, targetAgent, selectedAgents);
+  }, [addBossDirective, claude.sendBossDirective, selectedAgents]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -158,12 +157,8 @@ export default function Home() {
           <div className="flex flex-col flex-1 min-h-0 min-w-0">
             {/* Top bar: controls + musical context */}
             <JamTopBar
-              currentRound={jam.currentRound}
-              roundProgress={jam.roundProgress}
-              roundDuration={jam.roundDuration}
               musicalContext={jam.musicalContext}
               onStopJam={jam.stopJam}
-              onRoundDurationChange={jam.setRoundDuration}
             />
 
             {/* Agent columns grid */}
@@ -249,13 +244,9 @@ export default function Home() {
               {/* Jam session controls */}
               <JamControls
                 isJamming={jam.isJamming}
-                currentRound={jam.currentRound}
-                roundProgress={jam.roundProgress}
-                roundDuration={jam.roundDuration}
                 isClaudeConnected={claude.isConnected}
                 onStartJam={requestStartJam}
                 onStopJam={jam.stopJam}
-                onRoundDurationChange={jam.setRoundDuration}
                 className="w-full max-w-4xl mb-4"
               />
             </div>

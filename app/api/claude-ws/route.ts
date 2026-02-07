@@ -19,10 +19,11 @@ const clientProcesses = new Map<WebSocket, ClaudeProcess>();
 
 // Message types for browser <-> server communication
 interface BrowserMessage {
-  type: 'user_input' | 'stop' | 'ping' | 'jam_tick';
+  type: 'user_input' | 'stop' | 'ping' | 'jam_tick' | 'boss_directive';
   text?: string;
   round?: number;
   activeAgents?: string[];
+  targetAgent?: string;
 }
 
 interface ServerMessage {
@@ -223,16 +224,34 @@ export function SOCKET(
           break;
 
         case 'jam_tick': {
-          const round = message.round ?? 0;
+          // Repurposed for [JAM_START] — sends initial jam setup to Claude
           const agents = message.activeAgents;
           if (claudeProcess?.isRunning()) {
             sendToClient(client, { type: 'status', status: 'thinking' });
-            const agentInfo = agents?.length ? ` Active agents: ${agents.join(', ')}.` : '';
-            claudeProcess.sendUserMessage(`[JAM_TICK] Round ${round}.${agentInfo} Run one jam round.`);
+            const agentInfo = agents?.length ? ` Active agents: ${agents.join(', ')}.` : 'all';
+            claudeProcess.sendUserMessage(`[JAM_START] Active agents: ${agentInfo}. Initialize the jam session — create initial patterns for all agents.`);
           } else {
             sendToClient(client, {
               type: 'error',
-              error: 'Claude process not running for jam tick.',
+              error: 'Claude process not running for jam start.',
+            });
+          }
+          break;
+        }
+
+        case 'boss_directive': {
+          const text = message.text;
+          if (text && claudeProcess?.isRunning()) {
+            sendToClient(client, { type: 'status', status: 'thinking' });
+            const target = message.targetAgent ? `Target: ${message.targetAgent}` : 'Target: all';
+            const directiveAgents = message.activeAgents?.join(', ') || 'all';
+            claudeProcess.sendUserMessage(
+              `[BOSS_DIRECTIVE] ${text}\n${target}\nActive agents: ${directiveAgents}`
+            );
+          } else if (!claudeProcess?.isRunning()) {
+            sendToClient(client, {
+              type: 'error',
+              error: 'Claude process not running for boss directive.',
             });
           }
           break;
