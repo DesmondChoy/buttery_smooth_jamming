@@ -43,7 +43,7 @@ interface AgentState {
   thoughts: string;
   reaction: string;
   lastUpdated: string;
-  status: 'idle' | 'thinking' | 'error' | 'timeout';
+  status: 'idle' | 'thinking' | 'playing' | 'error' | 'timeout';
 }
 
 interface JamState {
@@ -300,7 +300,7 @@ server.tool(
     thoughts: z.string().describe("Agent's musical reasoning"),
     reaction: z.string().describe("Agent's reaction to the current jam"),
     status: z
-      .enum(["idle", "thinking", "error", "timeout"])
+      .enum(["idle", "thinking", "playing", "error", "timeout"])
       .optional()
       .default("idle")
       .describe("Agent status"),
@@ -401,6 +401,13 @@ server.tool(
   },
   async ({ combinedPattern, round }) => {
     jamState.currentRound = round;
+
+    // Auto-set agents with patterns to 'playing' (preserve error/timeout)
+    for (const agent of Object.values(jamState.agents)) {
+      if (agent.status === 'error' || agent.status === 'timeout') continue;
+      agent.status = agent.pattern ? 'playing' : 'idle';
+    }
+
     await connect();
     const result = send("jam_state_update", {
       jamState: { ...jamState, agents: { ...jamState.agents } },

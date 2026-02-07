@@ -19,6 +19,7 @@ function StatusDot({ status }: { status: AgentState['status'] }) {
   const color = (() => {
     switch (status) {
       case 'thinking': return 'bg-yellow-500 animate-pulse';
+      case 'playing':  return 'bg-green-500 animate-pulse-gentle';
       case 'error':    return 'bg-red-500';
       case 'timeout':  return 'bg-red-500';
       default:         return 'bg-gray-500';

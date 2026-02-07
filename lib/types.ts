@@ -49,7 +49,7 @@ export interface JamStatePayload {
 
 export interface AgentStatusPayload {
   agent: string;
-  status: 'idle' | 'thinking' | 'error' | 'timeout';
+  status: 'idle' | 'thinking' | 'playing' | 'error' | 'timeout';
 }
 
 export interface MusicalContextPayload {
@@ -75,7 +75,7 @@ export interface AgentState {
   thoughts: string;
   reaction: string;
   lastUpdated: string;
-  status: 'idle' | 'thinking' | 'error' | 'timeout';
+  status: 'idle' | 'thinking' | 'playing' | 'error' | 'timeout';
 }
 
 export interface JamState {
