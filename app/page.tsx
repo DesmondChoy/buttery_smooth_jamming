@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { TerminalPanel } from '@/components/TerminalPanel';
 import { JamControls } from '@/components/JamControls';
@@ -29,11 +29,19 @@ export default function Home() {
     console.log('[Page] Tool use:', toolName, toolInput);
   }, []);
 
+  // Jam broadcast handler ref — will be set after jam hooks are initialized
+  const jamBroadcastRef = useRef<((message: { type: string; payload: unknown }) => void) | null>(null);
+
+  const handleJamBroadcast = useCallback((message: { type: string; payload: unknown }) => {
+    jamBroadcastRef.current?.(message);
+  }, []);
+
   // Lift useClaudeTerminal to page level so sendJamTick is accessible
-  const claude = useClaudeTerminal({ onToolUse: handleToolUse });
+  const claude = useClaudeTerminal({ onToolUse: handleToolUse, onJamBroadcast: handleJamBroadcast });
 
   const jam = useJamSession({
     sendJamTick: claude.sendJamTick,
+    sendStopJam: claude.sendStopJam,
     isClaudeConnected: claude.isConnected,
   });
 
@@ -79,6 +87,27 @@ export default function Home() {
     stop();
     setIsPlaying(false);
   }, [stop]);
+
+  // Wire jam broadcast messages from claude-ws to jam session handlers
+  // AgentProcessManager sends these directly to the browser client (not via /api/ws)
+  useEffect(() => {
+    jamBroadcastRef.current = (message: { type: string; payload: unknown }) => {
+      switch (message.type) {
+        case 'agent_thought':
+          jam.handleAgentThought(message.payload as Parameters<typeof jam.handleAgentThought>[0]);
+          break;
+        case 'agent_status':
+          jam.handleAgentStatus(message.payload as Parameters<typeof jam.handleAgentStatus>[0]);
+          break;
+        case 'execute':
+          handleExecute((message.payload as { code: string }).code);
+          break;
+        case 'jam_state_update':
+          jam.handleJamStateUpdate(message.payload as Parameters<typeof jam.handleJamStateUpdate>[0]);
+          break;
+      }
+    };
+  }, [jam.handleAgentThought, jam.handleAgentStatus, jam.handleJamStateUpdate, handleExecute]);
 
   // Handle incoming chat messages from MCP send_message broadcasts
   // Agent reactions flow through update_agent_state → agent_thought, not send_message

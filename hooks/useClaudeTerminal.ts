@@ -23,6 +23,7 @@ export interface TerminalLine {
 interface UseClaudeTerminalOptions {
   url?: string;
   onToolUse?: (toolName: string, toolInput: Record<string, unknown>) => void;
+  onJamBroadcast?: (message: { type: string; payload: unknown }) => void;
 }
 
 export interface UseClaudeTerminalReturn {
@@ -33,6 +34,7 @@ export interface UseClaudeTerminalReturn {
   sendMessage: (text: string) => void;
   sendJamTick: (round: number, activeAgents?: string[]) => void;
   sendBossDirective: (text: string, targetAgent?: string, activeAgents?: string[]) => void;
+  sendStopJam: () => void;
   clearLines: () => void;
 }
 
@@ -47,7 +49,7 @@ function getDefaultWsUrl(): string {
 export function useClaudeTerminal(
   options: UseClaudeTerminalOptions = {}
 ): UseClaudeTerminalReturn {
-  const { url = getDefaultWsUrl(), onToolUse } = options;
+  const { url = getDefaultWsUrl(), onToolUse, onJamBroadcast } = options;
 
   const [lines, setLines] = useState<TerminalLine[]>([]);
   const [status, setStatus] = useState<ClaudeStatus>('connecting');
@@ -56,6 +58,7 @@ export function useClaudeTerminal(
 
   const wsRef = useRef<WebSocket | null>(null);
   const onToolUseRef = useRef(onToolUse);
+  const onJamBroadcastRef = useRef(onJamBroadcast);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const currentAssistantLineRef = useRef<string | null>(null);
   const reconnectAttemptsRef = useRef(0);
@@ -64,7 +67,8 @@ export function useClaudeTerminal(
 
   useEffect(() => {
     onToolUseRef.current = onToolUse;
-  }, [onToolUse]);
+    onJamBroadcastRef.current = onJamBroadcast;
+  }, [onToolUse, onJamBroadcast]);
 
   const addLine = useCallback((type: TerminalLine['type'], text: string) => {
     const line: TerminalLine = {
@@ -88,7 +92,7 @@ export function useClaudeTerminal(
   const handleMessage = useCallback(
     (event: MessageEvent) => {
       try {
-        const message = JSON.parse(event.data) as ServerMessage;
+        const message = JSON.parse(event.data);
 
         switch (message.type) {
           case 'text':
@@ -144,6 +148,14 @@ export function useClaudeTerminal(
 
           case 'pong':
             // Heartbeat response, ignore
+            break;
+
+          // Jam session messages from AgentProcessManager
+          case 'agent_thought':
+          case 'agent_status':
+          case 'execute':
+          case 'jam_state_update':
+            onJamBroadcastRef.current?.(message);
             break;
         }
       } catch (err) {
@@ -262,6 +274,12 @@ export function useClaudeTerminal(
     }
   }, []);
 
+  const sendStopJam = useCallback(() => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'stop_jam' }));
+    }
+  }, []);
+
   const clearLines = useCallback(() => {
     setLines([]);
     currentAssistantLineRef.current = null;
@@ -275,6 +293,7 @@ export function useClaudeTerminal(
     sendMessage,
     sendJamTick,
     sendBossDirective,
+    sendStopJam,
     clearLines,
   };
 }

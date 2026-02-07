@@ -17,6 +17,7 @@ const ALL_AGENTS = ['drums', 'bass', 'melody', 'fx'];
 
 interface UseJamSessionOptions {
   sendJamTick: (round: number, activeAgents?: string[]) => void;
+  sendStopJam: () => void;
   isClaudeConnected: boolean;
 }
 
@@ -63,7 +64,7 @@ const DEFAULT_MUSICAL_CONTEXT: MusicalContext = {
 };
 
 export function useJamSession(options: UseJamSessionOptions): UseJamSessionReturn {
-  const { sendJamTick, isClaudeConnected } = options;
+  const { sendJamTick, sendStopJam, isClaudeConnected } = options;
 
   const [isJamming, setIsJamming] = useState(false);
   const [agentStates, setAgentStates] = useState<Record<string, AgentState>>({ ...DEFAULT_AGENTS });
@@ -111,7 +112,9 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
       }
       return reset;
     });
-  }, [clearChatMessages]);
+    // Tell server to kill agent processes
+    sendStopJam();
+  }, [clearChatMessages, sendStopJam]);
 
   const requestStartJam = useCallback(() => {
     if (!isClaudeConnected) return;
