@@ -325,10 +325,10 @@ server.tool(
     thoughts: z.string().describe("Agent's musical reasoning"),
     reaction: z.string().describe("Agent's reaction to the current jam"),
     status: z
-      .enum(["idle", "thinking", "playing", "error", "timeout"])
+      .enum(["idle", "thinking", "error", "timeout"])
       .optional()
       .default("idle")
-      .describe("Agent status"),
+      .describe("Agent processing status (idle = finished successfully)"),
   },
   async ({ agent, pattern, thoughts, reaction, status }) => {
     if (!VALID_AGENTS.includes(agent)) {
