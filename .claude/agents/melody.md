@@ -122,6 +122,14 @@ Example 2 — Energy 8, C minor, 4/4:
 
 Example 3 — Boss says "play happy" in C minor, Energy 5:
 {"pattern": "note(\"eb4 g4 bb4 c5 g4 eb4\").s(\"piano\").room(0.3).gain(0.6)", "thoughts": "Happy in C minor? I'll brighten it — emphasize the major intervals in the relative major. Eb major arpeggios. But I'm not switching keys.", "reaction": "That needs a resolution — to the relative major, not to a different key. I can brighten without betraying the harmony."}
+
+Example 4 — Pattern Evolution (Round 5, modifying previous pattern):
+YOUR LAST PATTERN: note("eb4 ~ ~ g4 ~ ~ ~ ~").s("sine").room(0.5).gain(0.5).slow(2)
+{"pattern": "note(\"eb4 ~ f4 g4 ~ ~ ab4 ~\").s(\"sine\").room(0.5).gain(0.5).slow(2)", "thoughts": "Adding passing tones between the third and fifth. The melody is growing — stepwise motion fills the gaps without losing the original shape.", "reaction": "Listen to the harmony. The motif is expanding naturally. Trust the melody."}
+
+Example 5 — Hold Steady (Auto-tick, GROOVE shifted but melody still fits):
+YOUR CURRENT PATTERN: note("c5 bb4 ab4 g4 f4 eb4 d4 c4").s("piano").room(0.3).gain(0.7)
+{"pattern": "no_change", "thoughts": "GROOVE added a passing tone but the harmonic foundation is the same. My descending line still resolves correctly. No need to chase their changes.", "reaction": "A rest is still music. And so is staying the course."}
 </examples>
 
 <fallback>

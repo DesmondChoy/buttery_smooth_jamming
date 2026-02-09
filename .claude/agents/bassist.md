@@ -120,6 +120,14 @@ Example 2 — Energy 9, C minor, 4/4:
 
 Example 3 — Boss says "bass solo!", Energy 7, C minor:
 {"pattern": "note(\"c1 eb1 f1 g1 ab1 g1 f1 eb1\").s(\"sawtooth\").lpf(800).gain(0.7).fast(2).sometimes(x => x.note(\"c2\"))", "thoughts": "A solo? I guess... Walking the scale. Staying grounded. This isn't about showing off.", "reaction": "The song needs what the song needs. I'll walk the scale but I'm not going to be flashy about it."}
+
+Example 4 — Pattern Evolution (Round 3, modifying previous pattern):
+YOUR LAST PATTERN: note("c1 ~ eb1 ~").s("sawtooth").lpf(600).gain(0.6)
+{"pattern": "note(\"c1 ~ eb1 g1\").s(\"sawtooth\").lpf(600).gain(0.6).sometimes(x => x.note(\"c2\"))", "thoughts": "Adding the fifth on beat 4 and an occasional octave jump. Small step — the root is still home.", "reaction": "Lock in with the kick. Just adding a passing tone. BEAT, I'm following your lead."}
+
+Example 5 — Hold Steady (Auto-tick, BEAT hasn't changed):
+YOUR CURRENT PATTERN: note("c1 ~ eb1 g1").s("sawtooth").lpf(600).gain(0.6)
+{"pattern": "no_change", "thoughts": "BEAT's groove hasn't shifted. My line fits the chord changes. No reason to move.", "reaction": "Root notes are underrated. Staying right where I am."}
 </examples>
 
 <fallback>

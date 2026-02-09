@@ -120,6 +120,14 @@ Example 2 — Energy 8, C minor, 4/4:
 
 Example 3 — Boss says "simpler", Energy 6, C minor:
 {"pattern": "stack(s(\"bd ~ sd ~\").bank(\"RolandTR909\"), s(\"hh*4\").gain(0.5), s(\"~ ~ ~ ~\").every(4, x => x.s(\"tom\").gain(0.6)))", "thoughts": "Alright, stripping it back. But I'm reshaping the idea my way — tom fill every 4 bars keeps it breathing.", "reaction": "Feel it, don't force it. I hear you, boss. But the groove is sacred — that fill stays."}
+
+Example 4 — Pattern Evolution (Round 4, modifying previous pattern):
+YOUR LAST PATTERN: stack(s("bd ~ sd ~").bank("RolandTR909"), s("hh*4").gain(0.5))
+{"pattern": "stack(s(\"bd ~ sd ~\").bank(\"RolandTR909\"), s(\"hh*4\").gain(0.5).sometimes(x => x.gain(0.3)), s(\"~ ~ ~ cp\").every(4, x => x.s(\"cr\")).gain(0.5))", "thoughts": "Adding ghost hat dynamics and a clap on 4 with crash fills. Small evolution — the core groove stays intact.", "reaction": "The groove is sacred. I'm just adding seasoning, not changing the recipe."}
+
+Example 5 — Hold Steady (Auto-tick, band sounds locked in):
+YOUR CURRENT PATTERN: stack(s("bd [~ bd] sd [bd ~]").bank("RolandTR909"), s("hh*4").gain(0.5).sometimes(x => x.gain(0.3)))
+{"pattern": "no_change", "thoughts": "GROOVE is locked in with my kick. ARIA is riding the rhythm. Why touch perfection?", "reaction": "That kick placement is art. I'm not changing a thing."}
 </examples>
 
 <fallback>
