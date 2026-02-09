@@ -57,7 +57,7 @@ const AGENT_TIMEOUT_MS = 15000;
 
 /**
  * Manages per-agent Claude processes for jam sessions.
- * Each agent gets a dedicated `claude --print --model haiku` process.
+ * Each agent gets a dedicated `claude --print` process (model from YAML frontmatter).
  * Directives are routed deterministically (no LLM inference for routing).
  */
 export class AgentProcessManager {
@@ -71,6 +71,7 @@ export class AgentProcessManager {
   private stopped = false;
   private roundNumber = 0;
   private tickTimer: NodeJS.Timeout | null = null;
+  private tickInProgress = false;
 
   constructor(options: AgentProcessManagerOptions) {
     this.workingDir = options.workingDir;
@@ -438,59 +439,69 @@ export class AgentProcessManager {
   private startAutoTick(): void {
     if (this.tickTimer) clearInterval(this.tickTimer);
     this.tickTimer = setInterval(() => {
-      if (this.stopped) return;
-      this.sendAutoTick();
+      if (this.stopped || this.tickInProgress) return;
+      this.sendAutoTick().catch((err) => {
+        console.error('[AgentManager] Auto-tick error:', err);
+      });
     }, 30000);
   }
 
   private async sendAutoTick(): Promise<void> {
     if (this.stopped) return;
-    this.roundNumber++;
-    const ctx = this.musicalContext;
+    this.tickInProgress = true;
+    try {
+      this.roundNumber++;
+      const ctx = this.musicalContext;
 
-    console.log(`[AgentManager] Auto-tick round ${this.roundNumber}`);
+      console.log(`[AgentManager] Auto-tick round ${this.roundNumber}`);
 
-    const responsePromises = this.activeAgents.map((key) => {
-      if (!this.agents.has(key)) return Promise.resolve(null);
+      const responsePromises = this.activeAgents.map((key) => {
+        if (!this.agents.has(key)) return Promise.resolve(null);
 
-      const bandStateLines = this.activeAgents
-        .filter((k) => k !== key)
-        .map((k) => {
-          const meta = AGENT_META[k];
-          const pattern = this.agentPatterns[k] || 'silence';
-          return `${meta.emoji} ${meta.name} (${k}): ${pattern}`;
-        });
+        const bandStateLines = this.activeAgents
+          .filter((k) => k !== key)
+          .map((k) => {
+            const meta = AGENT_META[k];
+            const pattern = this.agentPatterns[k] || 'silence';
+            return `${meta.emoji} ${meta.name} (${k}): ${pattern}`;
+          });
 
-      const myPattern = this.agentPatterns[key] || 'silence';
+        const myPattern = this.agentPatterns[key] || 'silence';
 
-      const context = [
-        'AUTO-TICK — LISTEN AND EVOLVE',
-        `Round: ${this.roundNumber}`,
-        `Key: ${ctx.key} | Scale: ${ctx.scale.join(', ')} | BPM: ${ctx.bpm} | Time: ${ctx.timeSignature} | Energy: ${ctx.energy}/10`,
-        `Chords: ${ctx.chordProgression.join(' → ')}`,
-        '',
-        'BAND STATE:',
-        ...bandStateLines,
-        '',
-        `YOUR CURRENT PATTERN: ${myPattern}`,
-        '',
-        'Listen to the band. If the music calls for change, evolve your pattern.',
-        'If your groove serves the song, respond with "no_change" as your pattern.',
-      ].join('\n');
+        const context = [
+          'AUTO-TICK — LISTEN AND EVOLVE',
+          `Round: ${this.roundNumber}`,
+          `Key: ${ctx.key} | Scale: ${ctx.scale.join(', ')} | BPM: ${ctx.bpm} | Time: ${ctx.timeSignature} | Energy: ${ctx.energy}/10`,
+          `Chords: ${ctx.chordProgression.join(' → ')}`,
+          '',
+          'BAND STATE:',
+          ...bandStateLines,
+          '',
+          `YOUR CURRENT PATTERN: ${myPattern}`,
+          '',
+          'Listen to the band. If the music calls for change, evolve your pattern.',
+          'If your groove serves the song, respond with "no_change" as your pattern.',
+        ].join('\n');
 
-      this.setAgentStatus(key, 'thinking');
-      return this.sendToAgentAndCollect(key, context);
-    });
+        this.setAgentStatus(key, 'thinking');
+        return this.sendToAgentAndCollect(key, context);
+      });
 
-    const responses = await Promise.all(responsePromises);
+      const responses = await Promise.all(responsePromises);
 
-    for (let i = 0; i < this.activeAgents.length; i++) {
-      const key = this.activeAgents[i];
-      const response = responses[i];
-      this.applyAgentResponse(key, response);
+      // If stopped during await, don't apply stale responses
+      if (this.stopped) return;
+
+      for (let i = 0; i < this.activeAgents.length; i++) {
+        const key = this.activeAgents[i];
+        const response = responses[i];
+        this.applyAgentResponse(key, response);
+      }
+
+      this.composeAndBroadcast();
+    } finally {
+      this.tickInProgress = false;
     }
-
-    this.composeAndBroadcast();
   }
 
   // ─── Private: State Management ───────────────────────────────────
