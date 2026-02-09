@@ -299,13 +299,23 @@ Note: v2 uses a directive-driven architecture — agents respond on-demand to bo
 ### Agent Columns
 - [ ] One column per selected agent in CSS grid layout
 - [ ] Each column header shows agent emoji and name (e.g., "🥁 BEAT")
-- [ ] Status indicator visible per column (idle/thinking)
+- [ ] Status indicator (StatusDot) visible per column
 - [ ] Color-coding per agent: drums=red, bass=blue, melody=purple, fx=green
 - [ ] "Waiting for {AGENT}..." placeholder shown before first response
 - [ ] After agent responds: thoughts displayed with round marker (e.g., "R0")
 - [ ] Pattern code shown below thoughts
 - [ ] Reactions displayed in italics below pattern
 - [ ] Boss directives shown inline in the targeted agent's column ("BOSS (to you)")
+
+### Agent Status Lifecycle (StatusDot)
+The status dot in each column header reflects the agent's processing state. Verify the full transition cycle:
+- [ ] **Idle state**: Gray dot, label "idle" — shown when agent has no pending work
+- [ ] **Thinking state**: Yellow pulsing dot, label "thinking" — shown when agent is processing a directive
+- [ ] **Idle→Thinking→Idle transition**: Send a directive (e.g., "@BEAT double time") and verify:
+  - [ ] Target agent's dot turns yellow/pulsing ("thinking") immediately after sending
+  - [ ] Non-targeted agents remain gray ("idle") — they are NOT processing
+  - [ ] After agent responds (~3-7s), dot returns to gray ("idle")
+- [ ] **Error/timeout states**: If an agent times out, dot shows "timeout" (gray); on error, dot shows "error" (red)
 
 ### BossInputBar (`data-testid="boss-input"`)
 - [ ] Input field with "BOSS >" label
