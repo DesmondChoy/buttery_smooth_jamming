@@ -1,0 +1,197 @@
+# V2 Architecture
+
+## System Overview
+
+CC Sick Beats v2 uses a **dual-mode architecture**: a single-agent Strudel assistant for normal interactions, and per-agent persistent Claude processes for jam sessions.
+
+## Architecture Diagram
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ Browser                                                                      │
+│                                                                              │
+│  ┌── JamTopBar ──────────────────────────────────────────────────────────┐  │
+│  │ [▶ Start Jam] [⏹ Stop]   Key: C minor  BPM: 120  Energy: 5/10       │  │
+│  └───────────────────────────────────────────────────────────────────────┘  │
+│                                                                              │
+│  ┌── AgentColumns (CSS grid) ────────────────────────────────────────────┐  │
+│  │  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐                 │  │
+│  │  │ 🥁 BEAT │  │ 🎸 GROOVE│  │ 🎹 ARIA │  │ 🎛️ GLITCH│                │  │
+│  │  │ ● idle  │  │ ◐ think │  │ ● idle  │  │ ● idle  │                 │  │
+│  │  │ thought │  │ thought │  │ thought │  │ thought │                 │  │
+│  │  │ pattern │  │ pattern │  │ pattern │  │ pattern │                 │  │
+│  │  └─────────┘  └─────────┘  └─────────┘  └─────────┘                 │  │
+│  └───────────────────────────────────────────────────────────────────────┘  │
+│                                                                              │
+│  ┌── BossInputBar ───────────────────────────────────────────────────────┐  │
+│  │ [@BEAT double time...] [Send]                                         │  │
+│  └───────────────────────────────────────────────────────────────────────┘  │
+│                                                                              │
+│  ┌── PatternDisplay ─────────────────────────────────────────────────────┐  │
+│  │ stack(s("bd*4").bank("RolandTR909"), note("c2 g2").s("sawtooth"))     │  │
+│  └───────────────────────────────────────────────────────────────────────┘  │
+│                                                                              │
+│  ┌── Normal Mode ────────────────────────────────────────────────────────┐  │
+│  │  TerminalPanel (chat) │ StrudelPanel (editor + audio)                 │  │
+│  └───────────────────────────────────────────────────────────────────────┘  │
+└──────────┬───────────────────────────────────────────┬───────────────────────┘
+           │ WebSocket                                 │ WebSocket
+           ▼                                           ▼
+┌─────────────────────────┐              ┌──────────────────────────────────────┐
+│ /api/claude-ws          │              │ /api/ws                              │
+│                         │              │ (MCP bridge — broadcasts to browser) │
+│ Normal mode:            │              └──────────────────┬───────────────────┘
+│   ClaudeProcess         │                                 │ WebSocket
+│   (Strudel assistant)   │                                 ▼
+│                         │              ┌──────────────────────────────────────┐
+│ Jam mode:               │              │ MCP Server (packages/mcp-server)     │
+│   AgentProcessManager   │              │ execute_pattern, stop_pattern,       │
+│   ┌───────────────────┐ │              │ send_message, get_user_messages,     │
+│   │ claude --print    │ │              │ get_jam_state, update_agent_state,   │
+│   │ --model haiku     │ │              │ update_musical_context,              │
+│   │ drums process     │ │              │ broadcast_jam_state,                 │
+│   ├───────────────────┤ │              │ set_active_agents                    │
+│   │ bass process      │ │              └──────────────────────────────────────┘
+│   ├───────────────────┤ │
+│   │ melody process    │ │
+│   ├───────────────────┤ │
+│   │ fx process        │ │
+│   └───────────────────┘ │
+│                         │
+│ Broadcast callback ─────│──→ client.send() on the /api/claude-ws WebSocket
+└─────────────────────────┘
+```
+
+## Two Modes of Operation
+
+### Normal Mode (Strudel Assistant)
+- `ClaudeProcess` spawns a single Claude CLI process
+- User chats via TerminalPanel, Claude generates Strudel patterns via MCP tools
+- Standard MCP tool flow: Claude CLI → MCP server → `/api/ws` → browser
+
+### Jam Mode (Per-Agent Persistent Processes)
+- `AgentProcessManager` spawns one `claude --print --model haiku` per active agent
+- Boss directives route deterministically to agent stdin
+- Agents respond with JSON: `{ pattern, thoughts, reaction, comply_with_boss }`
+- Manager composes `stack()` pattern and broadcasts via callback closure
+- The orchestrator (`ClaudeProcess`) is **bypassed** during jams
+
+## Message Flow
+
+### Jam Start
+```
+Browser → { type: 'jam_tick', activeAgents: ['drums','bass','melody','fx'] }
+  → claude-ws creates AgentProcessManager with broadcast callback
+    → Manager spawns 4 claude processes (parallel)
+      → Each agent receives initial jam context on stdin
+        → Agents respond with JSON
+          → Manager composes stack(), broadcasts state → Browser
+```
+
+### Boss Directive
+```
+BossInputBar → { type: 'boss_directive', text: '@BEAT double time', targetAgent: 'drums' }
+  → Manager routes to drums process stdin only (deterministic)
+    → Drums responds with updated JSON
+      → Manager recomposes stack() with updated pattern
+        → Broadcasts agent_thought, agent_status, execute → Browser
+```
+
+### Stop Jam
+```
+Browser → { type: 'stop_jam' }
+  → Manager sends SIGTERM to all agent processes
+    → Processes exit, UI returns to normal mode
+```
+
+## File Structure
+
+```
+cc_sick_beats/
+├── app/
+│   ├── page.tsx                     # Dual layout: normal mode + jam mode
+│   ├── layout.tsx
+│   ├── globals.css                  # Tailwind + Strudel visualization hiding
+│   └── api/
+│       ├── ws/route.ts              # WebSocket for Strudel MCP bridge
+│       └── claude-ws/route.ts       # WebSocket for Claude Terminal + jam routing
+├── components/
+│   ├── TerminalPanel.tsx            # Chat panel (normal mode)
+│   ├── ChatPanel.tsx                # Chat messages display
+│   ├── StrudelPanel.tsx             # Strudel editor wrapper
+│   ├── StrudelEditor.tsx            # Strudel web component
+│   ├── AudioStartButton.tsx         # Browser audio unlock
+│   ├── JamTopBar.tsx                # Jam controls + musical context display
+│   ├── JamControls.tsx              # Start/Stop jam buttons
+│   ├── AgentColumn.tsx              # Per-agent panel (status, thoughts, pattern)
+│   ├── AgentSelectionModal.tsx      # Pre-jam agent picker
+│   ├── BossInputBar.tsx             # Directive input with @mention support
+│   ├── MentionSuggestions.tsx       # @mention autocomplete dropdown
+│   └── PatternDisplay.tsx           # Composed stack() pattern viewer
+├── hooks/
+│   ├── index.ts                     # Exports
+│   ├── useWebSocket.ts              # Strudel MCP WebSocket connection
+│   ├── useClaudeTerminal.ts         # Claude Terminal WS + jam broadcast forwarding
+│   ├── useJamSession.ts             # Jam state management + agent selection
+│   └── useStrudel.ts                # setCode, evaluate, stop
+├── lib/
+│   ├── types.ts                     # Shared types (AGENT_META, JamState, WSMessage)
+│   ├── claude-process.ts            # Spawns Claude CLI (Strudel assistant only)
+│   └── agent-process-manager.ts     # Per-agent persistent processes (jam mode)
+├── .claude/agents/
+│   ├── drummer.md                   # 🥁 BEAT persona + Strudel drum patterns
+│   ├── bassist.md                   # 🎸 GROOVE persona + bass patterns
+│   ├── melody.md                    # 🎹 ARIA persona + melodic patterns
+│   └── fx-artist.md                 # 🎛️ GLITCH persona + FX patterns
+├── packages/mcp-server/
+│   ├── package.json
+│   ├── tsconfig.json
+│   ├── src/
+│   │   ├── index.ts                 # Server entry + in-memory jam state
+│   │   └── strudel-reference.ts     # Embedded API docs (MCP resource)
+│   └── build/                       # Compiled output (gitignored)
+├── types/
+│   └── strudel.d.ts                 # Strudel module declarations
+├── .mcp.json                        # MCP configuration at project root
+└── docs/                            # Documentation
+```
+
+## Component Relationships
+
+| Component | Responsibility | Mode |
+|-----------|----------------|------|
+| `page.tsx` | Layout switching (normal ↔ jam), wires broadcast messages | Both |
+| `TerminalPanel` | Chat UI, Claude interaction | Normal |
+| `StrudelPanel` | Audio visualization + editor | Normal |
+| `JamTopBar` | Start/stop jam, musical context display | Jam |
+| `AgentColumn` | Per-agent status, thoughts, pattern preview | Jam |
+| `AgentSelectionModal` | Pre-jam agent picker | Jam |
+| `BossInputBar` | Directive input with @mention parsing | Jam |
+| `PatternDisplay` | Shows composed `stack()` pattern | Jam |
+| `useJamSession` | Jam state, agent selection, directive routing | Jam |
+| `useClaudeTerminal` | Claude CLI streaming + jam broadcast forwarding | Both |
+| `AgentProcessManager` | Spawns/manages per-agent Claude processes | Jam (server) |
+| `ClaudeProcess` | Single Claude CLI for Strudel assistant | Normal (server) |
+| MCP Server | Tool execution + in-memory jam state | Both (server) |
+
+## Key Types
+
+```typescript
+// lib/types.ts — AGENT_META is the single source of truth
+const AGENT_META: Record<string, { name: string; emoji: string; color: string }> = {
+  drums: { name: 'BEAT',   emoji: '🥁', color: '#ef4444' },
+  bass:  { name: 'GROOVE', emoji: '🎸', color: '#3b82f6' },
+  melody:{ name: 'ARIA',   emoji: '🎹', color: '#a855f7' },
+  fx:    { name: 'GLITCH', emoji: '🎛️', color: '#22c55e' },
+};
+```
+
+## Latency
+
+| Operation | v1 (Orchestrator) | v2 (Persistent Processes) |
+|-----------|-------------------|--------------------------|
+| Jam start (4 agents) | ~30-45s | **6.7s** |
+| Targeted directive (1 agent) | 22-29s | **5.3s** |
+| Broadcast directive (4 agents) | 25-35s | **7.0s** |
+
+See [Implementation Plan: Architecture Evolution](./implementation-plan.md#architecture-evolution-orchestrator-v1--per-agent-persistent-processes-v2) for the full v1-to-v2 migration story.
