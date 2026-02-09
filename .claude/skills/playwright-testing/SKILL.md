@@ -346,6 +346,14 @@ If step 6 or 7 fails, there's a WebSocket or ref-forwarding bug.
 - [ ] Heading and Play/Stop buttons reappear on right
 - [ ] StrudelPanel remains at bottom (audio continues if playing)
 
+### Agent Context Isolation & Latency
+- [ ] Agent columns show individual thoughts/reactions (visual isolation per column)
+- [ ] Composed `stack()` pattern in PatternDisplay/StrudelPanel contains patterns from all active agents
+- [ ] Directive latency: time from boss input submission to agent response appearing <7s
+- [ ] Negative test: agent thoughts shown in one agent's column do NOT appear in another agent's column
+- [ ] Verify by sending a targeted directive (e.g., "@BEAT double time") — only drums agent should go to "thinking" state
+- [ ] After response, other agents' patterns remain unchanged in the composed stack
+
 ---
 
 ## Quick Smoke Test

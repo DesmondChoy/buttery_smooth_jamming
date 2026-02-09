@@ -331,10 +331,18 @@ export class AgentProcessManager {
     const responsePromises = this.activeAgents.map((key) => {
       if (!this.agents.has(key)) return Promise.resolve(null);
 
+      const bandStateLines = this.activeAgents.map((k) => {
+        const meta = AGENT_META[k];
+        return `${meta.emoji} ${meta.name} (${k}): [first round — no pattern yet]`;
+      });
+
       const context = [
         'JAM START — CONTEXT',
         `Key: ${ctx.key} | Scale: ${ctx.scale.join(', ')} | BPM: ${ctx.bpm} | Time: ${ctx.timeSignature} | Energy: ${ctx.energy}/10`,
         `Chords: ${ctx.chordProgression.join(' → ')}`,
+        '',
+        'BAND STATE:',
+        ...bandStateLines,
         '',
         'BOSS SAYS: No directives — free jam. Create your opening pattern.',
         '',
@@ -364,10 +372,13 @@ export class AgentProcessManager {
     const ctx = this.musicalContext;
     const isBroadcast = !targetAgent;
 
-    const otherAgents = this.activeAgents
+    const bandStateLines = this.activeAgents
       .filter((k) => k !== key)
-      .map((k) => `${k}=${this.agentPatterns[k] || 'silence'}`)
-      .join(', ');
+      .map((k) => {
+        const meta = AGENT_META[k];
+        const pattern = this.agentPatterns[k] || 'silence';
+        return `${meta.emoji} ${meta.name} (${k}): ${pattern}`;
+      });
 
     return [
       'DIRECTIVE from the boss.',
@@ -379,7 +390,9 @@ export class AgentProcessManager {
       `Current musical context: Key=${ctx.key}, BPM=${ctx.bpm}, Energy=${ctx.energy}/10`,
       `Scale: ${ctx.scale.join(', ')} | Chords: ${ctx.chordProgression.join(' → ')}`,
       `Your current pattern: ${this.agentPatterns[key] || 'silence'}`,
-      `Other agents: ${otherAgents || 'none'}`,
+      '',
+      'BAND STATE:',
+      ...bandStateLines,
       '',
       'Respond with your updated pattern.',
     ].join('\n');
