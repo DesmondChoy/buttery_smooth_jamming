@@ -28,7 +28,6 @@ interface AgentResponse {
   pattern: string;
   thoughts: string;
   reaction: string;
-  comply_with_boss: boolean;
 }
 
 // Per-agent process handle
@@ -515,16 +514,21 @@ export class AgentProcessManager {
 
       // no_change: keep existing pattern, update thoughts/reaction only
       if (pattern === 'no_change') {
+        // Guard: can't hold what doesn't exist (first round)
+        if (!this.agentPatterns[key] || this.agentPatterns[key] === '') {
+          this.agentPatterns[key] = 'silence';
+        }
+        // Don't update agentPatterns — keep existing pattern playing
         this.agentStates[key] = {
           ...state,
           thoughts: response.thoughts || '',
           reaction: response.reaction || '',
-          status: this.agentPatterns[key] && this.agentPatterns[key] !== 'silence' ? 'playing' : 'idle',
+          status: this.agentPatterns[key] !== 'silence' ? 'playing' : state.status,
           lastUpdated: new Date().toISOString(),
         };
         this.broadcastAgentThought(key, response);
         this.setAgentStatus(key, this.agentStates[key].status);
-        return; // Don't touch agentPatterns[key]
+        return;
       }
 
       this.agentPatterns[key] = pattern;
@@ -618,7 +622,6 @@ export class AgentProcessManager {
       thought: response.thoughts,
       reaction: response.reaction,
       pattern: response.pattern,
-      compliedWithBoss: response.comply_with_boss,
       timestamp: new Date().toISOString(),
     });
   }

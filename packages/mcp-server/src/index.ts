@@ -365,7 +365,6 @@ server.tool(
         thought: thoughts,
         reaction,
         pattern,
-        compliedWithBoss: true,
         timestamp: agentState.lastUpdated,
       });
     }

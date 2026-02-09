@@ -166,7 +166,6 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
       emoji: agentInfo.emoji,
       text: payload.thought,
       pattern: payload.pattern || undefined,
-      compliedWithBoss: payload.compliedWithBoss,
       round: 0,
     });
 

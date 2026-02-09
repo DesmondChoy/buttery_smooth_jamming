@@ -38,7 +38,6 @@ export interface AgentThoughtPayload {
   thought: string;
   reaction: string;
   pattern: string;
-  compliedWithBoss: boolean;
   timestamp: string;
 }
 
@@ -94,7 +93,6 @@ export interface JamChatMessage {
   emoji?: string;
   text: string;
   pattern?: string;        // optional code snippet
-  compliedWithBoss?: boolean;
   targetAgent?: string;    // @mention-directed boss directive target
   round: number;
   timestamp: Date;

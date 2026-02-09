@@ -10,7 +10,7 @@ interface AgentColumnProps {
   messages: JamChatMessage[];
 }
 
-function StatusDot({ status }: { status: AgentState['status'] }) {
+function StatusDot({ status, agentKey }: { status: AgentState['status']; agentKey?: string }) {
   const color = (() => {
     switch (status) {
       case 'thinking': return 'bg-yellow-500 animate-pulse';
@@ -30,7 +30,7 @@ function StatusDot({ status }: { status: AgentState['status'] }) {
   return (
     <div className="flex items-center gap-1.5">
       <div className={`w-2 h-2 rounded-full ${color}`} />
-      <span className="text-xs text-gray-500">{label}</span>
+      <span className="text-xs text-gray-500" {...(agentKey ? { 'data-testid': `status-label-${agentKey}` } : {})}>{label}</span>
     </div>
   );
 }
@@ -85,11 +85,6 @@ function ColumnMessage({ message, agentKey }: { message: JamChatMessage; agentKe
           {message.pattern}
         </code>
       )}
-      {message.compliedWithBoss === false && (
-        <span className="text-xs text-amber-400 mt-0.5 inline-block">
-          did not follow directive
-        </span>
-      )}
     </div>
   );
 }
@@ -115,20 +110,21 @@ export function AgentColumn({ agentKey, agentState, messages }: AgentColumnProps
   if (!meta) return null;
 
   return (
-    <div className="flex flex-col min-h-0 min-w-0 overflow-hidden bg-gray-900">
+    <div data-testid={`agent-column-${agentKey}`} className="flex flex-col min-h-0 min-w-0 overflow-hidden bg-gray-900">
       {/* Header */}
       <div className={`flex items-center justify-between px-3 py-2 border-b border-gray-700 ${meta.colors.bgSolid} shrink-0`}>
         <div className="flex items-center gap-2">
           <span className="text-base">{meta.emoji}</span>
           <span className={`text-sm font-bold ${meta.colors.accent}`}>{meta.name}</span>
         </div>
-        <StatusDot status={agentState.status} />
+        <StatusDot status={agentState.status} agentKey={agentKey} />
       </div>
 
       {/* Message list */}
       <div
         ref={scrollRef}
         onScroll={handleScroll}
+        data-testid={`agent-messages-${agentKey}`}
         className="flex-1 overflow-y-auto overflow-x-hidden space-y-0.5 py-1"
       >
         {messages.length === 0 ? (
