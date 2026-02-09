@@ -71,10 +71,19 @@ export class AgentProcessManager {
   private roundNumber = 0;
   private tickTimer: NodeJS.Timeout | null = null;
   private tickInProgress = false;
+  private strudelReference: string = '';
 
   constructor(options: AgentProcessManagerOptions) {
     this.workingDir = options.workingDir;
     this.broadcast = options.broadcast;
+
+    // Load shared Strudel API reference (injected into each agent's system prompt)
+    try {
+      const refPath = path.join(this.workingDir, 'lib', 'strudel-reference.md');
+      this.strudelReference = fs.readFileSync(refPath, 'utf-8');
+    } catch (err) {
+      console.error('[AgentManager] Failed to load strudel reference:', err);
+    }
   }
 
   /**
@@ -259,7 +268,13 @@ export class AgentProcessManager {
       }
 
       // Strip YAML frontmatter (between --- markers at start of file)
-      const prompt = content.replace(/^---[\s\S]*?---\n*/, '');
+      let prompt = content.replace(/^---[\s\S]*?---\n*/, '');
+
+      // Append shared Strudel API reference
+      if (this.strudelReference) {
+        prompt += `\n\n<strudel_reference>\n${this.strudelReference}\n</strudel_reference>`;
+      }
+
       return { prompt, model };
     } catch (err) {
       console.error(`[AgentManager] Failed to read agent file: ${filePath}`, err);
