@@ -19,7 +19,7 @@ export function PatternDisplay({ agentStates, selectedAgents }: PatternDisplayPr
     .filter((a) => a.state && a.meta);
 
   return (
-    <div className="border-t border-gray-700 bg-gray-850 shrink-0">
+    <div data-testid="pattern-display" className="border-t border-gray-700 bg-gray-850 shrink-0">
       <button
         onClick={toggle}
         className="w-full flex items-center gap-2 px-4 py-1.5 text-xs text-gray-500 hover:text-gray-400 transition-colors"
@@ -30,7 +30,7 @@ export function PatternDisplay({ agentStates, selectedAgents }: PatternDisplayPr
       {!collapsed && (
         <div className="px-4 pb-2 space-y-0.5">
           {activePatterns.map(({ key, state, meta }) => (
-            <div key={key} className="flex items-baseline gap-2 font-mono text-xs">
+            <div key={key} data-testid={`pattern-row-${key}`} className="flex items-baseline gap-2 font-mono text-xs">
               <span className="shrink-0">
                 {meta.emoji} <span className={meta.colors.accent}>{meta.name}:</span>
               </span>

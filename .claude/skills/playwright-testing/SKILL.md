@@ -248,7 +248,7 @@ If step 6 or 7 fails, there's a WebSocket or ref-forwarding bug.
 
 **Prerequisite:** Start a jam session (Phase 8 lifecycle tests must pass first).
 
-Note: v2 uses a directive-driven architecture — agents respond on-demand to boss directives, not on timed rounds. WebSocket events fire per-directive, not per-round.
+Note: v2 uses a directive-driven architecture — agents respond on-demand to boss directives, plus autonomous auto-ticks every ~30s for organic evolution. WebSocket events fire per-directive AND per-tick.
 
 ### Agent Status Broadcasts
 - [ ] Open browser DevTools → Network → WS tab → filter `/api/ws`
@@ -268,10 +268,20 @@ Note: v2 uses a directive-driven architecture — agents respond on-demand to bo
 - [ ] `jam_state_update` messages appear after agents respond to directives
 - [ ] Contains full `{ jamState: {...}, combinedPattern: "stack(...)" }`
 
+### Auto-Tick Events (Autonomous Evolution)
+Every ~30 seconds, the system sends an auto-tick to all agents. This triggers the same WebSocket event types as boss directives but without user input:
+- [ ] `agent_status` messages appear for ALL agents (each goes "thinking" briefly)
+- [ ] `agent_thought` messages appear — agents may respond with new patterns or `no_change`
+- [ ] `jam_state_update` with updated `currentRound` (round number increments per tick)
+- [ ] Auto-tick resets when a boss directive is sent (avoids double-triggering)
+- [ ] **`no_change` sentinel**: Agents can respond with `"no_change"` as their pattern to keep playing their current pattern — thoughts/reactions update but the pattern row stays the same
+
+**Impact on testing:** Auto-ticks mean the system state can change without user input. Tests that assert pattern stability (e.g., Test 4.5) must complete within the ~30s tick window, or account for auto-tick changes.
+
 ### Console Health
 - [ ] No WebSocket errors in console during jam
 - [ ] No rapid reconnection loops
-- [ ] Messages flow consistently across directives
+- [ ] Messages flow consistently across directives and auto-ticks
 
 ---
 
@@ -303,7 +313,8 @@ Note: v2 uses a directive-driven architecture — agents respond on-demand to bo
 - [ ] Color-coding per agent: drums=red, bass=blue, melody=purple, fx=green
 - [ ] "Waiting for {AGENT}..." placeholder shown before first response
 - [ ] After agent responds: thoughts displayed with round marker (e.g., "R0")
-- [ ] Pattern code shown below thoughts
+- [ ] Round numbers auto-increment with both boss directives and auto-ticks (~30s), so `R2` → `R5` gaps are normal
+- [ ] Pattern code shown below thoughts (may be unchanged if agent responded with `no_change`)
 - [ ] Reactions displayed in italics below pattern
 - [ ] Boss directives shown inline in the targeted agent's column ("BOSS (to you)")
 
@@ -348,12 +359,161 @@ Verify the full transition cycle:
 - [ ] StrudelPanel remains at bottom (audio continues if playing)
 
 ### Agent Context Isolation & Latency
-- [ ] Agent columns show individual thoughts/reactions (visual isolation per column)
-- [ ] Composed `stack()` pattern in PatternDisplay/StrudelPanel contains patterns from all active agents
-- [ ] Directive latency: time from boss input submission to agent response appearing <7s
-- [ ] Negative test: agent thoughts shown in one agent's column do NOT appear in another agent's column
-- [ ] Verify by sending a targeted directive (e.g., "@BEAT double time") — only drums agent should go to "thinking" state
-- [ ] After response, other agents' patterns remain unchanged in the composed stack
+
+These tests use `data-testid` attributes for reliable element targeting:
+- `agent-column-{key}` — column wrapper (drums, bass, melody, fx)
+- `status-label-{key}` — status text (shows "idle", "thinking", or "playing")
+- `agent-messages-{key}` — message list container
+- `pattern-display` — PatternDisplay container
+- `pattern-row-{key}` — per-agent pattern row
+- `boss-input` — boss directive input bar
+
+**Prerequisite:** Start jam with all 4 agents, wait ~10-15s for all agents to respond with initial patterns (all status dots green/"playing").
+
+#### Test 4.1: Context Isolation — Thoughts Don't Leak Across Columns
+**Goal:** Verify that agent thoughts are isolated to their own column.
+
+1. Send a targeted directive `@BEAT double time` via `boss-input`
+2. Wait for drums status to return to "playing" (response received)
+3. Use `browser_evaluate` to extract the last thought text from the drums column:
+   ```javascript
+   () => {
+     const msgs = document.querySelector('[data-testid="agent-messages-drums"]');
+     const thoughts = msgs?.querySelectorAll('p.text-gray-300');
+     return thoughts?.length ? thoughts[thoughts.length - 1].textContent : null;
+   }
+   ```
+4. For each non-targeted agent (bass, melody, fx), use `browser_evaluate` to check that text does NOT appear:
+   ```javascript
+   (element) => element.textContent.includes('<drums thought text>')
+   ```
+   on `agent-messages-{key}` for each key.
+5. **Pass:** The drums thought text is NOT found in any other agent's message container.
+
+#### Test 4.2: Composed stack() Contains All Agent Patterns
+**Goal:** Verify PatternDisplay shows patterns from all active agents and the Strudel editor contains a composed `stack()`.
+
+1. Ensure PatternDisplay is expanded (click "Patterns" toggle if collapsed)
+2. Use `browser_evaluate` to read each agent's pattern:
+   ```javascript
+   () => {
+     const keys = ['drums', 'bass', 'melody', 'fx'];
+     const patterns = {};
+     for (const key of keys) {
+       const row = document.querySelector(`[data-testid="pattern-row-${key}"]`);
+       const code = row?.querySelector('code');
+       patterns[key] = code?.textContent?.trim() || null;
+     }
+     return patterns;
+   }
+   ```
+3. Assert every active agent has a non-null, non-"silence" pattern string
+4. Use `browser_evaluate` to read the Strudel editor content:
+   ```javascript
+   () => document.querySelector('.cm-content')?.textContent || ''
+   ```
+5. Assert editor content contains `stack(` and includes snippets from each agent's pattern
+6. **Pass:** All agents have patterns AND the editor contains a composed `stack()`.
+
+#### Test 4.3: Targeted Directive Only Sets Target to "Thinking"
+**Goal:** When sending `@BEAT do a fill`, only drums goes to "thinking" — other agents stay "playing".
+
+Use `browser_run_code` with a MutationObserver to avoid race conditions:
+```javascript
+async (page) => {
+  // Set up observer BEFORE sending directive
+  const result = await page.evaluate(() => {
+    return new Promise((resolve) => {
+      const drumsLabel = document.querySelector('[data-testid="status-label-drums"]');
+      const observer = new MutationObserver(() => {
+        if (drumsLabel.textContent === 'thinking') {
+          observer.disconnect();
+          // Snapshot all statuses at this exact moment
+          const statuses = {};
+          for (const key of ['drums', 'bass', 'melody', 'fx']) {
+            const label = document.querySelector(`[data-testid="status-label-${key}"]`);
+            statuses[key] = label?.textContent || 'not found';
+          }
+          resolve(statuses);
+        }
+      });
+      observer.observe(drumsLabel, { childList: true, characterData: true, subtree: true });
+
+      // Send directive
+      const input = document.querySelector('[data-testid="boss-input"] input, [data-testid="boss-input"] textarea');
+      const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+        window.HTMLTextAreaElement.prototype, 'value'
+      )?.set || Object.getOwnPropertyDescriptor(
+        window.HTMLInputElement.prototype, 'value'
+      )?.set;
+      nativeInputValueSetter?.call(input, '@BEAT do a fill');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+
+      // Submit via form or Enter key
+      const form = input.closest('form');
+      if (form) form.dispatchEvent(new Event('submit', { bubbles: true }));
+      else input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+
+      // Timeout fallback
+      setTimeout(() => {
+        observer.disconnect();
+        resolve({ error: 'drums never went to thinking within 10s' });
+      }, 10000);
+    });
+  });
+  return result;
+}
+```
+**Pass:** `drums === "thinking"` AND all others === `"playing"`.
+
+#### Test 4.4: Directive-to-Response Latency < 7s
+**Goal:** Measure time from directive submission to agent response.
+
+Use `browser_run_code` for timing:
+```javascript
+async (page) => {
+  const start = Date.now();
+
+  // Wait for drums to go to "thinking" first (proves directive was received)
+  await page.waitForFunction(() => {
+    const label = document.querySelector('[data-testid="status-label-drums"]');
+    return label?.textContent === 'thinking';
+  }, { timeout: 5000 }).catch(() => {});
+
+  // Then wait for drums to return to "playing" (response received)
+  await page.waitForFunction(() => {
+    const label = document.querySelector('[data-testid="status-label-drums"]');
+    return label?.textContent === 'playing';
+  }, { timeout: 15000 });
+
+  const latencyMs = Date.now() - start;
+  return { latencyMs, pass: latencyMs < 7000 };
+}
+```
+**Note:** This test piggybacks on the directive sent in Test 4.3. If run independently, send a new directive first.
+**Pass:** `latencyMs < 7000`. If it fails, log the actual value to distinguish flakes from regressions (AGENT_TIMEOUT_MS is 15s).
+
+#### Test 4.5: Non-Targeted Patterns Unchanged
+**Goal:** After a targeted directive, only the targeted agent's pattern changes.
+
+1. **Before** sending a targeted directive, capture all pattern values:
+   ```javascript
+   () => {
+     const patterns = {};
+     for (const key of ['drums', 'bass', 'melody', 'fx']) {
+       const row = document.querySelector(`[data-testid="pattern-row-${key}"]`);
+       patterns[key] = row?.querySelector('code')?.textContent?.trim() || null;
+     }
+     return patterns;
+   }
+   ```
+2. Send targeted directive `@BEAT double time` and wait for drums to return to "playing"
+3. **After** response, capture all pattern values again using the same evaluate
+4. Compare: non-targeted agents (bass, melody, fx) should have identical patterns before/after
+5. **Pass:** `before[key] === after[key]` for all non-targeted agents. The targeted agent (drums) MAY have changed.
+
+**Auto-tick caveat:** The system sends auto-ticks every ~30s which can change any agent's pattern. Run this test quickly after a known state change (directive response or auto-tick completion) to stay within the tick window. If a non-targeted pattern changes, verify it was due to an auto-tick (check for `agent_thought` messages on that agent) rather than directive leakage.
 
 ---
 
