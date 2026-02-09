@@ -225,29 +225,22 @@ If step 6 or 7 fails, there's a WebSocket or ref-forwarding bug.
 ### Static Rendering
 - [ ] JamControls panel visible below Play/Stop buttons
 - [ ] "Start Jam" button visible
-- [ ] Round duration slider visible
-- [ ] Duration label shows default "Round: 16s"
 
 ### Connection Gate
 - [ ] "Start Jam" button disabled when Claude status is NOT "Ready"
 - [ ] Helper text "Connect to Claude to start a jam" shown when disconnected
 - [ ] "Start Jam" button enabled when Claude terminal shows "Ready"
 
-### Duration Slider
-- [ ] Slider has correct range (8s to 30s)
-- [ ] Moving slider updates the duration label (e.g., "Round: 20s")
-- [ ] Slider is interactive during both idle and jamming states
-
 ### Jam Session Lifecycle (requires Claude connection)
-- [ ] Clicking "Start Jam" → button changes to "Stop Jam"
-- [ ] Round counter appears: "Round: 1"
-- [ ] Time remaining appears: "Next: Xs"
-- [ ] Progress bar animates from left to right
-- [ ] **Layout switches to jam mode** (Terminal panel disappears, BandPanel + JamChat appear)
-- [ ] JamChat or terminal shows Claude processing the jam tick
-- [ ] Clicking "Stop Jam" → returns to "Start Jam" state
-- [ ] Progress bar disappears on stop
-- [ ] Round counter disappears on stop
+- [ ] Clicking "Start Jam" → Agent Selection Modal appears
+- [ ] Modal shows all 4 agents (BEAT, GROOVE, ARIA, GLITCH) with emoji and checkboxes
+- [ ] Can toggle individual agents on/off
+- [ ] "Start Jam (N agents)" button shows count of selected agents
+- [ ] Confirming modal → **layout switches to jam mode** (Terminal panel disappears, AgentColumns appear)
+- [ ] All selected agents show "thinking" status during initial jam start
+- [ ] Agents respond with opening patterns (all transition to "idle")
+- [ ] Clicking "Stop" → returns to normal mode layout
+- [ ] Cancel button / Esc dismisses modal without starting jam
 
 ---
 
@@ -255,29 +248,30 @@ If step 6 or 7 fails, there's a WebSocket or ref-forwarding bug.
 
 **Prerequisite:** Start a jam session (Phase 8 lifecycle tests must pass first).
 
+Note: v2 uses a directive-driven architecture — agents respond on-demand to boss directives, not on timed rounds. WebSocket events fire per-directive, not per-round.
+
 ### Agent Status Broadcasts
 - [ ] Open browser DevTools → Network → WS tab → filter `/api/ws`
-- [ ] During jam round, `agent_status` messages appear (one per agent)
+- [ ] When a directive is sent, `agent_status` messages appear for targeted agent(s)
 - [ ] Each contains `{ agent: "drums"|"bass"|"melody"|"fx", status: "thinking"|"idle" }`
 
 ### Agent Thought Broadcasts
 - [ ] `agent_thought` messages appear with agent reactions
 - [ ] Each contains `{ agent, emoji, thought, reaction, pattern, timestamp }`
-- [ ] JamChat shows agent reactions as chat messages (e.g., "🥁 BEAT: ...")
+- [ ] Agent columns show reactions inline (e.g., "🥁 BEAT: ...")
 
 ### Musical Context Updates
 - [ ] `musical_context_update` messages appear if boss directives change context
 - [ ] Contains `{ musicalContext: { key, scale, bpm, ... } }`
 
 ### Jam State Broadcasts
-- [ ] `jam_state_update` messages appear at end of each round
+- [ ] `jam_state_update` messages appear after agents respond to directives
 - [ ] Contains full `{ jamState: {...}, combinedPattern: "stack(...)" }`
-- [ ] `currentRound` increments each round
 
 ### Console Health
 - [ ] No WebSocket errors in console during jam
 - [ ] No rapid reconnection loops
-- [ ] Messages flow consistently across rounds
+- [ ] Messages flow consistently across directives
 
 ---
 
@@ -286,59 +280,48 @@ If step 6 or 7 fails, there's a WebSocket or ref-forwarding bug.
 **Prerequisite:** Start a jam session (Phase 8 lifecycle tests must pass first). When the jam starts, the layout **switches entirely** from normal mode to jam mode.
 
 ### Layout Switch
-- [ ] Clicking "Start Jam" swaps normal mode layout to jam mode layout
+- [ ] Clicking "Start Jam" (after agent selection) swaps normal mode layout to jam mode layout
 - [ ] Terminal panel (left) disappears
 - [ ] Heading ("CC Sick Beats") and Play/Stop buttons disappear from right area
-- [ ] Left sidebar appears (380px, `min-w-[320px]`)
-- [ ] JamChat panel appears in center
+- [ ] JamTopBar appears at top (Stop button, musical context, energy bar)
+- [ ] Agent Columns appear in CSS grid (one column per selected agent)
+- [ ] BossInputBar appears below the agent columns
+- [ ] PatternDisplay appears below BossInputBar (shows per-agent patterns with emoji/names)
 - [ ] StrudelPanel **remains at bottom** (audio is not interrupted by layout switch)
 
-### BandPanel (`data-testid="band-panel"`)
-- [ ] BandPanel visible in left sidebar
-- [ ] 4 BandMemberCards in 2×2 grid layout (`grid-cols-2`)
-- [ ] All agents represented: drums, bass, melody, fx
+### JamTopBar
+- [ ] Stop button visible at left
+- [ ] Musical key displayed (e.g., "C minor")
+- [ ] BPM displayed (e.g., "120 BPM")
+- [ ] Chord progression displayed as pill-shaped chips (e.g., Cm, Ab, Eb, Bb)
+- [ ] Energy bar with colored segments visible (labeled "E:")
 
-### BandMemberCard (`data-testid="band-member-{agent}"`)
-- [ ] Each card shows agent emoji (e.g., 🥁 for drums)
-- [ ] Each card shows agent name (e.g., "BEAT", "GROOVE", "ARIA", "GLITCH")
-- [ ] Status dot visible (gray=idle, yellow+pulse=thinking, red=error)
-- [ ] Pattern preview text shows when agent has a pattern
-- [ ] "No pattern" placeholder shown when agent has no pattern
-- [ ] Thought bubble text shown when agent has thoughts
+### Agent Columns
+- [ ] One column per selected agent in CSS grid layout
+- [ ] Each column header shows agent emoji and name (e.g., "🥁 BEAT")
+- [ ] Status indicator visible per column (idle/thinking)
 - [ ] Color-coding per agent: drums=red, bass=blue, melody=purple, fx=green
+- [ ] "Waiting for {AGENT}..." placeholder shown before first response
+- [ ] After agent responds: thoughts displayed with round marker (e.g., "R0")
+- [ ] Pattern code shown below thoughts
+- [ ] Reactions displayed in italics below pattern
+- [ ] Boss directives shown inline in the targeted agent's column ("BOSS (to you)")
 
-### JamChat (`data-testid="jam-chat"`)
-- [ ] "Jam Chat" header visible with message count
-- [ ] Empty state: "Waiting for agents to respond..." when jamming with no messages
-- [ ] Agent reaction messages appear with emoji, agent name, round number
-- [ ] Agent names color-coded (same scheme as BandMemberCards)
-- [ ] Pattern code snippets shown below reaction messages
-- [ ] Auto-scroll to latest message
-- [ ] Scroll pauses auto-scroll when user scrolls up (resumes near bottom)
-
-### Boss Directive Input (`data-testid="boss-input"`)
-- [ ] Input field at bottom of JamChat with "BOSS" label
-- [ ] Placeholder: "Give the band a directive..." when jam is active
-- [ ] Disabled when not connected or not jamming
-- [ ] Can type a directive (e.g., "Play something funky")
+### BossInputBar (`data-testid="boss-input"`)
+- [ ] Input field with "BOSS >" label
+- [ ] Placeholder: "Give a directive... (@ to mention an agent)"
+- [ ] Send button visible (disabled when input is empty)
+- [ ] Can type a directive (e.g., "@BEAT double time on the hi-hats")
+- [ ] @mention syntax targets specific agents
 - [ ] Send button submits directive
-- [ ] Directive appears in JamChat as "BOSS" message with amber styling
-- [ ] Agents receive and respond to the directive in subsequent round
+- [ ] Targeted directive appears in the target agent's column
 
-### MusicalContextBar (`data-testid="musical-context"`)
-- [ ] Visible in left sidebar (below JamControls)
-- [ ] Shows current key (e.g., "C minor")
-- [ ] Shows BPM value
-- [ ] Shows time signature
-- [ ] Chord progression displayed as pill-shaped chips
-- [ ] Energy bar with 10 segments (green 1-3, yellow 4-6, red 7-10)
-- [ ] Values update when `musical_context_update` WS messages arrive
-
-### JamControls in Sidebar
-- [ ] JamControls moves into left sidebar during jam mode (between BandPanel and MusicalContextBar)
-- [ ] "Stop Jam" button still functional
-- [ ] Round counter and progress bar still visible
-- [ ] Duration slider still interactive
+### PatternDisplay
+- [ ] Shows each agent's current pattern with emoji and name label
+- [ ] Each agent listed: 🥁 BEAT, 🎸 GROOVE, 🎹 ARIA, 🎛️ GLITCH
+- [ ] Patterns shown as code (monospace)
+- [ ] "silence" shown when agent has no pattern
+- [ ] Collapsible via "▶ Patterns" toggle
 
 ### Returning to Normal Mode
 - [ ] Clicking "Stop Jam" → layout switches back to normal mode
@@ -372,8 +355,8 @@ Use this 15-item checklist for rapid validation:
 10. [ ] No WebSocket errors in console
 11. [ ] JamControls panel visible with "Start Jam" button
 12. [ ] "Start Jam" button disabled when Claude not connected, enabled when ready
-13. [ ] Starting a jam → layout switches to jam mode (sidebar + JamChat)
-14. [ ] BandPanel shows 4 agent cards, JamChat shows agent reactions
+13. [ ] Starting a jam → agent selection modal → layout switches to jam mode (AgentColumns + BossInputBar)
+14. [ ] Agent columns show thoughts/reactions per agent, PatternDisplay shows patterns with emoji/names
 15. [ ] Stopping jam → layout reverts to normal mode
 
 Items 8 and 9 are the most critical - they test the complete integration.
