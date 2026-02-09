@@ -413,7 +413,7 @@ export class AgentProcessManager {
         fallbackPattern: pattern !== 'silence' ? pattern : state.fallbackPattern,
         thoughts: response.thoughts || '',
         reaction: response.reaction || '',
-        status: 'idle',
+        status: pattern !== 'silence' ? 'playing' : 'idle',
         lastUpdated: new Date().toISOString(),
       };
 
@@ -424,7 +424,7 @@ export class AgentProcessManager {
       this.agentPatterns[key] = state.fallbackPattern || 'silence';
       this.agentStates[key] = {
         ...state,
-        status: 'timeout',
+        status: (state.fallbackPattern && state.fallbackPattern !== 'silence') ? 'playing' : 'timeout',
         reaction: '[timed out — playing last known pattern]',
         lastUpdated: new Date().toISOString(),
       };

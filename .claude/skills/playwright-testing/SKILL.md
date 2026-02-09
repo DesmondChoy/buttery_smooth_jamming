@@ -238,7 +238,7 @@ If step 6 or 7 fails, there's a WebSocket or ref-forwarding bug.
 - [ ] "Start Jam (N agents)" button shows count of selected agents
 - [ ] Confirming modal → **layout switches to jam mode** (Terminal panel disappears, AgentColumns appear)
 - [ ] All selected agents show "thinking" status during initial jam start
-- [ ] Agents respond with opening patterns (all transition to "idle")
+- [ ] Agents respond with opening patterns (all transition to green "playing")
 - [ ] Clicking "Stop" → returns to normal mode layout
 - [ ] Cancel button / Esc dismisses modal without starting jam
 
@@ -253,7 +253,7 @@ Note: v2 uses a directive-driven architecture — agents respond on-demand to bo
 ### Agent Status Broadcasts
 - [ ] Open browser DevTools → Network → WS tab → filter `/api/ws`
 - [ ] When a directive is sent, `agent_status` messages appear for targeted agent(s)
-- [ ] Each contains `{ agent: "drums"|"bass"|"melody"|"fx", status: "thinking"|"idle" }`
+- [ ] Each contains `{ agent: "drums"|"bass"|"melody"|"fx", status: "thinking"|"playing"|"idle" }`
 
 ### Agent Thought Broadcasts
 - [ ] `agent_thought` messages appear with agent reactions
@@ -307,15 +307,23 @@ Note: v2 uses a directive-driven architecture — agents respond on-demand to bo
 - [ ] Reactions displayed in italics below pattern
 - [ ] Boss directives shown inline in the targeted agent's column ("BOSS (to you)")
 
-### Agent Status Lifecycle (StatusDot)
-The status dot in each column header reflects the agent's processing state. Verify the full transition cycle:
-- [ ] **Idle state**: Gray dot, label "idle" — shown when agent has no pending work
+### Agent Status Lifecycle (StatusDot) — Three-State Model
+The status dot in each column header reflects whether the agent is contributing sound. Three states:
+- **Green** (playing) — agent has a non-silence pattern in the composed stack
+- **Yellow** (thinking) — agent is processing a directive
+- **Gray** (idle) — agent has no pattern yet, or pattern is `silence`
+
+Verify the full transition cycle:
+- [ ] **Initial state**: Gray dot, label "idle" — shown before agents have responded
 - [ ] **Thinking state**: Yellow pulsing dot, label "thinking" — shown when agent is processing a directive
-- [ ] **Idle→Thinking→Idle transition**: Send a directive (e.g., "@BEAT double time") and verify:
+- [ ] **Playing state**: Green gently-pulsing dot, label "playing" — shown after agent responds with a non-silence pattern
+- [ ] **Jam start transition**: After starting a jam, all agents go yellow (thinking) → green (playing) once they respond with patterns
+- [ ] **Targeted directive transition**: Send "@BEAT double time" and verify:
   - [ ] Target agent's dot turns yellow/pulsing ("thinking") immediately after sending
-  - [ ] Non-targeted agents remain gray ("idle") — they are NOT processing
-  - [ ] After agent responds (~3-7s), dot returns to gray ("idle")
-- [ ] **Error/timeout states**: If an agent times out, dot shows "timeout" (gray); on error, dot shows "error" (red)
+  - [ ] Non-targeted agents remain green ("playing") — they already have patterns
+  - [ ] After agent responds (~3-7s), dot returns to green ("playing")
+- [ ] **Silence pattern**: If an agent returns `silence` as its pattern, dot should be gray ("idle")
+- [ ] **Timeout with fallback**: If an agent times out but has a previous pattern, dot stays green ("playing")
 
 ### BossInputBar (`data-testid="boss-input"`)
 - [ ] Input field with "BOSS >" label
