@@ -69,6 +69,8 @@ export class AgentProcessManager {
   private broadcast: BroadcastFn;
   private workingDir: string;
   private stopped = false;
+  private roundNumber = 0;
+  private tickTimer: NodeJS.Timeout | null = null;
 
   constructor(options: AgentProcessManagerOptions) {
     this.workingDir = options.workingDir;
@@ -82,6 +84,7 @@ export class AgentProcessManager {
   async start(activeAgents: string[]): Promise<void> {
     this.activeAgents = activeAgents;
     this.stopped = false;
+    this.roundNumber = 0;
 
     // Initialize state for each agent
     for (const key of activeAgents) {
@@ -105,6 +108,9 @@ export class AgentProcessManager {
 
     // Send initial jam context to each agent and collect responses
     await this.sendJamStart();
+
+    // Start autonomous evolution ticks
+    this.startAutoTick();
   }
 
   /**
@@ -117,6 +123,9 @@ export class AgentProcessManager {
   ): Promise<void> {
     if (this.stopped) return;
 
+    // Reset tick timer to avoid double-triggering during directive
+    if (this.tickTimer) clearInterval(this.tickTimer);
+
     // Determine which agents to target
     const targets =
       targetAgent && this.agents.has(targetAgent)
@@ -127,6 +136,9 @@ export class AgentProcessManager {
     for (const key of targets) {
       this.setAgentStatus(key, 'thinking');
     }
+
+    // Increment round once for the entire directive
+    this.roundNumber++;
 
     // Build and send directive context to each targeted agent
     const responsePromises = targets.map((key) => {
@@ -145,6 +157,9 @@ export class AgentProcessManager {
 
     // Compose all patterns and broadcast
     this.composeAndBroadcast();
+
+    // Restart auto-tick after directive completes
+    this.startAutoTick();
   }
 
   /**
@@ -152,6 +167,12 @@ export class AgentProcessManager {
    */
   async stop(): Promise<void> {
     this.stopped = true;
+
+    // Clear auto-tick timer
+    if (this.tickTimer) {
+      clearInterval(this.tickTimer);
+      this.tickTimer = null;
+    }
 
     // Kill all agent processes
     const killPromises = Array.from(this.agents.values()).map((agent) =>
@@ -168,16 +189,17 @@ export class AgentProcessManager {
   // ─── Private: Process Spawning ───────────────────────────────────
 
   private async spawnAgent(key: string): Promise<void> {
-    const systemPrompt = this.buildAgentSystemPrompt(key);
-    if (!systemPrompt) {
+    const result = this.buildAgentSystemPrompt(key);
+    if (!result) {
       console.error(`[AgentManager] No system prompt for agent: ${key}`);
       return;
     }
+    const { prompt: systemPrompt, model } = result;
 
     const proc = spawn('claude', [
       '--print',
       '--verbose',
-      '--model', 'haiku',
+      '--model', model,
       '--input-format', 'stream-json',
       '--output-format', 'stream-json',
       '--system-prompt', systemPrompt,
@@ -213,22 +235,32 @@ export class AgentProcessManager {
     });
 
     this.agents.set(key, { key, process: proc, rl, messageBuffer: '' });
-    console.log(`[AgentManager] Spawned agent: ${key} (pid=${proc.pid})`);
+    console.log(`[AgentManager] Spawned agent: ${key} (model=${model}, pid=${proc.pid})`);
   }
 
   /**
-   * Read agent .md file, strip YAML frontmatter, wrap with output instructions.
+   * Read agent .md file, parse YAML frontmatter for model, strip frontmatter,
+   * and return the prompt body + model.
    */
-  private buildAgentSystemPrompt(agentKey: string): string | null {
+  private buildAgentSystemPrompt(agentKey: string): { prompt: string; model: string } | null {
     const agentFile = AGENT_KEY_TO_FILE[agentKey];
     if (!agentFile) return null;
 
     const filePath = path.join(this.workingDir, '.claude', 'agents', `${agentFile}.md`);
     try {
       const content = fs.readFileSync(filePath, 'utf-8');
+
+      // Parse model from YAML frontmatter
+      let model = 'haiku';
+      const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---/);
+      if (frontmatterMatch) {
+        const modelMatch = frontmatterMatch[1].match(/model:\s*(\S+)/);
+        if (modelMatch) model = modelMatch[1];
+      }
+
       // Strip YAML frontmatter (between --- markers at start of file)
-      const body = content.replace(/^---[\s\S]*?---\n*/, '');
-      return body;
+      const prompt = content.replace(/^---[\s\S]*?---\n*/, '');
+      return { prompt, model };
     } catch (err) {
       console.error(`[AgentManager] Failed to read agent file: ${filePath}`, err);
       return null;
@@ -326,6 +358,7 @@ export class AgentProcessManager {
   // ─── Private: Jam Flow ───────────────────────────────────────────
 
   private async sendJamStart(): Promise<void> {
+    this.roundNumber++;
     const ctx = this.musicalContext;
 
     const responsePromises = this.activeAgents.map((key) => {
@@ -338,6 +371,7 @@ export class AgentProcessManager {
 
       const context = [
         'JAM START — CONTEXT',
+        `Round: ${this.roundNumber} (opening)`,
         `Key: ${ctx.key} | Scale: ${ctx.scale.join(', ')} | BPM: ${ctx.bpm} | Time: ${ctx.timeSignature} | Energy: ${ctx.energy}/10`,
         `Chords: ${ctx.chordProgression.join(' → ')}`,
         '',
@@ -382,6 +416,7 @@ export class AgentProcessManager {
 
     return [
       'DIRECTIVE from the boss.',
+      `Round: ${this.roundNumber}`,
       '',
       isBroadcast
         ? `BOSS SAYS: ${directive}`
@@ -398,6 +433,66 @@ export class AgentProcessManager {
     ].join('\n');
   }
 
+  // ─── Private: Auto-Tick ─────────────────────────────────────────
+
+  private startAutoTick(): void {
+    if (this.tickTimer) clearInterval(this.tickTimer);
+    this.tickTimer = setInterval(() => {
+      if (this.stopped) return;
+      this.sendAutoTick();
+    }, 30000);
+  }
+
+  private async sendAutoTick(): Promise<void> {
+    if (this.stopped) return;
+    this.roundNumber++;
+    const ctx = this.musicalContext;
+
+    console.log(`[AgentManager] Auto-tick round ${this.roundNumber}`);
+
+    const responsePromises = this.activeAgents.map((key) => {
+      if (!this.agents.has(key)) return Promise.resolve(null);
+
+      const bandStateLines = this.activeAgents
+        .filter((k) => k !== key)
+        .map((k) => {
+          const meta = AGENT_META[k];
+          const pattern = this.agentPatterns[k] || 'silence';
+          return `${meta.emoji} ${meta.name} (${k}): ${pattern}`;
+        });
+
+      const myPattern = this.agentPatterns[key] || 'silence';
+
+      const context = [
+        'AUTO-TICK — LISTEN AND EVOLVE',
+        `Round: ${this.roundNumber}`,
+        `Key: ${ctx.key} | Scale: ${ctx.scale.join(', ')} | BPM: ${ctx.bpm} | Time: ${ctx.timeSignature} | Energy: ${ctx.energy}/10`,
+        `Chords: ${ctx.chordProgression.join(' → ')}`,
+        '',
+        'BAND STATE:',
+        ...bandStateLines,
+        '',
+        `YOUR CURRENT PATTERN: ${myPattern}`,
+        '',
+        'Listen to the band. If the music calls for change, evolve your pattern.',
+        'If your groove serves the song, respond with "no_change" as your pattern.',
+      ].join('\n');
+
+      this.setAgentStatus(key, 'thinking');
+      return this.sendToAgentAndCollect(key, context);
+    });
+
+    const responses = await Promise.all(responsePromises);
+
+    for (let i = 0; i < this.activeAgents.length; i++) {
+      const key = this.activeAgents[i];
+      const response = responses[i];
+      this.applyAgentResponse(key, response);
+    }
+
+    this.composeAndBroadcast();
+  }
+
   // ─── Private: State Management ───────────────────────────────────
 
   private applyAgentResponse(key: string, response: AgentResponse | null): void {
@@ -406,6 +501,21 @@ export class AgentProcessManager {
 
     if (response) {
       const pattern = response.pattern || 'silence';
+
+      // no_change: keep existing pattern, update thoughts/reaction only
+      if (pattern === 'no_change') {
+        this.agentStates[key] = {
+          ...state,
+          thoughts: response.thoughts || '',
+          reaction: response.reaction || '',
+          status: this.agentPatterns[key] && this.agentPatterns[key] !== 'silence' ? 'playing' : 'idle',
+          lastUpdated: new Date().toISOString(),
+        };
+        this.broadcastAgentThought(key, response);
+        this.setAgentStatus(key, this.agentStates[key].status);
+        return; // Don't touch agentPatterns[key]
+      }
+
       this.agentPatterns[key] = pattern;
       this.agentStates[key] = {
         ...state,
@@ -465,7 +575,7 @@ export class AgentProcessManager {
     // Broadcast full jam state
     const jamState: JamState = {
       sessionId: 'direct-' + Date.now(),
-      currentRound: 0,
+      currentRound: this.roundNumber,
       musicalContext: this.musicalContext,
       agents: { ...this.agentStates },
       activeAgents: this.activeAgents,
