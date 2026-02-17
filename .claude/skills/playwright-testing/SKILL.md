@@ -418,52 +418,39 @@ These tests use `data-testid` attributes for reliable element targeting:
 #### Test 4.3: Targeted Directive Only Sets Target to "Thinking"
 **Goal:** When sending `@BEAT do a fill`, only drums goes to "thinking" — other agents stay "playing".
 
-Use `browser_run_code` with a MutationObserver to avoid race conditions:
+Use a two-phase approach to avoid Playwright command queue deadlock:
+
+**IMPORTANT:** `page.evaluate(() => new Promise(...))` blocks Playwright's command queue — you cannot interleave it with `fill()`/`press()` calls. Instead, use a synchronous `evaluate` to set up the observer, interact with the page, then read the result.
+
+**Phase 1:** Use `browser_evaluate` to set up MutationObserver (stores result on `window`):
 ```javascript
-async (page) => {
-  // Set up observer BEFORE sending directive
-  const result = await page.evaluate(() => {
-    return new Promise((resolve) => {
-      const drumsLabel = document.querySelector('[data-testid="status-label-drums"]');
-      const observer = new MutationObserver(() => {
-        if (drumsLabel.textContent === 'thinking') {
-          observer.disconnect();
-          // Snapshot all statuses at this exact moment
-          const statuses = {};
-          for (const key of ['drums', 'bass', 'melody', 'fx']) {
-            const label = document.querySelector(`[data-testid="status-label-${key}"]`);
-            statuses[key] = label?.textContent || 'not found';
-          }
-          resolve(statuses);
-        }
-      });
-      observer.observe(drumsLabel, { childList: true, characterData: true, subtree: true });
-
-      // Send directive
-      const input = document.querySelector('[data-testid="boss-input"] input, [data-testid="boss-input"] textarea');
-      const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
-        window.HTMLTextAreaElement.prototype, 'value'
-      )?.set || Object.getOwnPropertyDescriptor(
-        window.HTMLInputElement.prototype, 'value'
-      )?.set;
-      nativeInputValueSetter?.call(input, '@BEAT do a fill');
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-      input.dispatchEvent(new Event('change', { bubbles: true }));
-
-      // Submit via form or Enter key
-      const form = input.closest('form');
-      if (form) form.dispatchEvent(new Event('submit', { bubbles: true }));
-      else input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-
-      // Timeout fallback
-      setTimeout(() => {
-        observer.disconnect();
-        resolve({ error: 'drums never went to thinking within 10s' });
-      }, 10000);
-    });
+() => {
+  window.__statusCapture = null;
+  const drumsLabel = document.querySelector('[data-testid="status-label-drums"]');
+  const observer = new MutationObserver(() => {
+    if (drumsLabel.textContent === 'thinking') {
+      observer.disconnect();
+      const statuses = {};
+      for (const key of ['drums', 'bass', 'melody', 'fx']) {
+        const label = document.querySelector(`[data-testid="status-label-${key}"]`);
+        statuses[key] = label?.textContent || 'not found';
+      }
+      window.__statusCapture = statuses;
+    }
   });
-  return result;
+  observer.observe(drumsLabel, { childList: true, characterData: true, subtree: true });
+  setTimeout(() => observer.disconnect(), 30000);
+  return { observerSetup: true, currentStatus: drumsLabel.textContent };
 }
+```
+
+**Phase 2:** Use `browser_type` on the boss-input ref with `submit: true` to send `@BEAT do a fill`.
+
+Note: `data-testid="boss-input"` is on the `<input>` element itself, not a wrapper — use the ref directly.
+
+**Phase 3:** Use `browser_evaluate` to read captured statuses:
+```javascript
+() => window.__statusCapture
 ```
 **Pass:** `drums === "thinking"` AND all others === `"playing"`.
 
