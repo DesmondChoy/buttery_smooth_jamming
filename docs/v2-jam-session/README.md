@@ -17,6 +17,12 @@ The jam session is fully functional with per-agent persistent Claude processes f
 ## Quick Start
 
 ```bash
+# Install dependencies
+npm install
+
+# Build the MCP server (required on first run and after editing MCP source)
+cd packages/mcp-server && npm run build && cd ../..
+
 # Start the web app
 npm run dev
 ```
