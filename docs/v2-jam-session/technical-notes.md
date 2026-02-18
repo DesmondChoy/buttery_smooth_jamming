@@ -70,26 +70,24 @@ claude --print --verbose --model sonnet \
 - `--strict-mcp-config` prevents agents from connecting to the Strudel MCP server (they don't need it)
 - Without both flags, agents may hallucinate MCP tool results
 
-## 5. MCP Permission Bootstrapping
+## 5. MCP Tool Allowlist (Normal Mode Only)
 
-Claude Code prompts the user for permission on first use of each MCP tool. In jam mode, this caused the first 1-2 rounds to be lost.
-
-**Fix:** `lib/claude-process.ts` passes `--allowedTools` with all MCP tool names pre-approved:
+Claude Code prompts the user for permission on first use of each MCP tool. To avoid prompt interruptions in the normal assistant flow, `lib/claude-process.ts` passes `--allowedTools` for the Strudel tools it uses:
 
 ```typescript
 '--allowedTools',
 'mcp__strudel__execute_pattern',
 'mcp__strudel__stop_pattern',
-// ... all tool names
+'mcp__strudel__send_message',
 ```
 
-This only applies to the orchestrator process (normal mode). Agent processes don't use MCP tools at all.
+This allowlist only applies to the orchestrator process (normal mode). Jam-mode agent processes run toolless (`--tools '' --strict-mcp-config`).
 
-## 6. LLM Enum Values
+## 6. Jam-State Ownership (v2)
 
-LLMs will use **any valid enum value** in a tool schema. If you add a status like `"playing"` to `update_agent_state`'s enum, agents will set it — even if you only intended it for internal use.
+In v2 jam mode, the canonical jam-state source is `AgentProcessManager` (`lib/agent-process-manager.ts`). The MCP server no longer owns jam-state mutation/read tools.
 
-**Fix:** Only include enum values in the MCP tool schema that you want LLMs to set. Remove values that should be set programmatically.
+**Implication:** Jam state should be observed from manager broadcasts (`agent_status`, `agent_thought`, `jam_state_update`) and manager snapshots, not from MCP in-memory state.
 
 ## 7. Agent Key to File Mapping
 
@@ -150,6 +148,6 @@ Each agent process receives a shared Strudel API reference (`lib/strudel-referen
 | Agent stream-json broken | No output or malformed JSON | Add `--verbose` flag |
 | WebSocket send crashes | `bufferUtil.mask is not a function` | Use broadcast callback, not `ws` client in webpack-bundled code |
 | Agent hallucinating tools | Fake MCP results in output | Ensure `--tools '' --strict-mcp-config` flags |
-| First jam round lost | Permissions dialog appears | Add `--allowedTools` to orchestrator process |
-| Agents setting wrong status | LLM uses unexpected enum value | Remove unwanted values from tool schema |
+| Normal mode prompts for MCP permission | First tool call interrupts flow | Use `--allowedTools` in orchestrator process |
+| Jam-state drift confusion | Different state views disagree | Treat `AgentProcessManager` as canonical source |
 | React Compiler lint errors | Hooks dependency warnings | Destructure callback objects before use in effects |

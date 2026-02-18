@@ -46,12 +46,12 @@ CC Sick Beats v2 uses a **dual-mode architecture**: a single-agent Strudel assis
 │                         │              ┌──────────────────────────────────────┐
 │ Jam mode:               │              │ MCP Server (packages/mcp-server)     │
 │   AgentProcessManager   │              │ execute_pattern, stop_pattern,       │
-│   ┌───────────────────┐ │              │ send_message, get_user_messages,     │
-│   │ claude --print    │ │              │ get_jam_state, update_agent_state,   │
-│   │ --model sonnet    │ │              │ update_musical_context,              │
-│   │ drums process     │ │              │ broadcast_jam_state,                 │
-│   ├───────────────────┤ │              │ set_active_agents                    │
-│   │ bass process      │ │              └──────────────────────────────────────┘
+│   ┌───────────────────┐ │              │ send_message, get_user_messages      │
+│   │ claude --print    │ │              └──────────────────────────────────────┘
+│   │ --model sonnet    │ │
+│   │ drums process     │ │
+│   ├───────────────────┤ │
+│   │ bass process      │ │
 │   ├───────────────────┤ │
 │   │ melody process    │ │
 │   ├───────────────────┤ │
@@ -74,6 +74,7 @@ CC Sick Beats v2 uses a **dual-mode architecture**: a single-agent Strudel assis
 - Boss directives route deterministically to agent stdin
 - Agents respond with JSON: `{ pattern, thoughts, reaction }`
 - Manager composes `stack()` pattern and broadcasts via callback closure
+- `AgentProcessManager` is the canonical jam-state source in v2 (round, context, per-agent status/pattern)
 - The orchestrator (`ClaudeProcess`) is **bypassed** during jams
 
 ## Message Flow
@@ -151,7 +152,7 @@ cc_sick_beats/
 │   ├── package.json
 │   ├── tsconfig.json
 │   ├── src/
-│   │   ├── index.ts                 # Server entry + in-memory jam state
+│   │   ├── index.ts                 # Server entry + normal-mode MCP tools
 │   │   └── strudel-reference.ts     # Embedded API docs (MCP resource)
 │   └── build/                       # Compiled output (gitignored)
 ├── types/
@@ -176,7 +177,7 @@ cc_sick_beats/
 | `useClaudeTerminal` | Claude CLI streaming + jam broadcast forwarding | Both |
 | `AgentProcessManager` | Spawns/manages per-agent Claude processes | Jam (server) |
 | `ClaudeProcess` | Single Claude CLI for Strudel assistant | Normal (server) |
-| MCP Server | Tool execution + in-memory jam state | Both (server) |
+| MCP Server | Normal-mode tool execution + user message queue | Normal (server) |
 
 ## Key Types
 

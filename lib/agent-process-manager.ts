@@ -76,6 +76,7 @@ export class AgentProcessManager {
   private turnInProgress: Promise<void> = Promise.resolve();
   private turnCounter = 0;
   private strudelReference: string = '';
+  private sessionId = 'direct-0';
 
   constructor(options: AgentProcessManagerOptions) {
     this.workingDir = options.workingDir;
@@ -128,6 +129,7 @@ export class AgentProcessManager {
     this.stopped = false;
     this.roundNumber = 0;
     this.tickScheduled = false;
+    this.sessionId = 'direct-' + Date.now();
 
     // Initialize state for each agent
     for (const key of activeAgents) {
@@ -246,8 +248,31 @@ export class AgentProcessManager {
     this.agentPatterns = {};
     this.agentStates = {};
     this.activeAgents = [];
+    this.sessionId = 'direct-0';
     this.turnInProgress = Promise.resolve();
     this.turnCounter = 0;
+  }
+
+  /**
+   * Snapshot of the manager-owned jam state (v2 jam-mode canonical source).
+   */
+  getJamStateSnapshot(): JamState {
+    const agents: Record<string, AgentState> = {};
+    for (const [key, state] of Object.entries(this.agentStates)) {
+      agents[key] = { ...state };
+    }
+
+    return {
+      sessionId: this.sessionId,
+      currentRound: this.roundNumber,
+      musicalContext: {
+        ...this.musicalContext,
+        scale: [...this.musicalContext.scale],
+        chordProgression: [...this.musicalContext.chordProgression],
+      },
+      agents,
+      activeAgents: [...this.activeAgents],
+    };
   }
 
   // ─── Private: Process Spawning ───────────────────────────────────
@@ -664,13 +689,7 @@ export class AgentProcessManager {
     this.broadcastWs('execute', { code: combinedPattern });
 
     // Broadcast full jam state
-    const jamState: JamState = {
-      sessionId: 'direct-' + Date.now(),
-      currentRound: this.roundNumber,
-      musicalContext: this.musicalContext,
-      agents: { ...this.agentStates },
-      activeAgents: this.activeAgents,
-    };
+    const jamState = this.getJamStateSnapshot();
 
     this.broadcastWs<JamStatePayload>('jam_state_update', {
       jamState,

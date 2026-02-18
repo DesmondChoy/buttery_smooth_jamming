@@ -108,15 +108,33 @@ function getNthProcess(
   return Array.from(processes.values())[n];
 }
 
-/** Extract the jamState from a broadcast for a specific round number. */
+interface BroadcastJamState {
+  currentRound: number;
+  musicalContext: MusicalContext;
+  agents: Record<string, unknown>;
+  activeAgents: string[];
+}
+
 function getJamStateForRound(
   broadcast: ReturnType<typeof vi.fn>,
   round: number
-): { currentRound: number; musicalContext: MusicalContext } | undefined {
+): BroadcastJamState | undefined {
   return broadcast.mock.calls
-    .filter(([msg]: unknown[]) => (msg as { type: string }).type === 'jam_state_update')
-    .map(([msg]: unknown[]) => (msg as { payload: { jamState: { currentRound: number; musicalContext: MusicalContext } } }).payload.jamState)
-    .find((js: { currentRound: number }) => js.currentRound === round);
+    .map(([msg]: unknown[]) => msg as { type: string; payload?: { jamState?: BroadcastJamState } })
+    .filter((msg) => msg.type === 'jam_state_update' && !!msg.payload?.jamState)
+    .map((msg) => msg.payload!.jamState!)
+    .find((jamState) => jamState.currentRound === round);
+}
+
+function getLatestJamState(
+  broadcast: ReturnType<typeof vi.fn>
+): BroadcastJamState | undefined {
+  const jamStates = broadcast.mock.calls
+    .map(([msg]: unknown[]) => msg as { type: string; payload?: { jamState?: BroadcastJamState } })
+    .filter((msg) => msg.type === 'jam_state_update' && !!msg.payload?.jamState)
+    .map((msg) => msg.payload!.jamState!);
+
+  return jamStates[jamStates.length - 1];
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────
@@ -558,6 +576,74 @@ describe('AgentProcessManager musical context updates', () => {
     expect(directiveJamState!.musicalContext.key).toBe('C minor');
     expect(directiveJamState!.musicalContext.bpm).toBe(120);
     expect(directiveJamState!.musicalContext.energy).toBe(5);
+
+    await manager.stop();
+  });
+});
+
+describe('AgentProcessManager jam state snapshots', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.clearAllMocks();
+  });
+
+  afterEach(async () => {
+    vi.useRealTimers();
+  });
+
+  it('snapshot stays consistent with latest jam_state_update broadcast', async () => {
+    const { manager, broadcast, processes } = createTestManager();
+
+    const startPromise = manager.start(['drums', 'bass']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const drumsProc = getNthProcess(processes, 0);
+    const bassProc = getNthProcess(processes, 1);
+
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd sd")',
+      thoughts: 'Opening drums',
+      reaction: 'Locked',
+    });
+    sendAgentResponse(bassProc, {
+      pattern: 'note("c2 g2").s("sawtooth")',
+      thoughts: 'Opening bass',
+      reaction: 'Holding root',
+    });
+    await startPromise;
+
+    const directivePromise = manager.handleDirective(
+      'Switch to D major, BPM 140, more energy',
+      undefined,
+      ['drums', 'bass']
+    );
+    await vi.advanceTimersByTimeAsync(0);
+
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd sd bd sd").fast(2)',
+      thoughts: 'Pushing tempo',
+      reaction: 'Driving',
+    });
+    sendAgentResponse(bassProc, {
+      pattern: 'note("d2 a2").s("sawtooth").gain(1.1)',
+      thoughts: 'Following new key',
+      reaction: 'Supporting',
+    });
+    await directivePromise;
+
+    const latestJamState = getLatestJamState(broadcast) as {
+      currentRound: number;
+      musicalContext: unknown;
+      agents: unknown;
+      activeAgents: unknown;
+    };
+    const snapshot = manager.getJamStateSnapshot();
+
+    expect(latestJamState).toBeDefined();
+    expect(snapshot.currentRound).toBe(latestJamState.currentRound);
+    expect(snapshot.musicalContext).toEqual(latestJamState.musicalContext);
+    expect(snapshot.agents).toEqual(latestJamState.agents);
+    expect(snapshot.activeAgents).toEqual(latestJamState.activeAgents);
 
     await manager.stop();
   });
