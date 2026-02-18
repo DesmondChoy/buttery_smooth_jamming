@@ -105,9 +105,16 @@ export default function Home() {
         case 'jam_state_update':
           jam.handleJamStateUpdate(message.payload as Parameters<typeof jam.handleJamStateUpdate>[0]);
           break;
+        case 'directive_error':
+          addChatMessage({
+            type: 'system',
+            text: (message.payload as { message: string }).message,
+            round: 0,
+          });
+          break;
       }
     };
-  }, [jam.handleAgentThought, jam.handleAgentStatus, jam.handleJamStateUpdate, handleExecute]);
+  }, [jam.handleAgentThought, jam.handleAgentStatus, jam.handleJamStateUpdate, handleExecute, addChatMessage]);
 
   // Handle incoming chat messages from MCP send_message broadcasts
   // Agent reactions flow through update_agent_state → agent_thought, not send_message

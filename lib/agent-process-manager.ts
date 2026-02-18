@@ -169,6 +169,22 @@ export class AgentProcessManager {
     return this.enqueueTurn('directive', async () => {
       if (this.stopped) return;
 
+      // Reset tick timer to avoid double-triggering during directive
+      if (this.tickTimer) clearInterval(this.tickTimer);
+
+      // Guard: if a specific agent was targeted but is unavailable, error early
+      if (targetAgent && !this.agents.has(targetAgent)) {
+        const meta = AGENT_META[targetAgent];
+        const name = meta?.name ?? targetAgent;
+        const reason = !activeAgents.includes(targetAgent)
+          ? `${name} is not in this jam session`
+          : `${name}'s process is unavailable`;
+        console.warn(`[AgentManager] Directive target unavailable: ${reason}`);
+        this.broadcastWs('directive_error', { message: reason, targetAgent });
+        this.startAutoTick();
+        return;
+      }
+
       // Parse and apply any musical context changes from the directive
       const contextDelta = parseMusicalContextChanges(text, this.musicalContext);
       if (contextDelta) {
@@ -176,14 +192,10 @@ export class AgentProcessManager {
         console.log('[AgentManager] Musical context updated:', contextDelta);
       }
 
-      // Reset tick timer to avoid double-triggering during directive
-      if (this.tickTimer) clearInterval(this.tickTimer);
-
       // Determine which agents to target
-      const targets =
-        targetAgent && this.agents.has(targetAgent)
-          ? [targetAgent]
-          : activeAgents.filter((k) => this.agents.has(k));
+      const targets = targetAgent
+        ? [targetAgent]
+        : activeAgents.filter((k) => this.agents.has(k));
 
       // Set targeted agents to "thinking"
       for (const key of targets) {

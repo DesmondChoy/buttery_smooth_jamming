@@ -581,6 +581,210 @@ describe('AgentProcessManager musical context updates', () => {
   });
 });
 
+// ─── Directive Targeting Tests ───────────────────────────────────
+
+describe('AgentProcessManager directive targeting', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.clearAllMocks();
+  });
+
+  afterEach(async () => {
+    vi.useRealTimers();
+  });
+
+  it('returns directive_error when target agent is not in session', async () => {
+    const { manager, broadcast, processes } = createTestManager();
+
+    // Start with only drums
+    const startPromise = manager.start(['drums']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const drumsProc = getNthProcess(processes, 0);
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd sd")',
+      thoughts: 'Opening',
+      reaction: 'Go!',
+    });
+    await startPromise;
+
+    broadcast.mockClear();
+
+    // Target bass, which is NOT in activeAgents
+    const directivePromise = manager.handleDirective(
+      'play a bassline',
+      'bass',
+      ['drums']
+    );
+    await directivePromise;
+
+    // Should broadcast a directive_error
+    const errorMsgs = broadcast.mock.calls
+      .filter(([msg]: unknown[]) => (msg as { type: string }).type === 'directive_error');
+    expect(errorMsgs).toHaveLength(1);
+    expect((errorMsgs[0][0] as { payload: { message: string } }).payload.message)
+      .toBe('GROOVE is not in this jam session');
+
+    // Should NOT broadcast jam_state_update (no round increment)
+    const jamStateUpdates = broadcast.mock.calls
+      .filter(([msg]: unknown[]) => (msg as { type: string }).type === 'jam_state_update');
+    expect(jamStateUpdates).toHaveLength(0);
+
+    // Round should remain at 1 (only jam-start incremented it)
+    const snapshot = manager.getJamStateSnapshot();
+    expect(snapshot.currentRound).toBe(1);
+
+    await manager.stop();
+  });
+
+  it('returns directive_error when target agent process has crashed', async () => {
+    const { manager, broadcast, processes } = createTestManager();
+
+    // Start with drums and bass
+    const startPromise = manager.start(['drums', 'bass']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const drumsProc = getNthProcess(processes, 0);
+    const bassProc = getNthProcess(processes, 1);
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd sd")',
+      thoughts: 'Opening drums',
+      reaction: 'Go!',
+    });
+    sendAgentResponse(bassProc, {
+      pattern: 'note("c2 g2")',
+      thoughts: 'Opening bass',
+      reaction: 'Locked!',
+    });
+    await startPromise;
+
+    // Simulate bass process crashing (exit handler removes from this.agents)
+    bassProc.emit('exit', 1, 'SIGTERM');
+    await vi.advanceTimersByTimeAsync(0);
+
+    broadcast.mockClear();
+
+    // Target bass, which was selected but its process is gone
+    const directivePromise = manager.handleDirective(
+      'slap bass!',
+      'bass',
+      ['drums', 'bass']
+    );
+    await directivePromise;
+
+    // Should broadcast directive_error with "unavailable"
+    const errorMsgs = broadcast.mock.calls
+      .filter(([msg]: unknown[]) => (msg as { type: string }).type === 'directive_error');
+    expect(errorMsgs).toHaveLength(1);
+    expect((errorMsgs[0][0] as { payload: { message: string } }).payload.message)
+      .toBe("GROOVE's process is unavailable");
+
+    await manager.stop();
+  });
+
+  it('routes directive to exactly one agent when target is alive', async () => {
+    const { manager, broadcast, processes } = createTestManager();
+
+    // Start with drums and bass
+    const startPromise = manager.start(['drums', 'bass']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const drumsProc = getNthProcess(processes, 0);
+    const bassProc = getNthProcess(processes, 1);
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd sd")',
+      thoughts: 'Opening drums',
+      reaction: 'Go!',
+    });
+    sendAgentResponse(bassProc, {
+      pattern: 'note("c2 g2")',
+      thoughts: 'Opening bass',
+      reaction: 'Locked!',
+    });
+    await startPromise;
+
+    broadcast.mockClear();
+
+    // Target drums specifically
+    const directivePromise = manager.handleDirective(
+      'more cowbell!',
+      'drums',
+      ['drums', 'bass']
+    );
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Only drums should receive the directive — respond only from drums
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd sd cp sd")',
+      thoughts: 'Added cowbell',
+      reaction: 'Cowbell!',
+    });
+    await directivePromise;
+
+    // Should NOT have directive_error
+    const errorMsgs = broadcast.mock.calls
+      .filter(([msg]: unknown[]) => (msg as { type: string }).type === 'directive_error');
+    expect(errorMsgs).toHaveLength(0);
+
+    // Only drums should have an agent_thought broadcast
+    const thoughts = broadcast.mock.calls
+      .filter(([msg]: unknown[]) => (msg as { type: string }).type === 'agent_thought')
+      .map(([msg]: unknown[]) => (msg as { payload: { agent: string } }).payload.agent);
+    expect(thoughts).toEqual(['drums']);
+
+    await manager.stop();
+  });
+
+  it('auto-tick resumes after failed directive', async () => {
+    const { manager, broadcast, processes } = createTestManager();
+
+    // Start with only drums
+    const startPromise = manager.start(['drums']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const drumsProc = getNthProcess(processes, 0);
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd sd")',
+      thoughts: 'Opening',
+      reaction: 'Go!',
+    });
+    await startPromise;
+
+    // Send a failing directive (target bass, not in session)
+    const directivePromise = manager.handleDirective(
+      'play a bassline',
+      'bass',
+      ['drums']
+    );
+    await directivePromise;
+
+    // The auto-tick timer should have been re-armed
+    const rawManager = manager as unknown as { tickTimer: NodeJS.Timeout | null };
+    expect(rawManager.tickTimer).not.toBeNull();
+
+    broadcast.mockClear();
+
+    // Advance time to trigger auto-tick — proves timer was re-armed
+    vi.advanceTimersByTime(30000);
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Respond to the auto-tick
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd sd bd sd")',
+      thoughts: 'Evolving',
+      reaction: 'Growing',
+    });
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Should have a jam_state_update from the auto-tick
+    const jamStateUpdates = broadcast.mock.calls
+      .filter(([msg]: unknown[]) => (msg as { type: string }).type === 'jam_state_update');
+    expect(jamStateUpdates.length).toBeGreaterThanOrEqual(1);
+
+    await manager.stop();
+  });
+});
+
 describe('AgentProcessManager jam state snapshots', () => {
   beforeEach(() => {
     vi.useFakeTimers();

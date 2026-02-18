@@ -12,7 +12,8 @@ export type WSMessageType =
   | 'agent_thought'
   | 'musical_context_update'
   | 'agent_status'
-  | 'jam_tick';
+  | 'jam_tick'
+  | 'directive_error';
 
 export interface WSMessage<T = unknown> {
   type: WSMessageType;
