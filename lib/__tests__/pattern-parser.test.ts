@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parsePattern, summarizePattern } from '../pattern-parser';
+import { parsePattern, summarizePattern, formatBandStateLine } from '../pattern-parser';
 
 // ─── Test corpus from .claude/agents/*.md ────────────────────────────
 
@@ -229,6 +229,83 @@ describe('summarizePattern', () => {
       expect(result).toContain('distort 2');
       expect(result).toContain('rim');
       expect(result).toContain('delay 0.25');
+    });
+  });
+
+  // ─── formatBandStateLine (integration: parser → agent communication) ──
+
+  describe('formatBandStateLine', () => {
+    it('includes emoji, name, key, summary, and raw pattern for drums', () => {
+      const line = formatBandStateLine('drums', 's("bd ~ sd ~").bank("RolandTR909").gain(0.5)');
+      expect(line).toContain('🥁');
+      expect(line).toContain('BEAT');
+      expect(line).toContain('(drums)');
+      expect(line).toContain('[');        // has summary brackets
+      expect(line).toContain('bd sd');    // parsed content in summary
+      expect(line).toContain('TR909');    // bank in summary
+      expect(line).toContain('s("bd');    // raw code preserved after colon
+    });
+
+    it('includes emoji, name, key, summary, and raw pattern for bass', () => {
+      const line = formatBandStateLine('bass', 'note("c1 ~ eb1 g1").s("sawtooth").lpf(600).gain(0.6)');
+      expect(line).toContain('🎸');
+      expect(line).toContain('GROOVE');
+      expect(line).toContain('(bass)');
+      expect(line).toContain('[');
+      expect(line).toContain('c1 eb1 g1');
+      expect(line).toContain('sawtooth');
+      expect(line).toContain('note("c1');  // raw code preserved
+    });
+
+    it('includes emoji, name, key, summary, and raw pattern for melody', () => {
+      const line = formatBandStateLine('melody', 'note("eb4 ~ ~ g4 ~ ~ ~ ~").s("sine").room(0.5).gain(0.5).slow(2)');
+      expect(line).toContain('🎹');
+      expect(line).toContain('ARIA');
+      expect(line).toContain('(melody)');
+      expect(line).toContain('[');
+      expect(line).toContain('eb4 g4');
+      expect(line).toContain('sine');
+    });
+
+    it('includes emoji, name, key, summary, and raw pattern for fx', () => {
+      const line = formatBandStateLine('fx', 's("hh?").room(0.9).hpf(400).gain(0.3).degradeBy(0.7).slow(2)');
+      expect(line).toContain('🎛');
+      expect(line).toContain('GLITCH');
+      expect(line).toContain('(fx)');
+      expect(line).toContain('[');
+      expect(line).toContain('hh');
+      expect(line).toContain('degradeBy(0.7)');
+    });
+
+    it('omits summary brackets for silence', () => {
+      const line = formatBandStateLine('drums', 'silence');
+      expect(line).toBe('🥁 BEAT (drums): silence');
+      expect(line).not.toContain('[');
+    });
+
+    it('omits summary brackets for unparseable patterns', () => {
+      const line = formatBandStateLine('bass', 'some_weird_thing()');
+      expect(line).toContain('🎸 GROOVE (bass)');
+      expect(line).not.toContain('[');
+      expect(line).toContain('some_weird_thing()');
+    });
+
+    it('falls back gracefully for unknown agent key', () => {
+      const line = formatBandStateLine('unknown', 's("bd").gain(0.5)');
+      expect(line).toContain('unknown');
+      expect(line).toContain('s("bd")');
+    });
+
+    it('formats a full stack pattern for drums with all layers visible', () => {
+      const pattern = 'stack(s("bd [~ bd] sd [bd ~]").bank("RolandTR909"), s("hh*4").gain(0.5).sometimes(x => x.gain(0.3)), s("~ ~ ~ cp").every(4, x => x.s("cr")))';
+      const line = formatBandStateLine('drums', pattern);
+      // Summary should show layer count and content
+      expect(line).toContain('3 layers');
+      expect(line).toContain('bd sd');
+      expect(line).toContain('hh');
+      expect(line).toContain('cp');
+      // Raw pattern preserved after the summary
+      expect(line).toContain('stack(s("bd');
     });
   });
 

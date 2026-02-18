@@ -11,6 +11,7 @@
  */
 import { parse } from 'acorn';
 import type { PatternSummary, LayerSummary } from './types';
+import { AGENT_META } from './types';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type ASTNode = any;
@@ -210,6 +211,24 @@ function formatLayer(layer: LayerSummary): string {
  *   Input:  stack(s("bd [~ bd] sd [bd ~]").bank("RolandTR909"), s("hh*4").gain(0.5))
  *   Output: "2 layers: bd sd (TR909) | hh, gain 0.5"
  */
+/**
+ * Format a complete band state line for an agent.
+ * This is the string agents see in their BAND STATE section.
+ *
+ * Example:
+ *   formatBandStateLine('drums', 'stack(s("bd ~ sd ~").bank("RolandTR909"), s("hh*4").gain(0.5))')
+ *   → '🥁 BEAT (drums) [2 layers: bd sd (TR909) | hh, gain 0.5]: stack(s("bd ~ sd ~")...)'
+ */
+export function formatBandStateLine(agentKey: string, pattern: string): string {
+  const meta = AGENT_META[agentKey];
+  if (!meta) return `${agentKey}: ${pattern}`;
+  const summary = summarizePattern(pattern);
+  const label = summary
+    ? `${meta.emoji} ${meta.name} (${agentKey}) [${summary}]`
+    : `${meta.emoji} ${meta.name} (${agentKey})`;
+  return `${label}: ${pattern}`;
+}
+
 export function summarizePattern(code: string): string | null {
   if (!code || code === 'silence' || code === 'no_change') return null;
 
