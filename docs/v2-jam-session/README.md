@@ -19,9 +19,6 @@ The jam session is fully functional with per-agent persistent Claude processes f
 ```bash
 # Start the web app
 npm run dev
-
-# In another terminal, start Claude Code
-claude
 ```
 
 1. Open http://localhost:3000
@@ -34,12 +31,12 @@ claude
 
 ## Band Members
 
-| Agent | Emoji | Personality | Stubbornness |
-|-------|-------|-------------|--------------|
-| BEAT | 🥁 | Syncopation-obsessed veteran drummer, high ego | 70% |
-| GROOVE | 🎸 | Selfless minimalist bassist, locks in with kick drum | 30% |
-| ARIA | 🎹 | Classically trained melodist, insists on harmonic correctness | 50% |
-| GLITCH | 🎛️ | Chaotic texture artist, lives to break sonic conventions | 60% |
+| Agent | Emoji | Personality |
+|-------|-------|-------------|
+| BEAT | 🥁 | Syncopation-obsessed veteran drummer, high ego |
+| GROOVE | 🎸 | Selfless minimalist bassist, locks in with kick drum |
+| ARIA | 🎹 | Classically trained melodist, insists on harmonic correctness |
+| GLITCH | 🎛️ | Chaotic texture artist, lives to break sonic conventions |
 
 ## Boss Directives
 
@@ -49,7 +46,7 @@ claude
 
 ## Key Design Decisions
 
-1. **Per-agent persistent processes** — each agent is a dedicated `claude --print --model haiku` process alive for the entire jam, avoiding the 22-29s latency of spawning fresh subagents per directive
+1. **Per-agent persistent processes** — each agent is a dedicated `claude --print --model <frontmatter>` process (currently Sonnet) alive for the entire jam, avoiding the 22-29s latency of spawning fresh subagents per directive
 2. **Deterministic routing** — `@BEAT` routes to drums process via code, no LLM inference needed
 3. **Server-side pattern composition** — `composePatterns()` builds `stack()` in TypeScript, not LLM reasoning
 4. **Broadcast callback pattern** — route handler passes a closure to the process manager, avoiding `ws` native addon issues in Next.js webpack

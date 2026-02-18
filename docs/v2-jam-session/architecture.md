@@ -48,7 +48,7 @@ CC Sick Beats v2 uses a **dual-mode architecture**: a single-agent Strudel assis
 │   AgentProcessManager   │              │ execute_pattern, stop_pattern,       │
 │   ┌───────────────────┐ │              │ send_message, get_user_messages,     │
 │   │ claude --print    │ │              │ get_jam_state, update_agent_state,   │
-│   │ --model haiku     │ │              │ update_musical_context,              │
+│   │ --model sonnet    │ │              │ update_musical_context,              │
 │   │ drums process     │ │              │ broadcast_jam_state,                 │
 │   ├───────────────────┤ │              │ set_active_agents                    │
 │   │ bass process      │ │              └──────────────────────────────────────┘
@@ -70,9 +70,9 @@ CC Sick Beats v2 uses a **dual-mode architecture**: a single-agent Strudel assis
 - Standard MCP tool flow: Claude CLI → MCP server → `/api/ws` → browser
 
 ### Jam Mode (Per-Agent Persistent Processes)
-- `AgentProcessManager` spawns one `claude --print --model haiku` per active agent
+- `AgentProcessManager` spawns one `claude --print --model <frontmatter>` per active agent (currently Sonnet, configured in each `.claude/agents/*.md` YAML frontmatter)
 - Boss directives route deterministically to agent stdin
-- Agents respond with JSON: `{ pattern, thoughts, reaction, comply_with_boss }`
+- Agents respond with JSON: `{ pattern, thoughts, reaction }`
 - Manager composes `stack()` pattern and broadcasts via callback closure
 - The orchestrator (`ClaudeProcess`) is **bypassed** during jams
 
@@ -137,7 +137,11 @@ cc_sick_beats/
 ├── lib/
 │   ├── types.ts                     # Shared types (AGENT_META, JamState, WSMessage)
 │   ├── claude-process.ts            # Spawns Claude CLI (Strudel assistant only)
-│   └── agent-process-manager.ts     # Per-agent persistent processes (jam mode)
+│   ├── agent-process-manager.ts     # Per-agent persistent processes (jam mode)
+│   ├── pattern-parser.ts            # Parses Strudel patterns into structured summaries
+│   ├── strudel-reference.md         # Strudel API reference injected into agent prompts
+│   └── __tests__/
+│       └── pattern-parser.test.ts   # Pattern parser unit tests
 ├── .claude/agents/
 │   ├── drummer.md                   # 🥁 BEAT persona + Strudel drum patterns
 │   ├── bassist.md                   # 🎸 GROOVE persona + bass patterns
@@ -178,11 +182,17 @@ cc_sick_beats/
 
 ```typescript
 // lib/types.ts — AGENT_META is the single source of truth
-const AGENT_META: Record<string, { name: string; emoji: string; color: string }> = {
-  drums: { name: 'BEAT',   emoji: '🥁', color: '#ef4444' },
-  bass:  { name: 'GROOVE', emoji: '🎸', color: '#3b82f6' },
-  melody:{ name: 'ARIA',   emoji: '🎹', color: '#a855f7' },
-  fx:    { name: 'GLITCH', emoji: '🎛️', color: '#22c55e' },
+const AGENT_META: Record<string, {
+  key: string;
+  name: string;
+  emoji: string;
+  mention: string;
+  colors: { border: string; accent: string; bg: string; bgSolid: string };
+}> = {
+  drums:  { key: 'drums',  name: 'BEAT',   emoji: '🥁', mention: '@BEAT',   colors: { ... } },
+  bass:   { key: 'bass',   name: 'GROOVE', emoji: '🎸', mention: '@GROOVE', colors: { ... } },
+  melody: { key: 'melody', name: 'ARIA',   emoji: '🎹', mention: '@ARIA',   colors: { ... } },
+  fx:     { key: 'fx',     name: 'GLITCH', emoji: '🎛️', mention: '@GLITCH', colors: { ... } },
 };
 ```
 

@@ -46,7 +46,7 @@ You (the Boss)
   │   AgentProcessManager         Deterministic routing (no LLM needed)
   │     │
   │     ▼
-  │   🥁 BEAT process (Haiku)     Persistent claude --print process
+  │   🥁 BEAT process (Sonnet)    Persistent claude --print process
   │     │
   │     ▼
   │   { pattern, thoughts,        Agent responds with JSON

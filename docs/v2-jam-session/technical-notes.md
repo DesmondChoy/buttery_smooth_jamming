@@ -56,7 +56,7 @@ const manager = new AgentProcessManager({ broadcast: broadcastToClient });
 Agent processes use specific flags to disable tools and MCP:
 
 ```bash
-claude --print --verbose --model haiku \
+claude --print --verbose --model sonnet \
   --input-format stream-json \
   --output-format stream-json \
   --system-prompt <agent-persona> \
@@ -65,6 +65,7 @@ claude --print --verbose --model haiku \
   --strict-mcp-config            # Don't load project MCP servers
 ```
 
+- The `--model` value comes from each agent's YAML frontmatter in `.claude/agents/*.md` (currently `model: sonnet`)
 - `--tools ''` eliminates ~20k tokens of tool definitions from each agent's context
 - `--strict-mcp-config` prevents agents from connecting to the Strudel MCP server (they don't need it)
 - Without both flags, agents may hallucinate MCP tool results
@@ -119,6 +120,25 @@ useEffect(() => { handleAgentThought(data); }, [handleAgentThought]);
 // Incorrect (React Compiler warns)
 useEffect(() => { jam.handleAgentThought(data); }, [jam]);
 ```
+
+## 9. Auto-Tick (Autonomous Evolution)
+
+Agents don't just respond to boss directives — they autonomously evolve their patterns every 30 seconds via auto-tick.
+
+**How it works:**
+1. `AgentProcessManager.startAutoTick()` sets a 30-second `setInterval`
+2. On each tick, all active agents receive an `AUTO-TICK — LISTEN AND EVOLVE` prompt with current band state
+3. Agents can respond with `"no_change"` as their pattern to keep playing their current groove
+4. A `tickInProgress` guard prevents overlapping ticks
+5. The timer resets after each boss directive to avoid double-triggering
+
+**Key detail:** `no_change` is handled specially in `applyAgentResponse()` — it preserves the existing pattern in `agentPatterns[key]` while still updating `thoughts` and `reaction`. On the first round, if no pattern exists yet, it falls back to `"silence"`.
+
+## 10. Agent Strudel Reference Injection
+
+Each agent process receives a shared Strudel API reference (`lib/strudel-reference.md`) prepended to its system prompt. This gives agents knowledge of valid Strudel functions, mini-notation syntax, and available sound banks without relying on tool definitions.
+
+**Loaded at:** `AgentProcessManager` constructor reads the file once and caches it in `this.strudelReference`. It's injected into every agent's initial prompt context.
 
 ---
 
