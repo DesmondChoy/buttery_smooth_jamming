@@ -12,6 +12,7 @@ import type {
 } from './types';
 import { AGENT_META } from './types';
 import { formatBandStateLine } from './pattern-parser';
+import { parseMusicalContextChanges } from './musical-context-parser';
 
 // Callback type for broadcasting messages to browser clients
 export type BroadcastFn = (message: { type: string; payload: unknown }) => void;
@@ -165,6 +166,13 @@ export class AgentProcessManager {
   ): Promise<void> {
     return this.enqueueTurn('directive', async () => {
       if (this.stopped) return;
+
+      // Parse and apply any musical context changes from the directive
+      const contextDelta = parseMusicalContextChanges(text, this.musicalContext);
+      if (contextDelta) {
+        this.musicalContext = { ...this.musicalContext, ...contextDelta };
+        console.log('[AgentManager] Musical context updated:', contextDelta);
+      }
 
       // Reset tick timer to avoid double-triggering during directive
       if (this.tickTimer) clearInterval(this.tickTimer);

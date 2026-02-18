@@ -420,3 +420,160 @@ describe('AgentProcessManager turn serialization', () => {
     await manager.stop();
   });
 });
+
+// ─── Musical Context Update Tests ────────────────────────────────
+
+describe('AgentProcessManager musical context updates', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.clearAllMocks();
+  });
+
+  afterEach(async () => {
+    vi.useRealTimers();
+  });
+
+  it('directive with key/BPM updates musical context in broadcast', async () => {
+    const { manager, broadcast, processes } = createTestManager();
+
+    const startPromise = manager.start(['drums']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const drumsProc = getNthProcess(processes, 0);
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd sd")',
+      thoughts: 'Opening',
+      reaction: 'Go!',
+    });
+    await startPromise;
+
+    // Send directive with key and BPM changes
+    const directivePromise = manager.handleDirective(
+      'Switch to D major, BPM 140',
+      'drums',
+      ['drums']
+    );
+    await vi.advanceTimersByTimeAsync(0);
+
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd sd bd sd")',
+      thoughts: 'Adjusted to D major',
+      reaction: 'New key!',
+    });
+    await directivePromise;
+
+    // Find the jam_state_update from the directive (round 2)
+    const directiveJamState = broadcast.mock.calls
+      .filter(
+        ([msg]: [{ type: string; payload: unknown }]) =>
+          msg.type === 'jam_state_update'
+      )
+      .map(
+        ([msg]: [{ type: string; payload: { jamState: { currentRound: number; musicalContext: { key: string; bpm: number; scale: string[] } } } }]) =>
+          msg.payload.jamState
+      )
+      .find((js: { currentRound: number }) => js.currentRound === 2);
+
+    expect(directiveJamState).toBeDefined();
+    expect(directiveJamState!.musicalContext.key).toBe('D major');
+    expect(directiveJamState!.musicalContext.bpm).toBe(140);
+    expect(directiveJamState!.musicalContext.scale).toEqual([
+      'D', 'E', 'F#', 'G', 'A', 'B', 'C#',
+    ]);
+
+    await manager.stop();
+  });
+
+  it('relative energy change propagates through broadcast', async () => {
+    const { manager, broadcast, processes } = createTestManager();
+
+    const startPromise = manager.start(['drums']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const drumsProc = getNthProcess(processes, 0);
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd sd")',
+      thoughts: 'Opening',
+      reaction: 'Go!',
+    });
+    await startPromise;
+
+    // "more energy" should bump default 5 → 7
+    const directivePromise = manager.handleDirective(
+      'more energy!',
+      'drums',
+      ['drums']
+    );
+    await vi.advanceTimersByTimeAsync(0);
+
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd sd bd sd").gain(1.2)',
+      thoughts: 'Pumping it up',
+      reaction: 'Energy!',
+    });
+    await directivePromise;
+
+    const directiveJamState = broadcast.mock.calls
+      .filter(
+        ([msg]: [{ type: string; payload: unknown }]) =>
+          msg.type === 'jam_state_update'
+      )
+      .map(
+        ([msg]: [{ type: string; payload: { jamState: { currentRound: number; musicalContext: { energy: number } } } }]) =>
+          msg.payload.jamState
+      )
+      .find((js: { currentRound: number }) => js.currentRound === 2);
+
+    expect(directiveJamState!.musicalContext.energy).toBe(7);
+
+    await manager.stop();
+  });
+
+  it('non-musical directive leaves context unchanged', async () => {
+    const { manager, broadcast, processes } = createTestManager();
+
+    const startPromise = manager.start(['drums']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const drumsProc = getNthProcess(processes, 0);
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd sd")',
+      thoughts: 'Opening',
+      reaction: 'Go!',
+    });
+    await startPromise;
+
+    // "More cowbell" has no musical context keywords
+    const directivePromise = manager.handleDirective(
+      'More cowbell!',
+      'drums',
+      ['drums']
+    );
+    await vi.advanceTimersByTimeAsync(0);
+
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd sd cp sd")',
+      thoughts: 'Added cowbell',
+      reaction: 'Cowbell!',
+    });
+    await directivePromise;
+
+    const directiveJamState = broadcast.mock.calls
+      .filter(
+        ([msg]: [{ type: string; payload: unknown }]) =>
+          msg.type === 'jam_state_update'
+      )
+      .map(
+        ([msg]: [{ type: string; payload: { jamState: { currentRound: number; musicalContext: { key: string; bpm: number; energy: number } } } }]) =>
+          msg.payload.jamState
+      )
+      .find((js: { currentRound: number }) => js.currentRound === 2);
+
+    // Context should remain at defaults
+    expect(directiveJamState!.musicalContext.key).toBe('C minor');
+    expect(directiveJamState!.musicalContext.bpm).toBe(120);
+    expect(directiveJamState!.musicalContext.energy).toBe(5);
+
+    await manager.stop();
+  });
+});

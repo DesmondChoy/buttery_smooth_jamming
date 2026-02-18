@@ -1,0 +1,152 @@
+/**
+ * Deterministic regex parser for extracting musical context changes
+ * from boss directive text. No LLM inference — pure string matching.
+ *
+ * Follows the same pure-function pattern as pattern-parser.ts.
+ */
+import type { MusicalContext } from './types';
+
+// Chromatic scale representations
+const SHARP_CHROMATIC = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+const FLAT_CHROMATIC  = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
+
+// Scale interval patterns (semitones from root)
+const MAJOR_INTERVALS = [0, 2, 4, 5, 7, 9, 11];
+const MINOR_INTERVALS = [0, 2, 3, 5, 7, 8, 10];
+
+/** Normalize note name: "eb" → "Eb", "f#" → "F#", "d" → "D" */
+function normalizeNoteName(raw: string): string | null {
+  const match = raw.match(/^([A-Ga-g])([#b]?)$/);
+  if (!match) return null;
+  return match[1].toUpperCase() + match[2];
+}
+
+/** Determine whether a key conventionally uses flats or sharps. */
+function shouldUseFlats(root: string, quality: 'major' | 'minor'): boolean {
+  if (root.includes('b')) return true;
+  if (root.includes('#')) return false;
+  // Natural root keys that conventionally use flats in their key signature
+  if (quality === 'major') return new Set(['F']).has(root);
+  return new Set(['D', 'G', 'C', 'F']).has(root);
+}
+
+/**
+ * Derive the scale notes for a given key string like "D major" or "Eb minor".
+ * Returns null if the key string is not recognized.
+ *
+ * Uses flats for flat keys, sharps for sharp keys, following standard conventions.
+ * Note: enharmonic simplifications (B instead of Cb) are intentional — Strudel
+ * uses standard note names, not double-flats or theoretically "correct" spellings.
+ */
+export function deriveScale(key: string): string[] | null {
+  const match = key.match(/^([A-G][b#]?)\s+(major|minor)$/i);
+  if (!match) return null;
+
+  const root = normalizeNoteName(match[1]);
+  if (!root) return null;
+  const quality = match[2].toLowerCase() as 'major' | 'minor';
+
+  const useFlats = shouldUseFlats(root, quality);
+  const chromatic = useFlats ? FLAT_CHROMATIC : SHARP_CHROMATIC;
+  const intervals = quality === 'major' ? MAJOR_INTERVALS : MINOR_INTERVALS;
+
+  const rootIndex = chromatic.indexOf(root);
+  if (rootIndex === -1) {
+    // Root not found in preferred set — try the other (e.g. Db in SHARP_CHROMATIC)
+    const altChromatic = useFlats ? SHARP_CHROMATIC : FLAT_CHROMATIC;
+    const altIndex = altChromatic.indexOf(root);
+    if (altIndex === -1) return null;
+    return intervals.map((i) => altChromatic[(altIndex + i) % 12]);
+  }
+
+  return intervals.map((i) => chromatic[(rootIndex + i) % 12]);
+}
+
+/**
+ * Parse boss directive text for musical context changes.
+ * Returns a partial MusicalContext with only the changed fields, or null
+ * if no musical context changes were detected in the text.
+ */
+export function parseMusicalContextChanges(
+  text: string,
+  current: MusicalContext
+): Partial<MusicalContext> | null {
+  const changes: Partial<MusicalContext> = {};
+  let hasChanges = false;
+
+  // ─── Key ──────────────────────────────────────────────────────
+  // "Switch to D major", "key of Eb minor", "change to G", "in the key of A minor"
+  const keyPatterns = [
+    /(?:switch(?:\s+(?:it|the\s+key))?\s+to|key\s+of|in\s+the\s+key\s+of|change\s+(?:the\s+)?(?:key\s+)?to)\s+([A-G][b#]?)\s*(major|minor|maj|min)?/i,
+    /\b([A-G][b#]?)\s+(major|minor)\b/i,
+  ];
+
+  for (const pattern of keyPatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      const root = normalizeNoteName(match[1]);
+      if (root) {
+        let quality = 'major'; // default when quality omitted
+        if (match[2]) {
+          quality = match[2].toLowerCase().startsWith('min') ? 'minor' : 'major';
+        }
+        const keyStr = `${root} ${quality}`;
+        changes.key = keyStr;
+        const scale = deriveScale(keyStr);
+        if (scale) changes.scale = scale;
+        hasChanges = true;
+        break;
+      }
+    }
+  }
+
+  // ─── BPM ──────────────────────────────────────────────────────
+  // Explicit: "BPM 140", "tempo 90", "140 BPM", "140bpm"
+  const bpmExplicit =
+    text.match(/\b(?:bpm|tempo)\s+(\d+)\b/i) ||
+    text.match(/\b(\d+)\s*bpm\b/i);
+
+  if (bpmExplicit) {
+    changes.bpm = clamp(parseInt(bpmExplicit[1], 10), 60, 300);
+    hasChanges = true;
+  } else if (/\bdouble\s+time\b/i.test(text)) {
+    changes.bpm = clamp(current.bpm * 2, 60, 300);
+    hasChanges = true;
+  } else if (/\bhalf\s+time\b/i.test(text)) {
+    changes.bpm = clamp(Math.round(current.bpm / 2), 60, 300);
+    hasChanges = true;
+  } else if (/\b(?:speed\s+up|faster)\b/i.test(text)) {
+    changes.bpm = clamp(current.bpm + 15, 60, 300);
+    hasChanges = true;
+  } else if (/\b(?:slow\s+down|slower)\b/i.test(text)) {
+    changes.bpm = clamp(current.bpm - 15, 60, 300);
+    hasChanges = true;
+  }
+
+  // ─── Energy ───────────────────────────────────────────────────
+  // Explicit: "energy 8", "energy to 3"
+  const energyExplicit = text.match(/\benergy\s+(?:to\s+)?(\d+)\b/i);
+
+  if (energyExplicit) {
+    changes.energy = clamp(parseInt(energyExplicit[1], 10), 1, 10);
+    hasChanges = true;
+  } else if (/\b(?:full|max)\s+energy\b/i.test(text)) {
+    changes.energy = 10;
+    hasChanges = true;
+  } else if (/\bminimal\b/i.test(text)) {
+    changes.energy = 1;
+    hasChanges = true;
+  } else if (/\b(?:more\s+energy|crank\s+it|hype)\b/i.test(text)) {
+    changes.energy = clamp(current.energy + 2, 1, 10);
+    hasChanges = true;
+  } else if (/\b(?:chill(?:er)?|calm(?:er)?|less\s+energy)\b/i.test(text)) {
+    changes.energy = clamp(current.energy - 2, 1, 10);
+    hasChanges = true;
+  }
+
+  return hasChanges ? changes : null;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
