@@ -175,7 +175,7 @@ If step 6 or 7 fails, there's a WebSocket or ref-forwarding bug.
 ### Layout
 - [ ] Terminal panel visible on left side (1/3 width, `min-w-[300px]`)
 - [ ] Right content area contains heading, Play/Stop buttons, JamControls
-- [ ] StrudelPanel renders at the bottom (always visible, both modes)
+- [ ] StrudelPanel renders at the bottom (visible in normal mode; hidden via `h-0 overflow-hidden` in jam mode, but still rendered so audio continues)
 
 ### Header
 - [ ] Header shows "Claude Terminal" title
@@ -203,7 +203,7 @@ If step 6 or 7 fails, there's a WebSocket or ref-forwarding bug.
 - [ ] All controls accessible
 - [ ] StrudelPanel has adequate height at bottom
 - [ ] Terminal panel (left) and content area (right) side-by-side, StrudelPanel below
-- [ ] Jam mode layout renders correctly: sidebar (380px) + JamChat + StrudelPanel
+- [ ] Jam mode layout renders correctly: JamTopBar + Agent Columns (CSS grid) + BossInputBar + PatternDisplay (StrudelPanel hidden)
 
 ---
 
@@ -236,6 +236,8 @@ If step 6 or 7 fails, there's a WebSocket or ref-forwarding bug.
 - [ ] Modal shows all 4 agents (BEAT, GROOVE, ARIA, GLITCH) with emoji and checkboxes
 - [ ] Can toggle individual agents on/off
 - [ ] "Start Jam (N agents)" button shows count of selected agents
+- [ ] Cannot deselect the last agent (minimum 1 required)
+- [ ] Enter key confirms selection (same as clicking "Start Jam" button)
 - [ ] Confirming modal → **layout switches to jam mode** (Terminal panel disappears, AgentColumns appear)
 - [ ] All selected agents show "thinking" status during initial jam start
 - [ ] Agents respond with opening patterns (all transition to green "playing")
@@ -297,7 +299,7 @@ Every ~30 seconds, the system sends an auto-tick to all agents. This triggers th
 - [ ] Agent Columns appear in CSS grid (one column per selected agent)
 - [ ] BossInputBar appears below the agent columns
 - [ ] PatternDisplay appears below BossInputBar (shows per-agent patterns with emoji/names)
-- [ ] StrudelPanel **remains at bottom** (audio is not interrupted by layout switch)
+- [ ] StrudelPanel is **hidden** during jam mode (`h-0 overflow-hidden`) but still rendered — audio is not interrupted by layout switch
 
 ### JamTopBar
 - [ ] Stop button visible at left
@@ -338,12 +340,22 @@ Verify the full transition cycle:
 
 ### BossInputBar (`data-testid="boss-input"`)
 - [ ] Input field with "BOSS >" label
-- [ ] Placeholder: "Give a directive... (@ to mention an agent)"
-- [ ] Send button visible (disabled when input is empty)
+- [ ] Placeholder states: "Connecting..." (not connected), "Start a jam first..." (connected but not jamming), "Give a directive... (@ to mention an agent)" (jamming)
+- [ ] Input is disabled when not connected or not jamming
+- [ ] Send button visible (disabled when input is empty or not connected/jamming)
 - [ ] Can type a directive (e.g., "@BEAT double time on the hi-hats")
 - [ ] @mention syntax targets specific agents
 - [ ] Send button submits directive
-- [ ] Targeted directive appears in the target agent's column
+- [ ] Targeted directive appears in the target agent's column as "BOSS (to you)"
+- [ ] Non-targeted agents see "BOSS spoke to {agent} privately." for targeted directives sent to others
+
+### @Mention Autocomplete (MentionSuggestions)
+- [ ] Typing "@" shows autocomplete dropdown with matching agents
+- [ ] Dropdown filters as you type (e.g., "@B" shows BEAT only)
+- [ ] ArrowUp/ArrowDown navigates suggestions
+- [ ] Tab or Enter selects highlighted agent (inserts `@NAME `)
+- [ ] Esc dismisses dropdown
+- [ ] Clicking an agent in dropdown selects it
 
 ### PatternDisplay
 - [ ] Shows each agent's current pattern with emoji and name label
@@ -353,10 +365,10 @@ Verify the full transition cycle:
 - [ ] Collapsible via "▶ Patterns" toggle
 
 ### Returning to Normal Mode
-- [ ] Clicking "Stop Jam" → layout switches back to normal mode
+- [ ] Clicking "Stop" (JamTopBar button) → layout switches back to normal mode
 - [ ] Terminal panel reappears on left
 - [ ] Heading and Play/Stop buttons reappear on right
-- [ ] StrudelPanel remains at bottom (audio continues if playing)
+- [ ] StrudelPanel reappears at bottom (was hidden during jam; audio continues if playing)
 
 ### Agent Context Isolation & Latency
 
@@ -522,7 +534,7 @@ Use this 15-item checklist for rapid validation:
 12. [ ] "Start Jam" button disabled when Claude not connected, enabled when ready
 13. [ ] Starting a jam → agent selection modal → layout switches to jam mode (AgentColumns + BossInputBar)
 14. [ ] Agent columns show thoughts/reactions per agent, PatternDisplay shows patterns with emoji/names
-15. [ ] Stopping jam → layout reverts to normal mode
+15. [ ] Stopping jam (via "Stop" button in JamTopBar) → layout reverts to normal mode
 
 Items 8 and 9 are the most critical - they test the complete integration.
 Items 13-15 test the jam mode UI lifecycle.
