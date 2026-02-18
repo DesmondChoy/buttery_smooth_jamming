@@ -108,6 +108,9 @@ Browser → { type: 'stop_jam' }
 
 ## File Structure
 
+> **Keeping this tree current:** When adding or removing files listed here,
+> update this tree in the same PR. Run `ls -R` against changed sections to verify.
+
 ```
 cc_sick_beats/
 ├── app/
@@ -141,14 +144,19 @@ cc_sick_beats/
 │   ├── claude-process.ts            # Spawns Claude CLI (Strudel assistant only)
 │   ├── agent-process-manager.ts     # Per-agent persistent processes (jam mode)
 │   ├── pattern-parser.ts            # Parses Strudel patterns into structured summaries
+│   ├── musical-context-parser.ts    # Parses key/BPM/energy from boss directives
 │   ├── strudel-reference.md         # Strudel API reference injected into agent prompts
 │   └── __tests__/
-│       └── pattern-parser.test.ts   # Pattern parser unit tests
+│       ├── pattern-parser.test.ts          # Pattern parser unit tests
+│       ├── musical-context-parser.test.ts  # Musical context parser tests
+│       ├── agent-process-manager.test.ts   # Agent process manager tests
+│       └── agent-meta-consistency.test.ts  # AGENT_META ↔ agent file consistency
 ├── .claude/agents/
 │   ├── drummer.md                   # 🥁 BEAT persona + Strudel drum patterns
 │   ├── bassist.md                   # 🎸 GROOVE persona + bass patterns
 │   ├── melody.md                    # 🎹 ARIA persona + melodic patterns
 │   └── fx-artist.md                 # 🎛️ GLITCH persona + FX patterns
+├── .claude/skills/                  # Claude Code skill definitions (dev tooling)
 ├── packages/mcp-server/
 │   ├── package.json
 │   ├── tsconfig.json
@@ -158,6 +166,7 @@ cc_sick_beats/
 │   └── build/                       # Compiled output (gitignored)
 ├── types/
 │   └── strudel.d.ts                 # Strudel module declarations
+├── AGENTS.md                        # Architecture overview for Codex/agent tools
 ├── .mcp.json                        # MCP configuration at project root
 └── docs/                            # Documentation
 ```
