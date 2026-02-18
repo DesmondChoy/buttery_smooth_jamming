@@ -221,27 +221,3 @@ export class ClaudeProcess extends EventEmitter {
     this.messageBuffer = '';
   }
 }
-
-// Singleton manager for the Claude process
-let globalProcess: ClaudeProcess | null = null;
-
-export function getClaudeProcess(): ClaudeProcess | null {
-  return globalProcess;
-}
-
-export async function startClaudeProcess(options: ClaudeProcessOptions = {}): Promise<ClaudeProcess> {
-  if (globalProcess?.isRunning()) {
-    return globalProcess;
-  }
-
-  globalProcess = new ClaudeProcess(options);
-  await globalProcess.start();
-  return globalProcess;
-}
-
-export async function stopClaudeProcess(): Promise<void> {
-  if (globalProcess) {
-    await globalProcess.stop();
-    globalProcess = null;
-  }
-}
