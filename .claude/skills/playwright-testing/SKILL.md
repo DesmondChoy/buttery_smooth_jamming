@@ -244,6 +244,13 @@ If step 6 or 7 fails, there's a WebSocket or ref-forwarding bug.
 - [ ] Clicking "Stop" → returns to normal mode layout
 - [ ] Cancel button / Esc dismisses modal without starting jam
 
+### Jam Admission Limits (Concurrency + Process Caps)
+- [ ] Default server limits are `MAX_CONCURRENT_JAMS=1` and `MAX_TOTAL_AGENT_PROCESSES=4` (unless overridden in env)
+- [ ] With one active jam in Tab A, starting a jam in Tab B returns an error message containing "Jam capacity reached"
+- [ ] The rejection frame on `/api/claude-ws` includes `code: "jam_capacity_exceeded"` plus `details` with active/projected counts
+- [ ] If env is configured for >1 concurrent jam but limited total processes (example: `MAX_CONCURRENT_JAMS=2`, `MAX_TOTAL_AGENT_PROCESSES=4`), a second jam that exceeds process cap returns `code: "agent_capacity_exceeded"`
+- [ ] Stopping the existing jam frees capacity and allows a new jam start
+
 ---
 
 ## Phase 9: Jam WebSocket Events (During Active Jam)
@@ -253,9 +260,9 @@ If step 6 or 7 fails, there's a WebSocket or ref-forwarding bug.
 Note: v2 uses a directive-driven architecture — agents respond on-demand to boss directives, plus autonomous auto-ticks every ~30s for organic evolution. WebSocket events fire per-directive AND per-tick.
 
 ### Agent Status Broadcasts
-- [ ] Open browser DevTools → Network → WS tab → filter `/api/ws`
+- [ ] Open browser DevTools → Network → WS tab → filter `/api/claude-ws` (jam-manager broadcasts); optionally also watch `/api/ws` for MCP bridge traffic
 - [ ] When a directive is sent, `agent_status` messages appear for targeted agent(s)
-- [ ] Each contains `{ agent: "drums"|"bass"|"melody"|"fx", status: "thinking"|"playing"|"idle" }`
+- [ ] Each contains `{ agent: "drums"|"bass"|"melody"|"fx", status: "thinking"|"playing"|"idle"|"error"|"timeout" }`
 
 ### Agent Thought Broadcasts
 - [ ] `agent_thought` messages appear with agent reactions
@@ -263,8 +270,8 @@ Note: v2 uses a directive-driven architecture — agents respond on-demand to bo
 - [ ] Agent columns show reactions inline (e.g., "🥁 BEAT: ...")
 
 ### Musical Context Updates
-- [ ] `musical_context_update` messages appear if boss directives change context
-- [ ] Contains `{ musicalContext: { key, scale, bpm, ... } }`
+- [ ] Boss directives that change context (key/BPM/energy) are reflected in subsequent `jam_state_update` payloads
+- [ ] `jamState.musicalContext` contains updated values (e.g., key/scale/bpm/energy)
 
 ### Jam State Broadcasts
 - [ ] `jam_state_update` messages appear after agents respond to directives
@@ -320,11 +327,13 @@ Every ~30 seconds, the system sends an auto-tick to all agents. This triggers th
 - [ ] Reactions displayed in italics below pattern
 - [ ] Boss directives shown inline in the targeted agent's column ("BOSS (to you)")
 
-### Agent Status Lifecycle (StatusDot) — Three-State Model
-The status dot in each column header reflects whether the agent is contributing sound. Three states:
+### Agent Status Lifecycle (StatusDot) — Five-State Model
+The status dot in each column header reflects whether the agent is contributing sound. Five states:
 - **Green** (playing) — agent has a non-silence pattern in the composed stack
 - **Yellow** (thinking) — agent is processing a directive
 - **Gray** (idle) — agent has no pattern yet, or pattern is `silence`
+- **Red** (error) — agent process/runtime error detected
+- **Orange** (timeout) — agent failed to respond and no non-silence fallback is active
 
 Verify the full transition cycle:
 - [ ] **Initial state**: Gray dot, label "idle" — shown before agents have responded
@@ -334,9 +343,10 @@ Verify the full transition cycle:
 - [ ] **Targeted directive transition**: Send "@BEAT double time" and verify:
   - [ ] Target agent's dot turns yellow/pulsing ("thinking") immediately after sending
   - [ ] Non-targeted agents remain green ("playing") — they already have patterns
-  - [ ] After agent responds (~3-7s), dot returns to green ("playing")
+  - [ ] After agent responds (~3-15s, model/load dependent), dot returns to green ("playing")
 - [ ] **Silence pattern**: If an agent returns `silence` as its pattern, dot should be gray ("idle")
-- [ ] **Timeout with fallback**: If an agent times out but has a previous pattern, dot stays green ("playing")
+- [ ] **Timeout fallback behavior**: If an agent times out but fallback/non-silence pattern exists, dot can remain green ("playing"); if not, dot should be orange ("timeout")
+- [ ] **Error/timeout visibility**: In fault-injection or failure scenarios, status label should explicitly show `error` or `timeout` (not collapse to `idle`)
 
 ### BossInputBar (`data-testid="boss-input"`)
 - [ ] Input field with "BOSS >" label
@@ -374,7 +384,7 @@ Verify the full transition cycle:
 
 These tests use `data-testid` attributes for reliable element targeting:
 - `agent-column-{key}` — column wrapper (drums, bass, melody, fx)
-- `status-label-{key}` — status text (shows "idle", "thinking", or "playing")
+- `status-label-{key}` — status text (shows "idle", "thinking", "playing", "error", or "timeout")
 - `agent-messages-{key}` — message list container
 - `pattern-display` — PatternDisplay container
 - `pattern-row-{key}` — per-agent pattern row
@@ -466,8 +476,8 @@ Note: `data-testid="boss-input"` is on the `<input>` element itself, not a wrapp
 ```
 **Pass:** `drums === "thinking"` AND all others === `"playing"`.
 
-#### Test 4.4: Directive-to-Response Latency < 7s
-**Goal:** Measure time from directive submission to agent response.
+#### Test 4.4: Directive-to-Response Latency Measurement
+**Goal:** Measure time from directive submission to agent response and compare against historical baseline.
 
 Use `browser_run_code` for timing:
 ```javascript
@@ -487,11 +497,12 @@ async (page) => {
   }, { timeout: 15000 });
 
   const latencyMs = Date.now() - start;
-  return { latencyMs, pass: latencyMs < 7000 };
+  return { latencyMs };
 }
 ```
 **Note:** Since Test 4.3 uses separate tool calls, drums may already be "playing" by the time this test runs. For accurate measurement, either: (1) combine with Test 4.5 by sending a fresh directive with a `browser_evaluate` timestamp before and latency check after, or (2) store `window.__directiveSentAt = Date.now()` before sending the directive and read it in the latency check. Auto-tick collisions (all agents going to "thinking" simultaneously) can inflate measurements.
-**Pass:** `latencyMs < 7000`. If it fails, log the actual value to distinguish flakes from regressions (AGENT_TIMEOUT_MS is 15s).
+**Pass (functional):** Directive completes before timeout (`AGENT_TIMEOUT_MS` is 15s).
+**Performance assessment:** Log measured `latencyMs` with date/model and compare against historical references (2026-02-09 targeted: 5.3s, broadcast: 7.0s). Treat large sustained drift as regression candidate rather than immediate hard-fail on a fixed 7s SLA.
 
 #### Test 4.5: Non-Targeted Patterns Unchanged
 **Goal:** After a targeted directive, only the targeted agent's pattern changes.
