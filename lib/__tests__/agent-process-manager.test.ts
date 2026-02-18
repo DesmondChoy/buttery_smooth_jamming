@@ -329,4 +329,94 @@ describe('AgentProcessManager turn serialization', () => {
     );
     expect(directiveRound).toBeUndefined();
   });
+
+  it('stop prevents in-flight directive from re-arming auto-tick', async () => {
+    const { manager, processes } = createTestManager();
+
+    const startPromise = manager.start(['drums']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const drumsProc = getNthProcess(processes, 0);
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd sd")',
+      thoughts: 'Start',
+      reaction: 'Go',
+    });
+    await startPromise;
+
+    const directivePromise = manager.handleDirective('Lock in the groove', 'drums', ['drums']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Stop while directive is waiting for the agent response.
+    const stopPromise = manager.stop();
+
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd sd cp sd")',
+      thoughts: 'Locked in',
+      reaction: 'Aye',
+    });
+
+    await directivePromise;
+    await stopPromise;
+    await vi.advanceTimersByTimeAsync(0);
+
+    const rawManager = manager as unknown as { tickTimer: NodeJS.Timeout | null };
+    expect(rawManager.tickTimer).toBeNull();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('coalesces auto-ticks to one pending turn under load', async () => {
+    const { manager, processes } = createTestManager();
+
+    const startPromise = manager.start(['drums']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const drumsProc = getNthProcess(processes, 0);
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd sd")',
+      thoughts: 'Start',
+      reaction: 'Go',
+    });
+    await startPromise;
+
+    type TestAgentResponse = { pattern: string; thoughts: string; reaction: string } | null;
+    let resolveBlockedTick: ((value: TestAgentResponse) => void) | null = null;
+    const blockedTick = new Promise<TestAgentResponse>((resolve) => {
+      resolveBlockedTick = resolve;
+    });
+
+    // Force auto-ticks to block so repeated interval firings would enqueue backlog
+    // if coalescing is not implemented.
+    const rawManager = manager as unknown as {
+      sendToAgentAndCollect: (key: string, text: string) => Promise<TestAgentResponse>;
+      turnCounter: number;
+    };
+    const originalSendToAgentAndCollect = rawManager.sendToAgentAndCollect.bind(manager);
+    rawManager.sendToAgentAndCollect = vi.fn((key: string, text: string) => {
+      if (text.includes('AUTO-TICK')) {
+        return blockedTick;
+      }
+      return originalSendToAgentAndCollect(key, text);
+    });
+
+    // First auto-tick starts and blocks.
+    vi.advanceTimersByTime(30000);
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Multiple interval firings while blocked should not enqueue more turns.
+    vi.advanceTimersByTime(120000);
+    await vi.advanceTimersByTimeAsync(0);
+
+    // jam-start = turn #1, first auto-tick = turn #2
+    expect(rawManager.turnCounter).toBe(2);
+
+    resolveBlockedTick?.({
+      pattern: 'no_change',
+      thoughts: 'Hold',
+      reaction: 'Steady',
+    });
+    await vi.advanceTimersByTimeAsync(0);
+
+    await manager.stop();
+  });
 });

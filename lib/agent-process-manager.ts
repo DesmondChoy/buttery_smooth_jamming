@@ -71,6 +71,7 @@ export class AgentProcessManager {
   private stopped = false;
   private roundNumber = 0;
   private tickTimer: NodeJS.Timeout | null = null;
+  private tickScheduled = false;
   private turnInProgress: Promise<void> = Promise.resolve();
   private turnCounter = 0;
   private strudelReference: string = '';
@@ -125,6 +126,7 @@ export class AgentProcessManager {
     this.activeAgents = activeAgents;
     this.stopped = false;
     this.roundNumber = 0;
+    this.tickScheduled = false;
 
     // Initialize state for each agent
     for (const key of activeAgents) {
@@ -218,6 +220,13 @@ export class AgentProcessManager {
 
     // Wait for any in-flight turn to finish before killing processes
     await this.turnInProgress.catch(() => {});
+
+    // Hard-stop guarantee: no interval may survive shutdown.
+    if (this.tickTimer) {
+      clearInterval(this.tickTimer);
+      this.tickTimer = null;
+    }
+    this.tickScheduled = false;
 
     // Kill all agent processes
     const killPromises = Array.from(this.agents.values()).map((agent) =>
@@ -491,12 +500,22 @@ export class AgentProcessManager {
   // ─── Private: Auto-Tick ─────────────────────────────────────────
 
   private startAutoTick(): void {
-    if (this.tickTimer) clearInterval(this.tickTimer);
+    if (this.tickTimer) {
+      clearInterval(this.tickTimer);
+      this.tickTimer = null;
+    }
+    if (this.stopped) return;
+
     this.tickTimer = setInterval(() => {
-      if (this.stopped) return;
-      this.sendAutoTick().catch((err) => {
-        console.error('[AgentManager] Auto-tick error:', err);
-      });
+      if (this.stopped || this.tickScheduled) return;
+      this.tickScheduled = true;
+      this.sendAutoTick()
+        .catch((err) => {
+          console.error('[AgentManager] Auto-tick error:', err);
+        })
+        .finally(() => {
+          this.tickScheduled = false;
+        });
     }, 30000);
   }
 
