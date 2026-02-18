@@ -77,7 +77,7 @@ uv run <command>
 
 - Jam UI: `JamTopBar`, `JamControls`, `AgentColumn`, `BossInputBar`,
   `AgentSelectionModal`, `PatternDisplay`
-- Normal mode UI: `TerminalPanel`, `ChatPanel`, `StrudelPanel`, `StrudelEditor`
+- Normal mode UI: `TerminalPanel`, `StrudelPanel`, `StrudelEditor`
 
 ### Hooks (`hooks/`)
 
@@ -98,7 +98,7 @@ uv run <command>
 
 ### MCP server (`packages/mcp-server/`)
 
-- `src/index.ts` — Tool server entrypoint and jam state methods
+- `src/index.ts` — Tool server entrypoint and normal-mode tools
 - `src/strudel-reference.ts` — Strudel docs exposed to tools
 
 ### Documentation (`docs/`)

@@ -4,15 +4,6 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 
 export type ClaudeStatus = 'connecting' | 'ready' | 'thinking' | 'done' | 'error';
 
-interface ServerMessage {
-  type: 'text' | 'tool_use' | 'tool_result' | 'status' | 'error' | 'pong';
-  text?: string;
-  toolName?: string;
-  toolInput?: Record<string, unknown>;
-  status?: ClaudeStatus;
-  error?: string;
-}
-
 export interface TerminalLine {
   id: string;
   type: 'user' | 'assistant' | 'tool' | 'status' | 'error';

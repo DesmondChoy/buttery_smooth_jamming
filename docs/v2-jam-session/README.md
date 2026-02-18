@@ -57,3 +57,14 @@ npm run dev
 3. **Server-side pattern composition** — `composePatterns()` builds `stack()` in TypeScript, not LLM reasoning
 4. **Broadcast callback pattern** — route handler passes a closure to the process manager, avoiding `ws` native addon issues in Next.js webpack
 5. **No MCP tools for agents** — `--tools '' --strict-mcp-config` eliminates ~20k tokens of tool definitions per agent
+
+## Latency Tracking
+
+| Scenario | Latest value | Measured on | Method | Notes |
+|----------|--------------|-------------|--------|-------|
+| v1 orchestrator, targeted directive | 22-29s | 2026-02-09 | Server `[TIMING]` logs captured in the implementation history | Historical baseline |
+| v2 persistent processes, targeted directive | 5.3s | 2026-02-09 | Server `[TIMING]` logs captured in the implementation history | Historical baseline |
+| v2 persistent processes, broadcast directive | 7.0s | 2026-02-09 | Server `[TIMING]` logs captured in the implementation history | Historical baseline |
+| v2 current runtime (frontmatter Sonnet) | Pending re-benchmark | 2026-02-18 | Attempted headless CLI probe in this sandbox; unable to capture reliable end-to-end jam timing | Re-run manually on a full local jam session before publishing new SLA claims |
+
+Current documented values are historical unless explicitly tagged with a newer measurement date/method.

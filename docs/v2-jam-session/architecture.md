@@ -122,7 +122,6 @@ cc_sick_beats/
 │       └── claude-ws/route.ts       # WebSocket for Claude Terminal + jam routing
 ├── components/
 │   ├── TerminalPanel.tsx            # Chat panel (normal mode)
-│   ├── ChatPanel.tsx                # Chat messages display
 │   ├── StrudelPanel.tsx             # Strudel editor wrapper
 │   ├── StrudelEditor.tsx            # Strudel web component
 │   ├── AudioStartButton.tsx         # Browser audio unlock
@@ -145,12 +144,16 @@ cc_sick_beats/
 │   ├── agent-process-manager.ts     # Per-agent persistent processes (jam mode)
 │   ├── pattern-parser.ts            # Parses Strudel patterns into structured summaries
 │   ├── musical-context-parser.ts    # Parses key/BPM/energy from boss directives
+│   ├── agent-status-ui.ts           # Status label/color mapping for jam agent UI
+│   ├── jam-admission.ts             # Jam admission/concurrency limit decisions
 │   ├── strudel-reference.md         # Strudel API reference injected into agent prompts
 │   └── __tests__/
 │       ├── pattern-parser.test.ts          # Pattern parser unit tests
 │       ├── musical-context-parser.test.ts  # Musical context parser tests
 │       ├── agent-process-manager.test.ts   # Agent process manager tests
-│       └── agent-meta-consistency.test.ts  # AGENT_META ↔ agent file consistency
+│       ├── agent-meta-consistency.test.ts  # AGENT_META ↔ agent file consistency
+│       ├── agent-status-ui.test.ts         # Status mapping coverage (idle/thinking/playing/error/timeout)
+│       └── jam-admission.test.ts           # Concurrency limit admission tests
 ├── .claude/agents/
 │   ├── drummer.md                   # 🥁 BEAT persona + Strudel drum patterns
 │   ├── bassist.md                   # 🎸 GROOVE persona + bass patterns

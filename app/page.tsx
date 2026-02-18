@@ -45,8 +45,34 @@ export default function Home() {
     isClaudeConnected: claude.isConnected,
   });
 
+  const {
+    lines: claudeLines,
+    status: claudeStatus,
+    isConnected: isClaudeConnected,
+    sendMessage,
+    clearLines,
+    sendBossDirective,
+  } = claude;
+
   // Destructure stable callbacks to satisfy React Compiler + exhaustive-deps
-  const { addChatMessage, addBossDirective, requestStartJam, confirmStartJam, cancelStartJam, chatMessages, selectedAgents } = jam;
+  const {
+    addChatMessage,
+    addBossDirective,
+    requestStartJam,
+    confirmStartJam,
+    cancelStartJam,
+    chatMessages,
+    selectedAgents,
+    isJamming,
+    stopJam,
+    musicalContext,
+    agentStates,
+    showAgentSelection,
+    handleAgentThought,
+    handleAgentStatus,
+    handleMusicalContextUpdate,
+    handleJamStateUpdate,
+  } = jam;
 
   // Per-agent message filtering: each agent sees their own thoughts/reactions
   // plus boss directives (both broadcast and targeted)
@@ -94,16 +120,16 @@ export default function Home() {
     jamBroadcastRef.current = (message: { type: string; payload: unknown }) => {
       switch (message.type) {
         case 'agent_thought':
-          jam.handleAgentThought(message.payload as Parameters<typeof jam.handleAgentThought>[0]);
+          handleAgentThought(message.payload as Parameters<typeof handleAgentThought>[0]);
           break;
         case 'agent_status':
-          jam.handleAgentStatus(message.payload as Parameters<typeof jam.handleAgentStatus>[0]);
+          handleAgentStatus(message.payload as Parameters<typeof handleAgentStatus>[0]);
           break;
         case 'execute':
           handleExecute((message.payload as { code: string }).code);
           break;
         case 'jam_state_update':
-          jam.handleJamStateUpdate(message.payload as Parameters<typeof jam.handleJamStateUpdate>[0]);
+          handleJamStateUpdate(message.payload as Parameters<typeof handleJamStateUpdate>[0]);
           break;
         case 'directive_error':
           addChatMessage({
@@ -113,27 +139,27 @@ export default function Home() {
           break;
       }
     };
-  }, [jam.handleAgentThought, jam.handleAgentStatus, jam.handleJamStateUpdate, handleExecute, addChatMessage]);
+  }, [handleAgentThought, handleAgentStatus, handleJamStateUpdate, handleExecute, addChatMessage]);
 
   // Handle incoming chat messages from MCP send_message broadcasts
   // Agent reactions flow through update_agent_state → agent_thought, not send_message
   const handleWsMessage = useCallback((msg: { id: string; text: string; timestamp: Date; sender: string }) => {
-    if (!jam.isJamming) return;
+    if (!isJamming) return;
     addChatMessage({
       type: 'system',
       text: msg.text,
     });
-  }, [jam.isJamming, addChatMessage]);
+  }, [isJamming, addChatMessage]);
 
   // Keep the WebSocket connection for MCP server to send execute/stop commands
   const { error: wsError } = useWebSocket({
     onExecute: handleExecute,
     onStop: handleStop,
     onMessage: handleWsMessage,
-    onAgentThought: jam.handleAgentThought,
-    onAgentStatus: jam.handleAgentStatus,
-    onMusicalContextUpdate: jam.handleMusicalContextUpdate,
-    onJamStateUpdate: jam.handleJamStateUpdate,
+    onAgentThought: handleAgentThought,
+    onAgentStatus: handleAgentStatus,
+    onMusicalContextUpdate: handleMusicalContextUpdate,
+    onJamStateUpdate: handleJamStateUpdate,
   });
 
   const handleAudioReady = useCallback(() => {
@@ -147,8 +173,8 @@ export default function Home() {
 
   const handleSendDirective = useCallback((text: string, targetAgent?: string) => {
     addBossDirective(text, targetAgent);
-    claude.sendBossDirective(text, targetAgent, selectedAgents);
-  }, [addBossDirective, claude.sendBossDirective, selectedAgents]);
+    sendBossDirective(text, targetAgent, selectedAgents);
+  }, [addBossDirective, sendBossDirective, selectedAgents]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -187,24 +213,24 @@ export default function Home() {
     <main className="flex flex-col h-screen overflow-hidden">
       {/* Top section: swaps based on jam mode */}
       <div className="flex flex-1 min-h-0 min-w-0">
-        {jam.isJamming ? (
+        {isJamming ? (
           <div className="flex flex-col flex-1 min-h-0 min-w-0">
             {/* Top bar: controls + musical context */}
             <JamTopBar
-              musicalContext={jam.musicalContext}
-              onStopJam={jam.stopJam}
+              musicalContext={musicalContext}
+              onStopJam={stopJam}
             />
 
             {/* Agent columns grid */}
             <div
               className="flex-1 min-h-0 grid gap-px bg-gray-700 overflow-hidden"
-              style={{ gridTemplateColumns: `repeat(${jam.selectedAgents.length}, minmax(0, 1fr))` }}
+              style={{ gridTemplateColumns: `repeat(${selectedAgents.length}, minmax(0, 1fr))` }}
             >
-              {jam.selectedAgents.map((key) => (
+              {selectedAgents.map((key) => (
                 <AgentColumn
                   key={key}
                   agentKey={key}
-                  agentState={jam.agentStates[key]}
+                  agentState={agentStates[key]}
                   messages={agentMessages[key] ?? []}
                 />
               ))}
@@ -212,27 +238,27 @@ export default function Home() {
 
             {/* Boss input bar */}
             <BossInputBar
-              selectedAgents={jam.selectedAgents}
-              isConnected={claude.isConnected}
-              isJamming={jam.isJamming}
+              selectedAgents={selectedAgents}
+              isConnected={isClaudeConnected}
+              isJamming={isJamming}
               onSendDirective={handleSendDirective}
             />
 
             {/* Pattern display */}
             <PatternDisplay
-              agentStates={jam.agentStates}
-              selectedAgents={jam.selectedAgents}
+              agentStates={agentStates}
+              selectedAgents={selectedAgents}
             />
           </div>
         ) : (
           <>
             {/* Normal mode: terminal on left */}
             <TerminalPanel
-              lines={claude.lines}
-              status={claude.status}
-              isConnected={claude.isConnected}
-              sendMessage={claude.sendMessage}
-              clearLines={claude.clearLines}
+              lines={claudeLines}
+              status={claudeStatus}
+              isConnected={isClaudeConnected}
+              sendMessage={sendMessage}
+              clearLines={clearLines}
               className="w-1/3 min-w-[300px] border-r border-gray-700"
             />
 
@@ -277,10 +303,10 @@ export default function Home() {
 
               {/* Jam session controls */}
               <JamControls
-                isJamming={jam.isJamming}
-                isClaudeConnected={claude.isConnected}
+                isJamming={isJamming}
+                isClaudeConnected={isClaudeConnected}
                 onStartJam={requestStartJam}
-                onStopJam={jam.stopJam}
+                onStopJam={stopJam}
                 className="w-full max-w-4xl mb-4"
               />
             </div>
@@ -289,7 +315,7 @@ export default function Home() {
       </div>
 
       {/* Bottom: StrudelPanel always rendered (prevents audio interruption on mode switch) */}
-      <div className={`border-t border-gray-700 shrink-0 ${jam.isJamming ? 'h-0 overflow-hidden' : ''}`}>
+      <div className={`border-t border-gray-700 shrink-0 ${isJamming ? 'h-0 overflow-hidden' : ''}`}>
         <StrudelPanel
           ref={ref}
           initialCode={`// Welcome to CC Sick Beats!
@@ -303,11 +329,11 @@ note("c3 e3 g3 c4").sound("piano")._pianoroll({ fold: 1 })`}
       </div>
 
       {/* Agent selection modal */}
-      {jam.showAgentSelection && (
+      {showAgentSelection && (
         <AgentSelectionModal
           onConfirm={confirmStartJam}
           onCancel={cancelStartJam}
-          initialSelection={jam.selectedAgents}
+          initialSelection={selectedAgents}
         />
       )}
 

@@ -1,12 +1,13 @@
-import type { WebSocket, WebSocketServer } from 'ws';
 import type { IncomingMessage } from 'http';
 import { NextResponse } from 'next/server';
+import type { WebSocket, WebSocketServer } from 'ws';
 import {
   ClaudeProcess,
   ClaudeMessage,
   ContentBlock,
 } from '@/lib/claude-process';
 import { AgentProcessManager } from '@/lib/agent-process-manager';
+import { evaluate_jam_admission } from '@/lib/jam-admission';
 
 // Required GET export for next-ws to recognize this as a WebSocket route
 export function GET() {
@@ -19,6 +20,9 @@ const clientProcesses = new Map<WebSocket, ClaudeProcess>();
 
 // Store agent process managers per client (for jam sessions)
 const agentManagers = new Map<WebSocket, AgentProcessManager>();
+
+const MAX_CONCURRENT_JAMS = getPositiveInt(process.env.MAX_CONCURRENT_JAMS, 1);
+const MAX_TOTAL_AGENT_PROCESSES = getPositiveInt(process.env.MAX_TOTAL_AGENT_PROCESSES, 4);
 
 // Per-client timing for latency measurement
 const directiveTimers = new Map<WebSocket, { start: number; lastEvent: number; events: string[] }>();
@@ -65,12 +69,43 @@ interface ServerMessage {
   toolInput?: Record<string, unknown>;
   status?: 'connecting' | 'ready' | 'thinking' | 'done';
   error?: string;
+  code?: 'jam_capacity_exceeded' | 'agent_capacity_exceeded';
+  details?: unknown;
 }
 
 function sendToClient(client: WebSocket, msg: ServerMessage): void {
   if (client.readyState === 1) { // WebSocket.OPEN
     client.send(JSON.stringify(msg));
   }
+}
+
+function sendErrorToClient(
+  client: WebSocket,
+  error: string,
+  code?: ServerMessage['code'],
+  details?: unknown
+): void {
+  sendToClient(client, {
+    type: 'error',
+    error,
+    ...(code ? { code } : {}),
+    ...(details ? { details } : {}),
+  });
+}
+
+function getPositiveInt(raw: string | undefined, fallback: number): number {
+  const parsed = Number.parseInt(String(raw ?? ''), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function getActiveAgentCount(manager: AgentProcessManager): number {
+  return manager.getJamStateSnapshot().activeAgents.length;
+}
+
+function countActiveAgentProcesses(): number {
+  return Array.from(agentManagers.values()).reduce((total, manager) => {
+    return total + getActiveAgentCount(manager);
+  }, 0);
 }
 
 async function startClaudeForClient(
@@ -248,10 +283,7 @@ export function SOCKET(
                 newProcess?.sendUserMessage(message.text);
               }
             }).catch((error) => {
-              sendToClient(client, {
-                type: 'error',
-                error: `Failed to restart Claude: ${error.message}`,
-              });
+              sendErrorToClient(client, `Failed to restart Claude: ${error.message}`);
             });
           }
           break;
@@ -263,11 +295,49 @@ export function SOCKET(
         case 'start_jam': {
           // Jam start — create AgentProcessManager and spawn per-agent processes
           const agents = message.activeAgents || [];
+
+          if (agents.length === 0) {
+            sendErrorToClient(client, 'Cannot start jam: select at least one agent.');
+            sendToClient(client, { type: 'status', status: 'done' });
+            break;
+          }
+
           startTimer(client, `JAM_START (agents: ${agents.join(', ')})`);
           sendToClient(client, { type: 'status', status: 'thinking' });
 
-          // Stop any existing manager for this client
           const existingManager = agentManagers.get(client);
+          const existingClientAgents = existingManager ? getActiveAgentCount(existingManager) : 0;
+          const activeJams = agentManagers.size;
+          const activeAgentProcesses = countActiveAgentProcesses();
+
+          const admission = evaluate_jam_admission({
+            active_jams: activeJams,
+            active_agent_processes: activeAgentProcesses,
+            existing_client_agents: existingClientAgents,
+            requested_agents: agents.length,
+            max_concurrent_jams: MAX_CONCURRENT_JAMS,
+            max_total_agent_processes: MAX_TOTAL_AGENT_PROCESSES,
+          });
+
+          if (!admission.allowed) {
+            console.warn(
+              `[Claude WS] Jam start rejected: code=${admission.code}, ` +
+              `active_jams=${admission.details.active_jams}, projected_jams=${admission.details.projected_jams}, ` +
+              `active_agents=${admission.details.active_agent_processes}, projected_agents=${admission.details.projected_agent_processes}`
+            );
+            endTimer(client);
+            sendErrorToClient(client, admission.message, admission.code, admission.details);
+            sendToClient(client, { type: 'status', status: 'done' });
+            break;
+          }
+
+          console.log(
+            `[Claude WS] Jam start admitted: active_jams=${admission.details.active_jams}, ` +
+            `projected_jams=${admission.details.projected_jams}, active_agents=${admission.details.active_agent_processes}, ` +
+            `projected_agents=${admission.details.projected_agent_processes}`
+          );
+
+          // Stop any existing manager for this client
           if (existingManager) {
             await existingManager.stop();
             agentManagers.delete(client);
@@ -286,13 +356,19 @@ export function SOCKET(
           manager.start(agents).then(() => {
             endTimer(client);
             sendToClient(client, { type: 'status', status: 'done' });
-          }).catch((error) => {
+          }).catch(async (error) => {
             console.error('[Claude WS] AgentProcessManager start failed:', error);
+            if (agentManagers.get(client) === manager) {
+              try {
+                await manager.stop();
+              } catch (stopError) {
+                console.error('[Claude WS] Cleanup after start failure failed:', stopError);
+              }
+              agentManagers.delete(client);
+            }
             endTimer(client);
-            sendToClient(client, {
-              type: 'error',
-              error: `Failed to start jam: ${error.message}`,
-            });
+            sendErrorToClient(client, `Failed to start jam: ${error.message}`);
+            sendToClient(client, { type: 'status', status: 'done' });
           });
           break;
         }
@@ -310,16 +386,10 @@ export function SOCKET(
             }).catch((error) => {
               console.error('[Claude WS] Directive failed:', error);
               endTimer(client);
-              sendToClient(client, {
-                type: 'error',
-                error: `Directive failed: ${error.message}`,
-              });
+              sendErrorToClient(client, `Directive failed: ${error.message}`);
             });
           } else if (!manager) {
-            sendToClient(client, {
-              type: 'error',
-              error: 'No active jam session for boss directive.',
-            });
+            sendErrorToClient(client, 'No active jam session for boss directive.');
           }
           break;
         }

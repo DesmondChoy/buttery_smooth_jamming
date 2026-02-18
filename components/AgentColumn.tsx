@@ -3,6 +3,7 @@
 import { useEffect, useRef, useCallback } from 'react';
 import type { AgentState, JamChatMessage } from '@/lib/types';
 import { AGENT_META } from '@/lib/types';
+import { get_agent_status_display } from '@/lib/agent-status-ui';
 
 interface AgentColumnProps {
   agentKey: string;
@@ -11,29 +12,11 @@ interface AgentColumnProps {
 }
 
 function StatusDot({ status, agentKey }: { status: AgentState['status']; agentKey?: string }) {
-  const color = (() => {
-    switch (status) {
-      case 'thinking': return 'bg-yellow-500 animate-pulse';
-      case 'playing':  return 'bg-green-500 animate-pulse-gentle';
-      case 'error':    return 'bg-red-500';
-      case 'timeout':  return 'bg-orange-500';
-      default:         return 'bg-gray-500';  // idle
-    }
-  })();
-
-  const label = (() => {
-    switch (status) {
-      case 'thinking': return 'thinking';
-      case 'playing':  return 'playing';
-      case 'error':    return 'error';
-      case 'timeout':  return 'timeout';
-      default:         return 'idle';
-    }
-  })();
+  const { color_class, label } = get_agent_status_display(status);
 
   return (
     <div className="flex items-center gap-1.5">
-      <div className={`w-2 h-2 rounded-full ${color}`} />
+      <div className={`w-2 h-2 rounded-full ${color_class}`} />
       <span className="text-xs text-gray-500" {...(agentKey ? { 'data-testid': `status-label-${agentKey}` } : {})}>{label}</span>
     </div>
   );

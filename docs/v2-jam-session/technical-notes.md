@@ -89,6 +89,20 @@ In v2 jam mode, the canonical jam-state source is `AgentProcessManager` (`lib/ag
 
 **Implication:** Jam state should be observed from manager broadcasts (`agent_status`, `agent_thought`, `jam_state_update`) and manager snapshots, not from MCP in-memory state.
 
+## 6.1 Jam Admission Limits (v2)
+
+`app/api/claude-ws/route.ts` enforces server-side limits before creating a new jam manager:
+
+- `MAX_CONCURRENT_JAMS` (default: `1`)
+- `MAX_TOTAL_AGENT_PROCESSES` (default: `4`)
+
+If a request would exceed limits, the server returns an `error` message with:
+
+- `code`: `jam_capacity_exceeded` or `agent_capacity_exceeded`
+- `details`: active/projected counts and configured limits
+
+This prevents multi-tab/session process explosions and provides actionable feedback in the UI.
+
 ## 7. Agent Key to File Mapping
 
 Agent keys in code don't always match the `.claude/agents/` filename:
@@ -127,7 +141,7 @@ Agents don't just respond to boss directives — they autonomously evolve their 
 1. `AgentProcessManager.startAutoTick()` sets a 30-second `setInterval`
 2. On each tick, all active agents receive an `AUTO-TICK — LISTEN AND EVOLVE` prompt with current band state
 3. Agents can respond with `"no_change"` as their pattern to keep playing their current groove
-4. A `tickInProgress` guard prevents overlapping ticks
+4. Turn serialization (`enqueueTurn`) plus `tickScheduled` coalescing prevents overlapping/backlogged ticks
 5. The timer resets after each boss directive to avoid double-triggering
 
 **Key detail:** `no_change` is handled specially in `applyAgentResponse()` — it preserves the existing pattern in `agentPatterns[key]` while still updating `thoughts` and `reaction`. On the first round, if no pattern exists yet, it falls back to `"silence"`.
@@ -150,4 +164,5 @@ Each agent process receives a shared Strudel API reference (`lib/strudel-referen
 | Agent hallucinating tools | Fake MCP results in output | Ensure `--tools '' --strict-mcp-config` flags |
 | Normal mode prompts for MCP permission | First tool call interrupts flow | Use `--allowedTools` in orchestrator process |
 | Jam-state drift confusion | Different state views disagree | Treat `AgentProcessManager` as canonical source |
+| Jam start rejected at runtime | `jam_capacity_exceeded` / `agent_capacity_exceeded` | Increase env limits or stop existing jams |
 | React Compiler lint errors | Hooks dependency warnings | Destructure callback objects before use in effects |
