@@ -23,6 +23,7 @@ vi.mock('fs', async () => {
 
 import { spawn } from 'child_process';
 import { AgentProcessManager, BroadcastFn } from '../agent-process-manager';
+import type { MusicalContext } from '../types';
 
 const mockedSpawn = vi.mocked(spawn);
 
@@ -107,6 +108,17 @@ function getNthProcess(
   return Array.from(processes.values())[n];
 }
 
+/** Extract the jamState from a broadcast for a specific round number. */
+function getJamStateForRound(
+  broadcast: ReturnType<typeof vi.fn>,
+  round: number
+): { currentRound: number; musicalContext: MusicalContext } | undefined {
+  return broadcast.mock.calls
+    .filter(([msg]: unknown[]) => (msg as { type: string }).type === 'jam_state_update')
+    .map(([msg]: unknown[]) => (msg as { payload: { jamState: { currentRound: number; musicalContext: MusicalContext } } }).payload.jamState)
+    .find((js: { currentRound: number }) => js.currentRound === round);
+}
+
 // ─── Tests ──────────────────────────────────────────────────────────
 
 describe('AgentProcessManager turn serialization', () => {
@@ -174,8 +186,8 @@ describe('AgentProcessManager turn serialization', () => {
     // The jam_state_update payloads should show incrementing round numbers:
     // jam-start = round 1, tick = round 2, directive = round 3
     const jamStateUpdates = broadcast.mock.calls
-      .filter(([msg]: [{ type: string; payload: unknown }]) => msg.type === 'jam_state_update')
-      .map(([msg]: [{ type: string; payload: { jamState: { currentRound: number } } }]) => msg.payload.jamState.currentRound);
+      .filter(([msg]: unknown[]) => (msg as { type: string }).type === 'jam_state_update')
+      .map(([msg]: unknown[]) => (msg as { payload: { jamState: { currentRound: number } } }).payload.jamState.currentRound);
 
     expect(jamStateUpdates).toEqual([1, 2, 3]);
   });
@@ -224,8 +236,8 @@ describe('AgentProcessManager turn serialization', () => {
     // Both directives should have incremented the round:
     // jam-start = round 1, d1 = round 2, d2 = round 3
     const jamStateUpdates = broadcast.mock.calls
-      .filter(([msg]: [{ type: string; payload: unknown }]) => msg.type === 'jam_state_update')
-      .map(([msg]: [{ type: string; payload: { jamState: { currentRound: number } } }]) => msg.payload.jamState.currentRound);
+      .filter(([msg]: unknown[]) => (msg as { type: string }).type === 'jam_state_update')
+      .map(([msg]: unknown[]) => (msg as { payload: { jamState: { currentRound: number } } }).payload.jamState.currentRound);
 
     expect(jamStateUpdates).toEqual([1, 2, 3]);
   });
@@ -318,14 +330,14 @@ describe('AgentProcessManager turn serialization', () => {
     // Count jam_state_update broadcasts — the directive should NOT have
     // produced one because this.stopped was true
     const jamStateUpdates = broadcast.mock.calls
-      .filter(([msg]: [{ type: string; payload: unknown }]) => msg.type === 'jam_state_update');
+      .filter(([msg]: unknown[]) => (msg as { type: string }).type === 'jam_state_update');
 
     // Only jam-start should have broadcast a jam_state_update (round 1).
     // The tick may or may not broadcast depending on timing — but the
     // directive definitely should NOT have broadcast.
     const directiveRound = jamStateUpdates.find(
-      ([msg]: [{ type: string; payload: { jamState: { currentRound: number } } }]) =>
-        msg.payload.jamState.currentRound === 3
+      ([msg]: unknown[]) =>
+        (msg as { payload: { jamState: { currentRound: number } } }).payload.jamState.currentRound === 3
     );
     expect(directiveRound).toBeUndefined();
   });
@@ -380,7 +392,7 @@ describe('AgentProcessManager turn serialization', () => {
     await startPromise;
 
     type TestAgentResponse = { pattern: string; thoughts: string; reaction: string } | null;
-    let resolveBlockedTick: ((value: TestAgentResponse) => void) | null = null;
+    let resolveBlockedTick: ((value: TestAgentResponse) => void) | undefined;
     const blockedTick = new Promise<TestAgentResponse>((resolve) => {
       resolveBlockedTick = resolve;
     });
@@ -463,16 +475,7 @@ describe('AgentProcessManager musical context updates', () => {
     await directivePromise;
 
     // Find the jam_state_update from the directive (round 2)
-    const directiveJamState = broadcast.mock.calls
-      .filter(
-        ([msg]: [{ type: string; payload: unknown }]) =>
-          msg.type === 'jam_state_update'
-      )
-      .map(
-        ([msg]: [{ type: string; payload: { jamState: { currentRound: number; musicalContext: { key: string; bpm: number; scale: string[] } } } }]) =>
-          msg.payload.jamState
-      )
-      .find((js: { currentRound: number }) => js.currentRound === 2);
+    const directiveJamState = getJamStateForRound(broadcast, 2);
 
     expect(directiveJamState).toBeDefined();
     expect(directiveJamState!.musicalContext.key).toBe('D major');
@@ -513,16 +516,7 @@ describe('AgentProcessManager musical context updates', () => {
     });
     await directivePromise;
 
-    const directiveJamState = broadcast.mock.calls
-      .filter(
-        ([msg]: [{ type: string; payload: unknown }]) =>
-          msg.type === 'jam_state_update'
-      )
-      .map(
-        ([msg]: [{ type: string; payload: { jamState: { currentRound: number; musicalContext: { energy: number } } } }]) =>
-          msg.payload.jamState
-      )
-      .find((js: { currentRound: number }) => js.currentRound === 2);
+    const directiveJamState = getJamStateForRound(broadcast, 2);
 
     expect(directiveJamState!.musicalContext.energy).toBe(7);
 
@@ -558,16 +552,7 @@ describe('AgentProcessManager musical context updates', () => {
     });
     await directivePromise;
 
-    const directiveJamState = broadcast.mock.calls
-      .filter(
-        ([msg]: [{ type: string; payload: unknown }]) =>
-          msg.type === 'jam_state_update'
-      )
-      .map(
-        ([msg]: [{ type: string; payload: { jamState: { currentRound: number; musicalContext: { key: string; bpm: number; energy: number } } } }]) =>
-          msg.payload.jamState
-      )
-      .find((js: { currentRound: number }) => js.currentRound === 2);
+    const directiveJamState = getJamStateForRound(broadcast, 2);
 
     // Context should remain at defaults
     expect(directiveJamState!.musicalContext.key).toBe('C minor');
