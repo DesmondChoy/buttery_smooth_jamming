@@ -4,7 +4,7 @@ An **autonomous AI jam session** where 4 band member agents (drums, bass, melody
 
 ## Status: Active Development
 
-The jam session is fully functional with per-agent persistent Claude processes for low-latency (<7s) directive response.
+The jam session is fully functional with per-agent persistent Claude processes for low-latency directive response.
 
 ## Documentation Map
 

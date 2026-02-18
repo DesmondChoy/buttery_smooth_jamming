@@ -6,7 +6,7 @@ The project is an **autonomous AI jam session** where 4 band member agents
 (drums, bass, melody, FX) play together in real-time via Strudel, react to each
 other, and respond to a human "boss" directing the session.
 
-V2 uses **per-agent persistent Claude processes** for <7s directive latency,
+V2 uses **per-agent persistent Claude processes** (model from agent persona frontmatter, currently Sonnet) for low-latency directives,
 replacing the v1 orchestrator architecture (22-29s).
 
 | Document | Purpose |

@@ -1,5 +1,10 @@
 # Multi-Agent Band / AI Ensemble - Implementation Plan [COMPLETE]
 
+> **Historical document.** This captures the full design evolution from v1 to v2.
+> For current architecture and configuration, see [README.md](./README.md) and [architecture.md](./architecture.md).
+> Early sections describe the abandoned v1 orchestrator design (Haiku subagents); the v1→v2 evolution
+> story begins at [Architecture Evolution](#architecture-evolution-orchestrator-v1--per-agent-persistent-processes-v2).
+
 ## Overview
 Transform CC Sick Beats into an **autonomous AI jam session** where band members:
 - React to each other's playing in real-time
