@@ -366,7 +366,7 @@ These tests use `data-testid` attributes for reliable element targeting:
 - `agent-messages-{key}` — message list container
 - `pattern-display` — PatternDisplay container
 - `pattern-row-{key}` — per-agent pattern row
-- `boss-input` — boss directive input bar
+- `boss-input` — the `<input>` element itself (not a wrapper — use ref directly, no descendant selectors)
 
 **Prerequisite:** Start jam with all 4 agents, wait ~10-15s for all agents to respond with initial patterns (all status dots green/"playing").
 
@@ -478,7 +478,7 @@ async (page) => {
   return { latencyMs, pass: latencyMs < 7000 };
 }
 ```
-**Note:** This test piggybacks on the directive sent in Test 4.3. If run independently, send a new directive first.
+**Note:** Since Test 4.3 uses separate tool calls, drums may already be "playing" by the time this test runs. For accurate measurement, either: (1) combine with Test 4.5 by sending a fresh directive with a `browser_evaluate` timestamp before and latency check after, or (2) store `window.__directiveSentAt = Date.now()` before sending the directive and read it in the latency check. Auto-tick collisions (all agents going to "thinking" simultaneously) can inflate measurements.
 **Pass:** `latencyMs < 7000`. If it fails, log the actual value to distinguish flakes from regressions (AGENT_TIMEOUT_MS is 15s).
 
 #### Test 4.5: Non-Targeted Patterns Unchanged
