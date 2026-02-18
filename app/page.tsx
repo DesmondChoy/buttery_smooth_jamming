@@ -36,11 +36,11 @@ export default function Home() {
     jamBroadcastRef.current?.(message);
   }, []);
 
-  // Lift useClaudeTerminal to page level so sendJamTick is accessible
+  // Lift useClaudeTerminal to page level so sendStartJam is accessible
   const claude = useClaudeTerminal({ onToolUse: handleToolUse, onJamBroadcast: handleJamBroadcast });
 
   const jam = useJamSession({
-    sendJamTick: claude.sendJamTick,
+    sendStartJam: claude.sendStartJam,
     sendStopJam: claude.sendStopJam,
     isClaudeConnected: claude.isConnected,
   });
@@ -109,7 +109,6 @@ export default function Home() {
           addChatMessage({
             type: 'system',
             text: (message.payload as { message: string }).message,
-            round: 0,
           });
           break;
       }
@@ -123,7 +122,6 @@ export default function Home() {
     addChatMessage({
       type: 'system',
       text: msg.text,
-      round: 0,
     });
   }, [jam.isJamming, addChatMessage]);
 

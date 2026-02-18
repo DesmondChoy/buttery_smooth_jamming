@@ -52,9 +52,8 @@ function endTimer(client: WebSocket): void {
 
 // Message types for browser <-> server communication
 interface BrowserMessage {
-  type: 'user_input' | 'stop' | 'ping' | 'jam_tick' | 'boss_directive' | 'stop_jam';
+  type: 'user_input' | 'stop' | 'ping' | 'start_jam' | 'boss_directive' | 'stop_jam';
   text?: string;
-  round?: number;
   activeAgents?: string[];
   targetAgent?: string;
 }
@@ -261,7 +260,7 @@ export function SOCKET(
           claudeProcess?.stop();
           break;
 
-        case 'jam_tick': {
+        case 'start_jam': {
           // Jam start — create AgentProcessManager and spawn per-agent processes
           const agents = message.activeAgents || [];
           startTimer(client, `JAM_START (agents: ${agents.join(', ')})`);

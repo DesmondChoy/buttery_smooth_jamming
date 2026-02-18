@@ -77,10 +77,11 @@ function ColumnMessage({ message, agentKey }: { message: JamChatMessage; agentKe
 
   return (
     <div className="px-2 py-1">
-      <div className="flex items-baseline gap-1">
-        {isReaction && <span className="text-xs text-gray-600">(reacting)</span>}
-        <span className="text-xs text-gray-600 ml-auto">R{message.round}</span>
-      </div>
+      {isReaction && (
+        <div className="flex items-baseline gap-1">
+          <span className="text-xs text-gray-600">(reacting)</span>
+        </div>
+      )}
       <p className={`text-xs ${isReaction ? 'text-gray-400 italic' : 'text-gray-300'}`}>
         {message.text}
       </p>

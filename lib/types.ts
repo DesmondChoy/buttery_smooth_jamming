@@ -12,7 +12,7 @@ export type WSMessageType =
   | 'agent_thought'
   | 'musical_context_update'
   | 'agent_status'
-  | 'jam_tick'
+  | 'start_jam'
   | 'directive_error';
 
 export interface WSMessage<T = unknown> {
@@ -92,7 +92,6 @@ export interface JamChatMessage {
   text: string;
   pattern?: string;        // optional code snippet
   targetAgent?: string;    // @mention-directed boss directive target
-  round: number;
   timestamp: Date;
 }
 

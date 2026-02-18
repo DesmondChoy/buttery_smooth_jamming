@@ -82,7 +82,7 @@ CC Sick Beats v2 uses a **dual-mode architecture**: a single-agent Strudel assis
 
 ### Jam Start
 ```
-Browser → { type: 'jam_tick', activeAgents: ['drums','bass','melody','fx'] }
+Browser → { type: 'start_jam', activeAgents: ['drums','bass','melody','fx'] }
   → claude-ws creates AgentProcessManager with broadcast callback
     → Manager spawns 4 claude processes (parallel)
       → Each agent receives initial jam context on stdin

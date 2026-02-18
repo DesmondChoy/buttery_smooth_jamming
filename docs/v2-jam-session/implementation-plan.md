@@ -492,7 +492,7 @@ export type WSMessageType =
   | 'agent_thought'          // Single agent's thought bubble
   | 'musical_context_update' // Musical context changed
   | 'agent_status'           // Agent status change (thinking/error/timeout)
-  | 'jam_tick';              // Web-based jam clock trigger
+  | 'start_jam';              // Web-based jam clock trigger
 
 export interface AgentThoughtPayload {
   agent: string;
@@ -524,7 +524,7 @@ export interface MusicalContextPayload {
 Web App                    Claude Process / MCP Server
    │                           │
    │──── user_message ─────────▶│  (Boss types in chat — uses existing pipeline)
-   │──── jam_tick ────────────▶│  (Periodic jam clock)
+   │──── start_jam ────────────▶│  (Periodic jam clock)
    │                           │
    │◀─── jam_state_update ─────│  (After each jam round)
    │◀─── agent_thought ────────│  (Each agent's personality shows)
@@ -992,7 +992,7 @@ AgentProcessManager.broadcast()
 | File | Role |
 |------|------|
 | `lib/agent-process-manager.ts` | **New.** Core manager class. Spawns per-agent Claude processes, routes directives to stdin, parses JSON from stdout, composes patterns, broadcasts via callback. |
-| `app/api/claude-ws/route.ts` | **Modified.** Routes `jam_tick` (jam start), `boss_directive`, and `stop_jam` to AgentProcessManager. Orchestrator process still used for normal Strudel assistant mode. |
+| `app/api/claude-ws/route.ts` | **Modified.** Routes `start_jam` (jam start), `boss_directive`, and `stop_jam` to AgentProcessManager. Orchestrator process still used for normal Strudel assistant mode. |
 | `lib/claude-process.ts` | **Modified.** System prompt stripped from ~150 lines to ~20 lines. Now a pure Strudel assistant — no jam orchestration logic, no `Task` tool, no band member definitions. |
 | `app/page.tsx` | **Modified.** Wires jam broadcast messages from `useClaudeTerminal` to `useJamSession` handlers via `jamBroadcastRef`. |
 | `hooks/useClaudeTerminal.ts` | **Modified.** Forwards `agent_thought`, `agent_status`, `execute`, `jam_state_update` messages via `onJamBroadcast` callback. Added `sendStopJam`. |
@@ -1003,7 +1003,7 @@ AgentProcessManager.broadcast()
 ```
 Jam Start (user clicks "Start Jam" → selects agents → confirms)
   │
-  ├─ Browser sends: { type: 'jam_tick', activeAgents: ['drums','bass','melody','fx'] }
+  ├─ Browser sends: { type: 'start_jam', activeAgents: ['drums','bass','melody','fx'] }
   │
   ├─ claude-ws creates AgentProcessManager with broadcast callback
   │

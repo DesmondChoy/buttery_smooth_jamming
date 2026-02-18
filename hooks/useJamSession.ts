@@ -17,7 +17,7 @@ const MAX_CHAT_MESSAGES = 500;
 const ALL_AGENT_KEYS = Object.keys(AGENT_META);
 
 interface UseJamSessionOptions {
-  sendJamTick: (round: number, activeAgents?: string[]) => void;
+  sendStartJam: (activeAgents: string[]) => void;
   sendStopJam: () => void;
   isClaudeConnected: boolean;
 }
@@ -65,7 +65,7 @@ const DEFAULT_MUSICAL_CONTEXT: MusicalContext = {
 };
 
 export function useJamSession(options: UseJamSessionOptions): UseJamSessionReturn {
-  const { sendJamTick, sendStopJam, isClaudeConnected } = options;
+  const { sendStartJam, sendStopJam, isClaudeConnected } = options;
 
   const [isJamming, setIsJamming] = useState(false);
   const [agentStates, setAgentStates] = useState<Record<string, AgentState>>({ ...DEFAULT_AGENTS });
@@ -88,7 +88,6 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
       type: 'boss_directive',
       text,
       targetAgent,
-      round: 0,
     });
   }, [addChatMessage]);
 
@@ -99,9 +98,8 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
   const startJam = useCallback(() => {
     if (!isClaudeConnected) return;
     setIsJamming(true);
-    // Send [JAM_START] via sendJamTick (repurposed as jam start trigger)
-    sendJamTick(0, selectedAgentsRef.current);
-  }, [isClaudeConnected, sendJamTick]);
+    sendStartJam(selectedAgentsRef.current);
+  }, [isClaudeConnected, sendStartJam]);
 
   const stopJam = useCallback(() => {
     setIsJamming(false);
@@ -127,10 +125,10 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
     selectedAgentsRef.current = agents;
     setShowAgentSelection(false);
 
-    // Start the jam — send [JAM_START] to Claude
+    // Start the jam
     setIsJamming(true);
-    sendJamTick(0, agents);
-  }, [sendJamTick]);
+    sendStartJam(agents);
+  }, [sendStartJam]);
 
   const cancelStartJam = useCallback(() => {
     setShowAgentSelection(false);
@@ -167,7 +165,6 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
       emoji: agentInfo.emoji,
       text: payload.thought,
       pattern: payload.pattern || undefined,
-      round: 0,
     });
 
     // Push reaction as separate message if non-empty and different from thought
@@ -178,7 +175,6 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
         agentName: agentInfo.name,
         emoji: agentInfo.emoji,
         text: payload.reaction,
-        round: 0,
       });
     }
   }, [addChatMessage]);
