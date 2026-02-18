@@ -98,6 +98,19 @@ export interface JamChatMessage {
   timestamp: Date;
 }
 
+// Pattern parser types — structured summary of agent Strudel patterns
+export interface PatternSummary {
+  structure: 'single' | 'stack';
+  layers: LayerSummary[];
+}
+
+export interface LayerSummary {
+  source: 'note' | 's';
+  content: string[];          // leaf values from mini notation
+  effects: Record<string, number | string>;  // gain, lpf, bank, etc.
+  modifiers: string[];        // "sometimes", "every(4)", etc.
+}
+
 // Consolidated agent metadata — single source of truth for names, emojis, colors
 export const AGENT_META: Record<string, {
   key: string;

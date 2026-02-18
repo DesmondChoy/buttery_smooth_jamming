@@ -11,6 +11,7 @@ import type {
   JamStatePayload,
 } from './types';
 import { AGENT_META } from './types';
+import { summarizePattern } from './pattern-parser';
 
 // Callback type for broadcasting messages to browser clients
 export type BroadcastFn = (message: { type: string; payload: unknown }) => void;
@@ -413,6 +414,20 @@ export class AgentProcessManager {
     this.composeAndBroadcast();
   }
 
+  /**
+   * Format a band state line for an agent, with optional parsed summary.
+   * e.g. "🥁 BEAT (drums) [bd sd, (TR909), gain 0.5]: s("bd ~ sd ~").bank("RolandTR909").gain(0.5)"
+   */
+  private formatBandStateLine(k: string): string {
+    const meta = AGENT_META[k];
+    const pattern = this.agentPatterns[k] || 'silence';
+    const summary = summarizePattern(pattern);
+    const label = summary
+      ? `${meta.emoji} ${meta.name} (${k}) [${summary}]`
+      : `${meta.emoji} ${meta.name} (${k})`;
+    return `${label}: ${pattern}`;
+  }
+
   private buildDirectiveContext(
     key: string,
     directive: string,
@@ -423,11 +438,7 @@ export class AgentProcessManager {
 
     const bandStateLines = this.activeAgents
       .filter((k) => k !== key)
-      .map((k) => {
-        const meta = AGENT_META[k];
-        const pattern = this.agentPatterns[k] || 'silence';
-        return `${meta.emoji} ${meta.name} (${k}): ${pattern}`;
-      });
+      .map((k) => this.formatBandStateLine(k));
 
     return [
       'DIRECTIVE from the boss.',
@@ -474,11 +485,7 @@ export class AgentProcessManager {
 
         const bandStateLines = this.activeAgents
           .filter((k) => k !== key)
-          .map((k) => {
-            const meta = AGENT_META[k];
-            const pattern = this.agentPatterns[k] || 'silence';
-            return `${meta.emoji} ${meta.name} (${k}): ${pattern}`;
-          });
+          .map((k) => this.formatBandStateLine(k));
 
         const myPattern = this.agentPatterns[key] || 'silence';
 
