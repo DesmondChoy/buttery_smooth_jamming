@@ -10,10 +10,11 @@ import type {
   MusicalContextPayload,
   JamStatePayload,
 } from '@/lib/types';
+import { AGENT_META } from '@/lib/types';
 
 const MAX_CHAT_MESSAGES = 500;
 
-const ALL_AGENTS = ['drums', 'bass', 'melody', 'fx'];
+const ALL_AGENT_KEYS = Object.keys(AGENT_META);
 
 interface UseJamSessionOptions {
   sendJamTick: (round: number, activeAgents?: string[]) => void;
@@ -47,12 +48,12 @@ export interface UseJamSessionReturn {
   handleJamStateUpdate: (payload: JamStatePayload) => void;
 }
 
-const DEFAULT_AGENTS: Record<string, AgentState> = {
-  drums:  { name: 'BEAT',   emoji: '🥁',  pattern: '', fallbackPattern: '', thoughts: '', reaction: '', status: 'idle', lastUpdated: '' },
-  bass:   { name: 'GROOVE', emoji: '🎸',  pattern: '', fallbackPattern: '', thoughts: '', reaction: '', status: 'idle', lastUpdated: '' },
-  melody: { name: 'ARIA',   emoji: '🎹',  pattern: '', fallbackPattern: '', thoughts: '', reaction: '', status: 'idle', lastUpdated: '' },
-  fx:     { name: 'GLITCH', emoji: '🎛️', pattern: '', fallbackPattern: '', thoughts: '', reaction: '', status: 'idle', lastUpdated: '' },
-};
+const DEFAULT_AGENTS: Record<string, AgentState> = Object.fromEntries(
+  Object.entries(AGENT_META).map(([key, meta]) => [
+    key,
+    { name: meta.name, emoji: meta.emoji, pattern: '', fallbackPattern: '', thoughts: '', reaction: '', status: 'idle' as const, lastUpdated: '' },
+  ])
+);
 
 const DEFAULT_MUSICAL_CONTEXT: MusicalContext = {
   key: 'C',
@@ -70,7 +71,7 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
   const [agentStates, setAgentStates] = useState<Record<string, AgentState>>({ ...DEFAULT_AGENTS });
   const [musicalContext, setMusicalContext] = useState<MusicalContext>(DEFAULT_MUSICAL_CONTEXT);
   const [chatMessages, setChatMessages] = useState<JamChatMessage[]>([]);
-  const [selectedAgents, setSelectedAgents] = useState<string[]>([...ALL_AGENTS]);
+  const [selectedAgents, setSelectedAgents] = useState<string[]>([...ALL_AGENT_KEYS]);
   const [showAgentSelection, setShowAgentSelection] = useState(false);
 
   const selectedAgentsRef = useRef(selectedAgents);
@@ -156,7 +157,7 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
     });
 
     // Push chat messages separately (not inside state updater to keep it pure)
-    const agentInfo = DEFAULT_AGENTS[payload.agent];
+    const agentInfo = AGENT_META[payload.agent];
     if (!agentInfo) return;
 
     addChatMessage({
