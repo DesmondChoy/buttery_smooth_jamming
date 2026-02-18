@@ -71,7 +71,8 @@ export class AgentProcessManager {
   private stopped = false;
   private roundNumber = 0;
   private tickTimer: NodeJS.Timeout | null = null;
-  private tickInProgress = false;
+  private turnInProgress: Promise<void> = Promise.resolve();
+  private turnCounter = 0;
   private strudelReference: string = '';
 
   constructor(options: AgentProcessManagerOptions) {
@@ -85,6 +86,35 @@ export class AgentProcessManager {
     } catch (err) {
       console.error('[AgentManager] Failed to load strudel reference:', err);
     }
+  }
+
+  /**
+   * Serialize all turns (ticks, directives, jam start) through a single
+   * Promise chain. Prevents two turns from overlapping on the same agent's
+   * readline, which would cause response misattribution.
+   */
+  private enqueueTurn(label: string, fn: () => Promise<void>): Promise<void> {
+    const turnId = ++this.turnCounter;
+    const previous = this.turnInProgress;
+    const current = previous.then(
+      () => {
+        console.log(`[AgentManager] Turn #${turnId} starting: ${label}`);
+        return fn();
+      },
+      () => {
+        console.log(`[AgentManager] Turn #${turnId} starting: ${label} (prev errored)`);
+        return fn();
+      }
+    ).then(
+      () => console.log(`[AgentManager] Turn #${turnId} completed: ${label}`),
+      (err) => {
+        console.error(`[AgentManager] Turn #${turnId} failed: ${label}`, err);
+        throw err;
+      }
+    );
+    // Always-resolving version so the chain never gets stuck
+    this.turnInProgress = current.then(() => {}, () => {});
+    return current;
   }
 
   /**
@@ -131,45 +161,47 @@ export class AgentProcessManager {
     targetAgent: string | undefined,
     activeAgents: string[]
   ): Promise<void> {
-    if (this.stopped) return;
+    return this.enqueueTurn('directive', async () => {
+      if (this.stopped) return;
 
-    // Reset tick timer to avoid double-triggering during directive
-    if (this.tickTimer) clearInterval(this.tickTimer);
+      // Reset tick timer to avoid double-triggering during directive
+      if (this.tickTimer) clearInterval(this.tickTimer);
 
-    // Determine which agents to target
-    const targets =
-      targetAgent && this.agents.has(targetAgent)
-        ? [targetAgent]
-        : activeAgents.filter((k) => this.agents.has(k));
+      // Determine which agents to target
+      const targets =
+        targetAgent && this.agents.has(targetAgent)
+          ? [targetAgent]
+          : activeAgents.filter((k) => this.agents.has(k));
 
-    // Set targeted agents to "thinking"
-    for (const key of targets) {
-      this.setAgentStatus(key, 'thinking');
-    }
+      // Set targeted agents to "thinking"
+      for (const key of targets) {
+        this.setAgentStatus(key, 'thinking');
+      }
 
-    // Increment round once for the entire directive
-    this.roundNumber++;
+      // Increment round once for the entire directive
+      this.roundNumber++;
 
-    // Build and send directive context to each targeted agent
-    const responsePromises = targets.map((key) => {
-      const context = this.buildDirectiveContext(key, text, targetAgent);
-      return this.sendToAgentAndCollect(key, context);
+      // Build and send directive context to each targeted agent
+      const responsePromises = targets.map((key) => {
+        const context = this.buildDirectiveContext(key, text, targetAgent);
+        return this.sendToAgentAndCollect(key, context);
+      });
+
+      const responses = await Promise.all(responsePromises);
+
+      // Process responses and update state
+      for (let i = 0; i < targets.length; i++) {
+        const key = targets[i];
+        const response = responses[i];
+        this.applyAgentResponse(key, response);
+      }
+
+      // Compose all patterns and broadcast
+      this.composeAndBroadcast();
+
+      // Restart auto-tick after directive completes
+      this.startAutoTick();
     });
-
-    const responses = await Promise.all(responsePromises);
-
-    // Process responses and update state
-    for (let i = 0; i < targets.length; i++) {
-      const key = targets[i];
-      const response = responses[i];
-      this.applyAgentResponse(key, response);
-    }
-
-    // Compose all patterns and broadcast
-    this.composeAndBroadcast();
-
-    // Restart auto-tick after directive completes
-    this.startAutoTick();
   }
 
   /**
@@ -184,6 +216,9 @@ export class AgentProcessManager {
       this.tickTimer = null;
     }
 
+    // Wait for any in-flight turn to finish before killing processes
+    await this.turnInProgress.catch(() => {});
+
     // Kill all agent processes
     const killPromises = Array.from(this.agents.values()).map((agent) =>
       this.killProcess(agent)
@@ -194,6 +229,8 @@ export class AgentProcessManager {
     this.agentPatterns = {};
     this.agentStates = {};
     this.activeAgents = [];
+    this.turnInProgress = Promise.resolve();
+    this.turnCounter = 0;
   }
 
   // ─── Private: Process Spawning ───────────────────────────────────
@@ -374,44 +411,46 @@ export class AgentProcessManager {
   // ─── Private: Jam Flow ───────────────────────────────────────────
 
   private async sendJamStart(): Promise<void> {
-    this.roundNumber++;
-    const ctx = this.musicalContext;
+    return this.enqueueTurn('jam-start', async () => {
+      this.roundNumber++;
+      const ctx = this.musicalContext;
 
-    const responsePromises = this.activeAgents.map((key) => {
-      if (!this.agents.has(key)) return Promise.resolve(null);
+      const responsePromises = this.activeAgents.map((key) => {
+        if (!this.agents.has(key)) return Promise.resolve(null);
 
-      const bandStateLines = this.activeAgents.map((k) => {
-        const meta = AGENT_META[k];
-        return `${meta.emoji} ${meta.name} (${k}): [first round — no pattern yet]`;
+        const bandStateLines = this.activeAgents.map((k) => {
+          const meta = AGENT_META[k];
+          return `${meta.emoji} ${meta.name} (${k}): [first round — no pattern yet]`;
+        });
+
+        const context = [
+          'JAM START — CONTEXT',
+          `Round: ${this.roundNumber} (opening)`,
+          `Key: ${ctx.key} | Scale: ${ctx.scale.join(', ')} | BPM: ${ctx.bpm} | Time: ${ctx.timeSignature} | Energy: ${ctx.energy}/10`,
+          `Chords: ${ctx.chordProgression.join(' → ')}`,
+          '',
+          'BAND STATE:',
+          ...bandStateLines,
+          '',
+          'BOSS SAYS: No directives — free jam. Create your opening pattern.',
+          '',
+          'YOUR LAST PATTERN: None yet — this is your first round.',
+        ].join('\n');
+
+        this.setAgentStatus(key, 'thinking');
+        return this.sendToAgentAndCollect(key, context);
       });
 
-      const context = [
-        'JAM START — CONTEXT',
-        `Round: ${this.roundNumber} (opening)`,
-        `Key: ${ctx.key} | Scale: ${ctx.scale.join(', ')} | BPM: ${ctx.bpm} | Time: ${ctx.timeSignature} | Energy: ${ctx.energy}/10`,
-        `Chords: ${ctx.chordProgression.join(' → ')}`,
-        '',
-        'BAND STATE:',
-        ...bandStateLines,
-        '',
-        'BOSS SAYS: No directives — free jam. Create your opening pattern.',
-        '',
-        'YOUR LAST PATTERN: None yet — this is your first round.',
-      ].join('\n');
+      const responses = await Promise.all(responsePromises);
 
-      this.setAgentStatus(key, 'thinking');
-      return this.sendToAgentAndCollect(key, context);
+      for (let i = 0; i < this.activeAgents.length; i++) {
+        const key = this.activeAgents[i];
+        const response = responses[i];
+        this.applyAgentResponse(key, response);
+      }
+
+      this.composeAndBroadcast();
     });
-
-    const responses = await Promise.all(responsePromises);
-
-    for (let i = 0; i < this.activeAgents.length; i++) {
-      const key = this.activeAgents[i];
-      const response = responses[i];
-      this.applyAgentResponse(key, response);
-    }
-
-    this.composeAndBroadcast();
   }
 
   private formatAgentBandState(k: string): string {
@@ -454,7 +493,7 @@ export class AgentProcessManager {
   private startAutoTick(): void {
     if (this.tickTimer) clearInterval(this.tickTimer);
     this.tickTimer = setInterval(() => {
-      if (this.stopped || this.tickInProgress) return;
+      if (this.stopped) return;
       this.sendAutoTick().catch((err) => {
         console.error('[AgentManager] Auto-tick error:', err);
       });
@@ -462,9 +501,9 @@ export class AgentProcessManager {
   }
 
   private async sendAutoTick(): Promise<void> {
-    if (this.stopped) return;
-    this.tickInProgress = true;
-    try {
+    return this.enqueueTurn('auto-tick', async () => {
+      if (this.stopped) return;
+
       this.roundNumber++;
       const ctx = this.musicalContext;
 
@@ -510,9 +549,7 @@ export class AgentProcessManager {
       }
 
       this.composeAndBroadcast();
-    } finally {
-      this.tickInProgress = false;
-    }
+    });
   }
 
   // ─── Private: State Management ───────────────────────────────────
