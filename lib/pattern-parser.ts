@@ -171,18 +171,18 @@ export function parsePattern(code: string): PatternSummary | null {
 function formatLayer(layer: LayerSummary): string {
   const parts: string[] = [];
 
-  // Content description
-  if (layer.content.length > 0) {
-    parts.push(layer.content.join(' '));
-  }
-
-  // Sound source / bank
+  // Content + qualifier (bank for s() patterns, synth for note() patterns)
+  // Reads as "bd sd (TR909)" or "c1 eb1 g1 (sawtooth)" — qualifier right next to content
+  let contentStr = layer.content.length > 0 ? layer.content.join(' ') : '';
   if (layer.effects.bank) {
     const bank = String(layer.effects.bank).replace('Roland', '');
-    parts.push(`(${bank})`);
+    contentStr += contentStr ? ` (${bank})` : `(${bank})`;
+  } else if (layer.source === 'note' && layer.effects.s) {
+    contentStr += contentStr ? ` (${layer.effects.s})` : String(layer.effects.s);
   }
+  if (contentStr) parts.push(contentStr);
 
-  // Key effects (skip bank and .s(), handled separately)
+  // Key effects (skip bank and .s(), already shown as qualifiers)
   const effectParts: string[] = [];
   if (layer.effects.gain !== undefined) effectParts.push(`gain ${layer.effects.gain}`);
   if (layer.effects.lpf !== undefined) effectParts.push(`lpf ${layer.effects.lpf}`);
@@ -197,11 +197,6 @@ function formatLayer(layer: LayerSummary): string {
   // Modifiers
   if (layer.modifiers.length > 0) {
     parts.push(`[${layer.modifiers.join(', ')}]`);
-  }
-
-  // Sound source for note() patterns (e.g. note("c1").s("sawtooth"))
-  if (layer.source === 'note' && layer.effects.s) {
-    parts.push(String(layer.effects.s));
   }
 
   return parts.join(', ');
@@ -222,10 +217,12 @@ export function summarizePattern(code: string): string | null {
   if (!parsed) return null;
 
   if (parsed.structure === 'single') {
-    return formatLayer(parsed.layers[0]);
+    const summary = formatLayer(parsed.layers[0]);
+    return summary || null;
   }
 
   // Stack: "N layers: layer1 | layer2 | ..."
-  const layerDescs = parsed.layers.map(formatLayer);
-  return `${parsed.layers.length} layers: ${layerDescs.join(' | ')}`;
+  const layerDescs = parsed.layers.map(formatLayer).filter(Boolean);
+  if (layerDescs.length === 0) return null;
+  return `${layerDescs.length} layers: ${layerDescs.join(' | ')}`;
 }
