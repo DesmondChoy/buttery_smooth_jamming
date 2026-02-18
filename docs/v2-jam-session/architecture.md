@@ -28,7 +28,8 @@ CC Sick Beats v2 uses a **dual-mode architecture**: a single-agent Strudel assis
 │  └───────────────────────────────────────────────────────────────────────┘  │
 │                                                                              │
 │  ┌── PatternDisplay ─────────────────────────────────────────────────────┐  │
-│  │ stack(s("bd*4").bank("RolandTR909"), note("c2 g2").s("sawtooth"))     │  │
+│  │ 🥁 BEAT: s("bd*4").bank("RolandTR909")                               │  │
+│  │ 🎸 GROOVE: note("c2 g2").s("sawtooth")                               │  │
 │  └───────────────────────────────────────────────────────────────────────┘  │
 │                                                                              │
 │  ┌── Normal Mode ────────────────────────────────────────────────────────┐  │
@@ -128,7 +129,7 @@ cc_sick_beats/
 │   ├── AgentSelectionModal.tsx      # Pre-jam agent picker
 │   ├── BossInputBar.tsx             # Directive input with @mention support
 │   ├── MentionSuggestions.tsx       # @mention autocomplete dropdown
-│   └── PatternDisplay.tsx           # Composed stack() pattern viewer
+│   └── PatternDisplay.tsx           # Per-agent pattern viewer
 ├── hooks/
 │   ├── index.ts                     # Exports
 │   ├── useWebSocket.ts              # Strudel MCP WebSocket connection
@@ -172,7 +173,7 @@ cc_sick_beats/
 | `AgentColumn` | Per-agent status, thoughts, pattern preview | Jam |
 | `AgentSelectionModal` | Pre-jam agent picker | Jam |
 | `BossInputBar` | Directive input with @mention parsing | Jam |
-| `PatternDisplay` | Shows composed `stack()` pattern | Jam |
+| `PatternDisplay` | Shows per-agent pattern rows (collapsible) | Jam |
 | `useJamSession` | Jam state, agent selection, directive routing | Jam |
 | `useClaudeTerminal` | Claude CLI streaming + jam broadcast forwarding | Both |
 | `AgentProcessManager` | Spawns/manages per-agent Claude processes | Jam (server) |
@@ -199,10 +200,11 @@ const AGENT_META: Record<string, {
 
 ## Latency
 
-| Operation | v1 (Orchestrator) | v2 (Persistent Processes) |
-|-----------|-------------------|--------------------------|
-| Jam start (4 agents) | ~30-45s | **6.7s** |
-| Targeted directive (1 agent) | 22-29s | **5.3s** |
-| Broadcast directive (4 agents) | 25-35s | **7.0s** |
+v2 persistent processes are significantly faster than v1's orchestrator approach:
+
+- **v1 (Orchestrator):** 22-35s per directive — each directive spawned fresh subagents
+- **v2 (Persistent Processes):** Seconds, not tens of seconds — agents stay alive for the entire jam
+
+Model is sourced from agent persona YAML frontmatter (currently Sonnet). Latency varies by model choice.
 
 See [Implementation Plan: Architecture Evolution](./implementation-plan.md#architecture-evolution-orchestrator-v1--per-agent-persistent-processes-v2) for the full v1-to-v2 migration story.
