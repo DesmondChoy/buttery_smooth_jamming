@@ -15,7 +15,9 @@ function StatusDot({ status, agentKey }: { status: AgentState['status']; agentKe
     switch (status) {
       case 'thinking': return 'bg-yellow-500 animate-pulse';
       case 'playing':  return 'bg-green-500 animate-pulse-gentle';
-      default:         return 'bg-gray-500';  // idle, error, timeout all gray
+      case 'error':    return 'bg-red-500';
+      case 'timeout':  return 'bg-orange-500';
+      default:         return 'bg-gray-500';  // idle
     }
   })();
 
@@ -23,6 +25,8 @@ function StatusDot({ status, agentKey }: { status: AgentState['status']; agentKe
     switch (status) {
       case 'thinking': return 'thinking';
       case 'playing':  return 'playing';
+      case 'error':    return 'error';
+      case 'timeout':  return 'timeout';
       default:         return 'idle';
     }
   })();
