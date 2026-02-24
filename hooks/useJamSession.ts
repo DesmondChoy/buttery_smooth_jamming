@@ -20,6 +20,7 @@ interface UseJamSessionOptions {
   sendStartJam: (activeAgents: string[]) => void;
   sendStopJam: () => void;
   isRuntimeConnected?: boolean;
+  isAiConnected?: boolean;
   isClaudeConnected?: boolean;
 }
 
@@ -67,7 +68,11 @@ const DEFAULT_MUSICAL_CONTEXT: MusicalContext = {
 
 export function useJamSession(options: UseJamSessionOptions): UseJamSessionReturn {
   const { sendStartJam, sendStopJam } = options;
-  const isRuntimeConnected = options.isRuntimeConnected ?? options.isClaudeConnected ?? false;
+  const isRuntimeConnected =
+    options.isRuntimeConnected
+    ?? options.isAiConnected
+    ?? options.isClaudeConnected
+    ?? false;
 
   const [isJamming, setIsJamming] = useState(false);
   const [agentStates, setAgentStates] = useState<Record<string, AgentState>>({ ...DEFAULT_AGENTS });

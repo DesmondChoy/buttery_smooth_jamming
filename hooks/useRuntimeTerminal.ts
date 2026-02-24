@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 
 export type RuntimeStatus = 'connecting' | 'ready' | 'thinking' | 'done' | 'error';
+export type AiStatus = RuntimeStatus;
 export type CodexStatus = RuntimeStatus;
 export type ClaudeStatus = RuntimeStatus;
 
@@ -35,13 +36,15 @@ export type UseClaudeTerminalOptions = UseRuntimeTerminalOptions;
 export type UseClaudeTerminalReturn = UseRuntimeTerminalReturn;
 export type UseCodexTerminalOptions = UseRuntimeTerminalOptions;
 export type UseCodexTerminalReturn = UseRuntimeTerminalReturn;
+export type UseAiTerminalOptions = UseRuntimeTerminalOptions;
+export type UseAiTerminalReturn = UseRuntimeTerminalReturn;
 
 function getDefaultWsUrl(): string {
   if (typeof window === 'undefined') {
-    return 'ws://localhost:3000/api/runtime-ws';
+    return 'ws://localhost:3000/api/ai-ws';
   }
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  return `${protocol}//${window.location.host}/api/runtime-ws`;
+  return `${protocol}//${window.location.host}/api/ai-ws`;
 }
 
 export function useRuntimeTerminal(
@@ -297,6 +300,8 @@ export function useRuntimeTerminal(
   };
 }
 
-// Backward-compatibility alias while runtime-facing imports migrate.
+// Provider-neutral primary alias.
+export const useAiTerminal = useRuntimeTerminal;
+// Backward-compatibility aliases while older imports migrate.
 export const useCodexTerminal = useRuntimeTerminal;
 export const useClaudeTerminal = useRuntimeTerminal;

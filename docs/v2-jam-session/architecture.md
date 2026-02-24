@@ -39,7 +39,7 @@ Buttery Smooth Jamming v2 uses a **dual-mode architecture**: a single-agent Stru
            │ WebSocket                                 │ WebSocket
            ▼                                           ▼
 ┌─────────────────────────┐              ┌──────────────────────────────────────┐
-│ /api/runtime-ws         │              │ /api/ws                              │
+│ /api/ai-ws              │              │ /api/ws                              │
 │                         │              │ (MCP bridge — broadcasts to browser) │
 │ Normal mode:            │              └──────────────────┬───────────────────┘
 │   RuntimeProcess        │                                 │ WebSocket
@@ -58,7 +58,7 @@ Buttery Smooth Jamming v2 uses a **dual-mode architecture**: a single-agent Stru
 │   │ fx thread_id      │ │
 │   └───────────────────┘ │
 │                         │
-│ Broadcast callback ─────│──→ client.send() on the /api/runtime-ws WebSocket
+│ Broadcast callback ─────│──→ client.send() on the /api/ai-ws WebSocket
 └─────────────────────────┘
 ```
 
@@ -82,7 +82,7 @@ Buttery Smooth Jamming v2 uses a **dual-mode architecture**: a single-agent Stru
 ### Jam Start
 ```
 Browser → { type: 'start_jam', activeAgents: ['drums','bass','melody','fx'] }
-  → runtime-ws creates AgentProcessManager with broadcast callback
+  → ai-ws creates AgentProcessManager with broadcast callback
     → Manager prepares 4 Codex-backed sessions (parallel)
       → Each agent receives initial jam context
         → Agents respond with JSON
@@ -118,8 +118,9 @@ buttery_smooth_jamming/
 │   ├── globals.css                  # Tailwind + Strudel visualization hiding
 │   └── api/
 │       ├── ws/route.ts              # WebSocket for Strudel MCP bridge
-│       ├── runtime-ws/route.ts      # Runtime WebSocket + jam routing
-│       └── claude-ws/route.ts       # Compatibility alias to runtime-ws
+│       ├── ai-ws/route.ts           # Primary provider-neutral runtime WebSocket path
+│       ├── runtime-ws/route.ts      # Runtime WebSocket + jam routing (legacy path alias target)
+│       └── claude-ws/route.ts       # Legacy compatibility alias to runtime-ws
 ├── components/
 │   ├── TerminalPanel.tsx            # Chat panel (normal mode)
 │   ├── StrudelPanel.tsx             # Strudel editor wrapper
@@ -135,7 +136,8 @@ buttery_smooth_jamming/
 ├── hooks/
 │   ├── index.ts                     # Exports
 │   ├── useWebSocket.ts              # Strudel MCP WebSocket connection
-│   ├── useRuntimeTerminal.ts        # Runtime WS + jam broadcast forwarding
+│   ├── useRuntimeTerminal.ts        # Runtime WS + jam broadcast forwarding (base implementation)
+│   ├── useAiTerminal.ts             # Provider-neutral hook alias (preferred for new imports)
 │   ├── useClaudeTerminal.ts         # Compatibility hook alias
 │   ├── useJamSession.ts             # Jam state management + agent selection
 │   └── useStrudel.ts                # setCode, evaluate, stop
@@ -188,7 +190,7 @@ buttery_smooth_jamming/
 | `BossInputBar` | Directive input with @mention parsing | Jam |
 | `PatternDisplay` | Shows per-agent pattern rows (collapsible) | Jam |
 | `useJamSession` | Jam state, agent selection, directive routing | Jam |
-| `useRuntimeTerminal` | Runtime streaming + jam broadcast forwarding | Both |
+| `useAiTerminal` / `useRuntimeTerminal` | Runtime streaming + jam broadcast forwarding | Both |
 | `AgentProcessManager` | Manages per-agent Codex-backed jam sessions | Jam (server) |
 | `CodexProcess`/`ClaudeProcess` | Normal-mode runtime implementation | Normal (server) |
 | MCP Server | Normal-mode tool execution + user message queue | Normal (server) |

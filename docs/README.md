@@ -6,7 +6,7 @@ The project is an **autonomous AI jam session** where 4 band member agents
 (drums, bass, melody, FX) play together in real-time via Strudel, react to each
 other, and respond to a human "boss" directing the session.
 
-V2 uses **per-agent persistent Claude processes** (model from agent persona frontmatter, currently Sonnet) for low-latency directives,
+V2 uses **per-agent persistent Codex-backed sessions** for low-latency directives,
 replacing the v1 orchestrator architecture (22-29s).
 
 | Document | Purpose |
@@ -15,6 +15,7 @@ replacing the v1 orchestrator architecture (22-29s).
 | [V2 Architecture](./v2-jam-session/architecture.md) | System design, diagrams, file structure |
 | [V2 Technical Notes](./v2-jam-session/technical-notes.md) | Critical debugging gotchas |
 | [V2 Implementation Plan](./v2-jam-session/implementation-plan.md) | Historical: phases 1-6, v1-to-v2 evolution story |
+| [V3 Migration Plan](./v3/codex-cli-migration-implementation-plan.md) | Provider migration workstreams and acceptance criteria |
 | [V3 Codex Runtime Setup](./v3/codex-runtime-setup.md) | Codex profiles, config locations, startup checks (Workstream E) |
 
 ## V1: MVP (Complete)

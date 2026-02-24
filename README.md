@@ -1,6 +1,6 @@
 # Buttery Smooth Jamming
 
-An autonomous AI jam session where band member agents play together in real-time, react to each other's music, and respond to a human "boss" directing the session — all powered by Claude and [Strudel](https://strudel.cc).
+An autonomous AI jam session where band member agents play together in real-time, react to each other's music, and respond to a human "boss" directing the session — all powered by Codex and [Strudel](https://strudel.cc).
 
 ## The Band
 
@@ -11,7 +11,7 @@ An autonomous AI jam session where band member agents play together in real-time
 | 🎹 ARIA | Melody | Classically trained, insists on harmonic correctness |
 | 🎛️ GLITCH | FX | Chaotic texture artist, lives to break conventions |
 
-Each agent is a persistent Claude process with its own personality, musical memory, and opinions. They share a musical context (key, scale, BPM, chords) for harmonic coherence but may disagree with the boss in their own way.
+Each agent runs in a persistent Codex-backed session with its own personality, musical memory, and opinions. They share a musical context (key, scale, BPM, chords) for harmonic coherence but may disagree with the boss in their own way.
 
 ## Quick Start
 
@@ -33,7 +33,7 @@ Then open http://localhost:3000:
 3. Type directives: `"More energy!"` or target an agent: `"@BEAT double time"`
 4. Click **Stop** to end the session
 
-Outside of jam mode, the app also works as a Strudel assistant — chat with Claude to learn and explore live coding patterns.
+Outside of jam mode, the app also works as a Strudel assistant — chat with the Codex runtime to learn and explore live coding patterns.
 
 ## How It Works
 
@@ -46,7 +46,7 @@ You (the Boss)
   │   AgentProcessManager         Deterministic routing (no LLM needed)
   │     │
   │     ▼
-  │   🥁 BEAT process (Sonnet)    Persistent claude --print process
+  │   🥁 BEAT session (jam_agent) Persistent Codex-backed session
   │     │
   │     ▼
   │   { pattern, thoughts,        Agent responds with JSON
@@ -68,8 +68,8 @@ Each agent keeps full conversational memory across the jam session. Directive-to
 buttery_smooth_jamming/
 ├── app/                          # Next.js app (pages + API routes)
 ├── components/                   # UI: JamTopBar, AgentColumn, BossInputBar, etc.
-├── hooks/                        # useJamSession, useClaudeTerminal, useStrudel
-├── lib/                          # agent-process-manager, claude-process, types
+├── hooks/                        # useJamSession, useAiTerminal, useStrudel
+├── lib/                          # agent-process-manager, codex-process, types
 ├── .codex/agents/                # Band member personas (drummer.md, bassist.md, etc.)
 ├── .codex/skills/                # Project-local Codex skills
 ├── packages/mcp-server/          # MCP server (Strudel bridge + jam state)
@@ -79,7 +79,7 @@ buttery_smooth_jamming/
 ## Requirements
 
 - [Node.js](https://nodejs.org/) 18+
-- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) with an active subscription
+- Codex CLI with an active account/session
 - A modern browser with audio support
 
 ## Documentation

@@ -12,7 +12,7 @@ Codex instruction file for this repository. Keep this short, practical, and up t
 
 Buttery Smooth Jamming is an autonomous AI jam session with four agents (drums, bass, melody, FX) using Strudel, coordinated by a human boss.
 
-Current focus is v2 jam mode with low-latency coordination via per-agent persistent Claude processes.
+Current focus is v2 jam mode with low-latency coordination via per-agent persistent Codex-backed sessions.
 
 ## Read First
 
@@ -25,7 +25,7 @@ Current focus is v2 jam mode with low-latency coordination via per-agent persist
 
 1. Preserve dual-mode architecture (normal assistant mode + jam mode).
 2. Keep deterministic `@mention` routing in code, not model inference.
-3. Preserve per-agent persistent processes in jam mode for latency.
+3. Preserve per-agent persistent Codex-backed sessions in jam mode for latency.
 4. Keep server-side composition of final `stack()` pattern.
 5. Preserve websocket broadcast-callback pattern (avoid `ws` native addon pitfalls).
 6. Keep jam agents toolless (`--tools '' --strict-mcp-config`) unless intentionally changed.
@@ -35,17 +35,21 @@ Current focus is v2 jam mode with low-latency coordination via per-agent persist
 ## Repo Map (Quick)
 
 - `app/page.tsx`: Normal mode + jam mode layout
-- `app/api/claude-ws/route.ts`: Claude terminal websocket + jam routing
+- `app/api/ai-ws/route.ts`: Primary provider-neutral runtime websocket path
+- `app/api/runtime-ws/route.ts`: Runtime websocket + jam routing (legacy path)
 - `app/api/ws/route.ts`: MCP bridge websocket
 - `hooks/useJamSession.ts`: Jam state and directive routing
-- `hooks/useClaudeTerminal.ts`: Claude stream handling and jam broadcast
+- `hooks/useAiTerminal.ts`: Provider-neutral terminal hook alias
+- `hooks/useRuntimeTerminal.ts`: Runtime stream handling and jam broadcast
 - `lib/agent-process-manager.ts`: Per-agent persistent lifecycle
-- `lib/claude-process.ts`: Single-process normal assistant mode
+- `lib/codex-process.ts`: Single-process normal assistant runtime mode
 - `lib/types.ts`: Shared contracts, includes `AGENT_META`
 - `packages/mcp-server/src/`: MCP source
 - `packages/mcp-server/build/`: MCP runtime output
 - `.codex/agents/`: Agent behavior docs (canonical)
 - `.codex/skills/`: Codex skill definitions (project-local)
+
+Legacy compatibility files still exist for transition safety (`app/api/claude-ws/route.ts`, `hooks/useClaudeTerminal.ts`, `lib/claude-process.ts`) and should not be used for new work.
 
 ## Commands
 

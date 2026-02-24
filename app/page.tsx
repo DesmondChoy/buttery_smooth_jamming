@@ -114,7 +114,7 @@ export default function Home() {
     setIsPlaying(false);
   }, [stop]);
 
-  // Wire jam broadcast messages from runtime-ws to jam session handlers
+  // Wire jam broadcast messages from ai-ws/runtime-ws to jam session handlers
   // AgentProcessManager sends these directly to the browser client (not via /api/ws)
   useEffect(() => {
     jamBroadcastRef.current = (message: { type: string; payload: unknown }) => {
