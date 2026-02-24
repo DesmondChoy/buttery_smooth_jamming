@@ -1,7 +1,7 @@
 # V3 Implementation Plan: Migrate from Claude Code to Codex CLI + OpenAI Subagents
 
-> Status: Decision-locked draft (updated after `bsj-6u9.1` compatibility spike)
-> Last updated: February 24, 2026
+> Status: Execution in progress (Workstreams A-E closed on February 24, 2026; F-G open)
+> Last updated: February 24, 2026 (sync after same-day commit + beads closure review)
 > Scope: Repository-level migration plan only (no code changes in this document)
 
 ## Terminology
@@ -314,13 +314,30 @@ Outcome summary:
 2. `codex-mini-latest` is not viable in the tested ChatGPT-auth Codex CLI setup and is not the GA default.
 3. Manager-managed long-lived sessions remain the selected jam strategy.
 
-## Proposed Beads Tracking Structure
+## Beads Execution Snapshot (as of 2026-02-24 +08:00)
 
-Epic 1: Runtime provider migration (Claude -> Codex)
-Epic 2: Jam sub-agent migration and persona/config migration
-Epic 3: Validation, benchmark, and rollout hardening
+Migration epic status:
 
-Child issues under each epic should map 1:1 to workstreams A-G.
+1. `bsj-6u9` (V3 runtime provider migration) is closed.
+
+Workstream-linked task status:
+
+1. Workstream A (`bsj-6u9.1`) is closed.
+2. Workstream B (`bsj-6u9.4`) is closed.
+3. Workstream C (`bsj-6u9.5`) is closed.
+4. Workstream D (`bsj-3xy.2`) is closed.
+5. Workstream E (`bsj-3xy.4`) is closed.
+6. Workstream F (`bsj-3xy.5`) is open.
+7. Workstream G (`bsj-6ud.1`) is open.
+
+Additional same-day cleanup related to Workstream F:
+
+1. `bsj-wtg` (rename runtime-facing Claude identifiers to Codex) is closed.
+
+Remaining execution focus after this snapshot:
+
+1. Complete Workstream F provider-neutral naming and contract cleanup (`bsj-3xy.5`).
+2. Complete Workstream G tests, benchmark tranche, and staged rollout (`bsj-6ud.1`).
 
 ## Source Links (Corroboration)
 
