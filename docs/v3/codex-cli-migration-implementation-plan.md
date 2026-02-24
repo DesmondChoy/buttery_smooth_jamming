@@ -203,6 +203,7 @@ Tasks:
 - model/profile defaults
 - sandbox and approval policy guidance
 - MCP server registration for Strudel tools
+  - runtime fallback path `config/codex/config.toml` may be used in sandboxed environments where `.codex/` is read-only
 2. Define separate profiles:
 - `normal_mode` profile (MCP tools enabled, default model `gpt-5-codex`)
 - `jam_agent` profile (hard toolless + no MCP, default model `gpt-5-codex-mini`)

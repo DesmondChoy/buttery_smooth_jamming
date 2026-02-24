@@ -1,0 +1,41 @@
+# Buttery Smooth Jamming project Codex config.
+# Preferred location is .codex/config.toml, but this repo currently uses
+# config/codex/config.toml in sandboxed environments where .codex is read-only.
+
+model = "gpt-5-codex"
+approval_policy = "never"
+sandbox_mode = "workspace-write"
+model_reasoning_effort = "low"
+model_reasoning_summary = "detailed"
+
+[mcp_servers.strudel]
+command = "node"
+args = ["packages/mcp-server/build/index.js"]
+required = false
+
+[mcp_servers.strudel.env]
+WS_URL = "ws://localhost:3000/api/ws"
+
+[profiles.normal_mode]
+model = "gpt-5-codex"
+approval_policy = "never"
+sandbox_mode = "workspace-write"
+model_reasoning_effort = "low"
+model_reasoning_summary = "detailed"
+features.runtime_metrics = false
+mcp_servers.strudel.enabled = true
+mcp_servers.strudel.required = false
+mcp_servers.playwright.enabled = false
+mcp_servers.playwright.required = false
+
+[profiles.jam_agent]
+model = "gpt-5-codex-mini"
+approval_policy = "never"
+sandbox_mode = "workspace-write"
+model_reasoning_effort = "low"
+model_reasoning_summary = "detailed"
+features.runtime_metrics = false
+mcp_servers.strudel.enabled = false
+mcp_servers.strudel.required = false
+mcp_servers.playwright.enabled = false
+mcp_servers.playwright.required = false

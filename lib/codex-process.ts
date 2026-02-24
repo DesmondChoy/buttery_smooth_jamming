@@ -6,6 +6,12 @@ import type {
   RuntimeProcess,
   RuntimeProcessOptions,
 } from './runtime-process';
+import {
+  assert_codex_runtime_ready,
+  build_codex_overrides,
+  CODEX_NORMAL_PROFILE,
+  load_project_codex_config,
+} from './codex-runtime-checks';
 
 const SYSTEM_PROMPT = `You are a Strudel live coding assistant. Help users create music patterns using Strudel.
 
@@ -28,7 +34,6 @@ Full API: read the strudel://reference MCP resource when needed.
 - Explain briefly what the pattern does.
 - Keep responses concise.`;
 
-const DEFAULT_MODEL = 'gpt-5-codex';
 const DEFAULT_WS_URL = 'ws://localhost:3000/api/ws';
 const HISTORY_LIMIT = 12;
 
@@ -464,6 +469,10 @@ export class CodexProcess extends EventEmitter implements RuntimeProcess {
       throw new Error('Codex process already running');
     }
 
+    await assert_codex_runtime_ready({
+      working_dir: this.working_dir,
+    });
+
     this.running = true;
     this.stopping = false;
     this.exit_emitted = false;
@@ -520,28 +529,29 @@ export class CodexProcess extends EventEmitter implements RuntimeProcess {
   }
 
   private build_exec_args(): string[] {
-    const model = this.options.model ?? DEFAULT_MODEL;
     const ws_url = this.options.wsUrl ?? DEFAULT_WS_URL;
-
-    return [
+    const model = this.options.model;
+    const config = load_project_codex_config(this.working_dir);
+    const config_overrides = build_codex_overrides(config);
+    const args = [
       'exec',
       '--json',
-      '--model',
-      model,
+      '--profile',
+      CODEX_NORMAL_PROFILE,
+    ];
+
+    if (model) {
+      args.push('--model', model);
+    }
+
+    for (const override of config_overrides) {
+      args.push('-c', override);
+    }
+
+    return [
+      ...args,
       '-c',
       'features.runtime_metrics=false',
-      '-c',
-      'mcp_servers.playwright.enabled=false',
-      '-c',
-      'mcp_servers.playwright.required=false',
-      '-c',
-      'mcp_servers.strudel.enabled=true',
-      '-c',
-      'mcp_servers.strudel.required=false',
-      '-c',
-      'mcp_servers.strudel.command="node"',
-      '-c',
-      'mcp_servers.strudel.args=["packages/mcp-server/build/index.js"]',
       '-c',
       `mcp_servers.strudel.env.WS_URL=${quote_toml_string(ws_url)}`,
       '-',
