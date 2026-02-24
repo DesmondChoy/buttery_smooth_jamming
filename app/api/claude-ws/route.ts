@@ -1,13 +1,10 @@
 import type { IncomingMessage } from 'http';
 import { NextResponse } from 'next/server';
 import type { WebSocket, WebSocketServer } from 'ws';
-import {
-  ClaudeProcess,
-  ClaudeMessage,
-  ContentBlock,
-} from '@/lib/claude-process';
 import { AgentProcessManager } from '@/lib/agent-process-manager';
 import { evaluate_jam_admission } from '@/lib/jam-admission';
+import { createNormalRuntimeProcess } from '@/lib/runtime-factory';
+import type { RuntimeEvent, RuntimeProcess } from '@/lib/runtime-process';
 
 // Required GET export for next-ws to recognize this as a WebSocket route
 export function GET() {
@@ -15,8 +12,8 @@ export function GET() {
   return NextResponse.json({ error: 'WebSocket endpoint' }, { status: 400 });
 }
 
-// Store active Claude processes per client
-const clientProcesses = new Map<WebSocket, ClaudeProcess>();
+// Store active runtime processes per client
+const clientProcesses = new Map<WebSocket, RuntimeProcess>();
 
 // Store agent process managers per client (for jam sessions)
 const agentManagers = new Map<WebSocket, AgentProcessManager>();
@@ -108,28 +105,28 @@ function countActiveAgentProcesses(): number {
   }, 0);
 }
 
-async function startClaudeForClient(
+async function startRuntimeForClient(
   client: WebSocket,
   workingDir: string,
   wsUrl?: string
-): Promise<ClaudeProcess> {
-  const claudeProcess = new ClaudeProcess({
+): Promise<RuntimeProcess> {
+  const runtimeProcess = createNormalRuntimeProcess({
     workingDir,
     wsUrl,
-    onMessage: (msg: ClaudeMessage) => {
-      handleClaudeMessage(client, msg);
+    onEvent: (event: RuntimeEvent) => {
+      handleRuntimeEvent(client, event);
     },
     onError: (error) => {
       sendToClient(client, {
         type: 'error',
-        error: `Claude process error: ${error.message}`,
+        error: `Runtime process error: ${error.message}`,
       });
     },
     onExit: (code) => {
       sendToClient(client, {
         type: 'status',
         status: 'done',
-        text: `Claude process exited with code ${code}`,
+        text: `Runtime process exited with code ${code}`,
       });
       clientProcesses.delete(client);
     },
@@ -141,69 +138,58 @@ async function startClaudeForClient(
     },
   });
 
-  await claudeProcess.start();
-  clientProcesses.set(client, claudeProcess);
-  return claudeProcess;
+  await runtimeProcess.start();
+  clientProcesses.set(client, runtimeProcess);
+  return runtimeProcess;
 }
 
-function handleClaudeMessage(client: WebSocket, msg: ClaudeMessage): void {
-  switch (msg.type) {
-    case 'assistant':
-      if (msg.message?.content) {
-        for (const block of msg.message.content) {
-          handleContentBlock(client, block);
-        }
-      }
-      break;
-
-    case 'system':
-      // System messages (init, etc.) - could show status
-      if (msg.subtype === 'init') {
-        sendToClient(client, {
-          type: 'status',
-          status: 'ready',
-        });
-      }
-      break;
-
-    case 'result':
-      // Final result of a conversation turn
-      logTiming(client, `result (turn complete, cost=$${msg.cost_usd?.toFixed(4) ?? '?'}, duration=${msg.duration_ms ?? '?'}ms)`);
-      endTimer(client);
-      sendToClient(client, {
-        type: 'status',
-        status: 'done',
-      });
-      break;
-  }
-}
-
-function handleContentBlock(client: WebSocket, block: ContentBlock): void {
-  switch (block.type) {
+function handleRuntimeEvent(client: WebSocket, event: RuntimeEvent): void {
+  switch (event.type) {
     case 'text':
-      if (block.text) {
-        logTiming(client, `text: "${block.text.substring(0, 80)}${block.text.length > 80 ? '...' : ''}"`);
-        sendToClient(client, {
-          type: 'text',
-          text: block.text,
-        });
-      }
+      logTiming(client, `text: "${event.text.substring(0, 80)}${event.text.length > 80 ? '...' : ''}"`);
+      sendToClient(client, {
+        type: 'text',
+        text: event.text,
+      });
       break;
 
     case 'tool_use':
-      logTiming(client, `tool_use: ${block.name}(${JSON.stringify(block.input).substring(0, 100)})`);
+      logTiming(client, `tool_use: ${event.toolName}(${JSON.stringify(event.toolInput).substring(0, 100)})`);
       sendToClient(client, {
         type: 'tool_use',
-        toolName: block.name,
-        toolInput: block.input,
+        toolName: event.toolName,
+        toolInput: event.toolInput,
       });
       break;
 
     case 'tool_result':
-      logTiming(client, `tool_result: ${String(block.text || '').substring(0, 100)}`);
+      logTiming(client, `tool_result: ${event.text.substring(0, 100)}`);
       sendToClient(client, {
         type: 'tool_result',
-        text: String(block.text || ''),
+        text: event.text,
+      });
+      break;
+
+    case 'status':
+      if (event.status === 'done') {
+        logTiming(
+          client,
+          `result (turn complete, cost=$${event.metrics?.cost_usd?.toFixed(4) ?? '?'}, duration=${event.metrics?.duration_ms ?? '?'}ms)`
+        );
+        endTimer(client);
+      }
+
+      sendToClient(client, {
+        type: 'status',
+        status: event.status,
+        ...(event.text ? { text: event.text } : {}),
+      });
+      break;
+
+    case 'error':
+      sendToClient(client, {
+        type: 'error',
+        error: event.error,
       });
       break;
   }
@@ -246,12 +232,12 @@ export function SOCKET(
       console.log(`[Claude WS] Client #${clientId} already closed before process start`);
       return;
     }
-    console.log(`[Claude WS] Starting Claude process for client #${clientId}`);
-    startClaudeForClient(client, workingDir, wsUrl).catch((error) => {
-      console.error('[Claude WS] Failed to start Claude:', error);
+    console.log(`[Claude WS] Starting runtime process for client #${clientId}`);
+    startRuntimeForClient(client, workingDir, wsUrl).catch((error) => {
+      console.error('[Claude WS] Failed to start runtime:', error);
       sendToClient(client, {
         type: 'error',
-        error: `Failed to start Claude: ${error.message}`,
+        error: `Failed to start runtime: ${error.message}`,
       });
     });
   }, 100);
@@ -261,35 +247,35 @@ export function SOCKET(
   client.on('message', async (data) => {
     try {
       const message = JSON.parse(data.toString()) as BrowserMessage;
-      const claudeProcess = clientProcesses.get(client);
+      const runtimeProcess = clientProcesses.get(client);
 
       switch (message.type) {
         case 'user_input':
-          if (message.text && claudeProcess?.isRunning()) {
+          if (message.text && runtimeProcess?.isRunning()) {
             sendToClient(client, {
               type: 'status',
               status: 'thinking',
             });
-            claudeProcess.sendUserMessage(message.text);
-          } else if (!claudeProcess?.isRunning()) {
+            runtimeProcess.send(message.text);
+          } else if (!runtimeProcess?.isRunning()) {
             sendToClient(client, {
               type: 'error',
-              error: 'Claude process not running. Reconnecting...',
+              error: 'Runtime process not running. Reconnecting...',
             });
             // Try to restart
-            startClaudeForClient(client, workingDir, wsUrl).then(() => {
+            startRuntimeForClient(client, workingDir, wsUrl).then(() => {
               if (message.text) {
                 const newProcess = clientProcesses.get(client);
-                newProcess?.sendUserMessage(message.text);
+                newProcess?.send(message.text);
               }
             }).catch((error) => {
-              sendErrorToClient(client, `Failed to restart Claude: ${error.message}`);
+              sendErrorToClient(client, `Failed to restart runtime: ${error.message}`);
             });
           }
           break;
 
         case 'stop':
-          claudeProcess?.stop();
+          runtimeProcess?.stop();
           break;
 
         case 'start_jam': {
@@ -428,10 +414,10 @@ export function SOCKET(
       return;
     }
 
-    const claudeProcess = clientProcesses.get(client);
-    if (claudeProcess) {
-      console.log(`[Claude WS] Stopping Claude process for client #${cid}`);
-      await claudeProcess.stop();
+    const runtimeProcess = clientProcesses.get(client);
+    if (runtimeProcess) {
+      console.log(`[Claude WS] Stopping runtime process for client #${cid}`);
+      await runtimeProcess.stop();
       clientProcesses.delete(client);
     }
 

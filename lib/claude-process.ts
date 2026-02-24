@@ -2,6 +2,11 @@ import { spawn, ChildProcess } from 'child_process';
 import { EventEmitter } from 'events';
 import * as readline from 'readline';
 import * as path from 'path';
+import type {
+  RuntimeEvent,
+  RuntimeProcess,
+  RuntimeProcessOptions,
+} from './runtime-process';
 
 // Claude Code streaming JSON message types
 export interface ClaudeMessage {
@@ -31,14 +36,9 @@ export interface ContentBlock {
   input?: Record<string, unknown>;
 }
 
-export interface ClaudeProcessOptions {
-  workingDir?: string;
-  wsUrl?: string;  // WebSocket URL for MCP server to connect to
-  onMessage?: (msg: ClaudeMessage) => void;
-  onError?: (error: Error) => void;
-  onExit?: (code: number | null) => void;
-  onReady?: () => void;
-}
+export type ClaudeProcessOptions = RuntimeProcessOptions & {
+  onMessage?: (message: ClaudeMessage) => void;
+};
 
 const SYSTEM_PROMPT = `You are a Strudel live coding assistant. Help users create music patterns using Strudel.
 
@@ -61,7 +61,70 @@ Full API: read the strudel://reference MCP resource when needed.
 - Explain briefly what the pattern does.
 - Keep responses concise.`;
 
-export class ClaudeProcess extends EventEmitter {
+function map_claude_content_block_to_runtime_event(
+  block: ContentBlock
+): RuntimeEvent | null {
+  switch (block.type) {
+    case 'text':
+      if (!block.text) return null;
+      return {
+        type: 'text',
+        text: block.text,
+      };
+
+    case 'tool_use':
+      return {
+        type: 'tool_use',
+        toolName: block.name,
+        toolInput: block.input,
+      };
+
+    case 'tool_result':
+      return {
+        type: 'tool_result',
+        text: String(block.text || ''),
+      };
+  }
+
+  return null;
+}
+
+export function map_claude_message_to_runtime_events(
+  message: ClaudeMessage
+): RuntimeEvent[] {
+  switch (message.type) {
+    case 'assistant':
+      return (message.message?.content || [])
+        .map(map_claude_content_block_to_runtime_event)
+        .filter((event): event is RuntimeEvent => event !== null);
+
+    case 'system':
+      if (message.subtype === 'init') {
+        return [{
+          type: 'status',
+          status: 'ready',
+        }];
+      }
+      return [];
+
+    case 'result':
+      return [{
+        type: 'status',
+        status: 'done',
+        metrics: {
+          duration_ms: message.duration_ms,
+          cost_usd: message.cost_usd,
+        },
+      }];
+
+    case 'user':
+      return [];
+  }
+
+  return [];
+}
+
+export class ClaudeProcess extends EventEmitter implements RuntimeProcess {
   private process: ChildProcess | null = null;
   private rl: readline.Interface | null = null;
   private workingDir: string;
@@ -152,16 +215,14 @@ export class ClaudeProcess extends EventEmitter {
 
     try {
       const message = JSON.parse(line) as ClaudeMessage;
-      this.options.onMessage?.(message);
-      this.emit('message', message);
+      this.handleClaudeMessage(message);
     } catch {
       // Line might be incomplete or not JSON, buffer it
       this.messageBuffer += line;
       try {
         const message = JSON.parse(this.messageBuffer) as ClaudeMessage;
         this.messageBuffer = '';
-        this.options.onMessage?.(message);
-        this.emit('message', message);
+        this.handleClaudeMessage(message);
       } catch {
         // Still incomplete, keep buffering
         if (this.messageBuffer.length > 100000) {
@@ -173,7 +234,19 @@ export class ClaudeProcess extends EventEmitter {
     }
   }
 
-  sendUserMessage(text: string): void {
+  private handleClaudeMessage(message: ClaudeMessage): void {
+    this.options.onMessage?.(message);
+    this.emit('message', message);
+
+    const events = map_claude_message_to_runtime_events(message);
+
+    for (const event of events) {
+      this.options.onEvent?.(event);
+      this.emit('event', event);
+    }
+  }
+
+  send(text: string): void {
     if (!this.process || !this.process.stdin) {
       throw new Error('Claude process not running');
     }
@@ -188,6 +261,11 @@ export class ClaudeProcess extends EventEmitter {
     };
 
     this.process.stdin.write(JSON.stringify(userMessage) + '\n');
+  }
+
+  // Backward-compatibility shim while route code migrates to send().
+  sendUserMessage(text: string): void {
+    this.send(text);
   }
 
   isRunning(): boolean {
