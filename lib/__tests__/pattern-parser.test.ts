@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { parsePattern, summarizePattern, formatBandStateLine } from '../pattern-parser';
 
-// ─── Test corpus from .claude/agents/*.md ────────────────────────────
+// ─── Test corpus from .codex/agents/*.md ─────────────────────────────
 
 describe('parsePattern', () => {
   it('parses a simple s() pattern', () => {

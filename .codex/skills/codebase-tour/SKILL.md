@@ -28,7 +28,7 @@ Before presenting any choices, silently explore the codebase to understand its s
 
 ## Phase 2: Initial Choice
 
-Use AskUserQuestion to present **3-5** dynamically-generated options based on what you discovered. The built-in "Other" option automatically provides free text input.
+Use `request_user_input` (Plan mode) or a direct multiple-choice question (Default mode) to present **3-5** dynamically-generated options based on what you discovered. The built-in "Other" option automatically provides free text input when available.
 
 **Rules for generating options:**
 - Each option = a distinct, major area of the codebase
@@ -60,7 +60,7 @@ The user chose a broad area but not a specific sub-topic yet:
 
 1. Read key files in the selected area
 2. Identify **3** interesting sub-topics
-3. Present them with AskUserQuestion
+3. Present them with `request_user_input` (or a direct question in Default mode)
 4. Explain the selected sub-topic
 
 ### Re-entry (from Phase 5)
@@ -88,7 +88,7 @@ The user already chose a specific topic in Phase 5 — do NOT ask them to pick a
 
 ## Phase 4: Active Recall
 
-Immediately after explaining a sub-topic, use AskUserQuestion to test the user's understanding with a recall question. This is NOT optional — every explanation is followed by a recall checkpoint.
+Immediately after explaining a sub-topic, use `request_user_input` (or a direct question in Default mode) to test the user's understanding with a recall question. This is NOT optional — every explanation is followed by a recall checkpoint.
 
 ### How to Craft the Recall Question
 
@@ -177,7 +177,7 @@ Then proceed immediately to Phase 5.
 
 ## Phase 5: Direction Choice
 
-After the recall answer is revealed, present the user with their next move using AskUserQuestion. Always generate **3 concrete topic options** — no meta-options like "adjust depth."
+After the recall answer is revealed, present the user with their next move using `request_user_input` (or a direct question in Default mode). Always generate **3 concrete topic options** — no meta-options like "adjust depth."
 
 **Rules for generating options:**
 - All 3 options must be **concrete sub-topics**, not abstract labels

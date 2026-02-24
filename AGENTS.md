@@ -44,7 +44,8 @@ Current focus is v2 jam mode with low-latency coordination via per-agent persist
 - `lib/types.ts`: Shared contracts, includes `AGENT_META`
 - `packages/mcp-server/src/`: MCP source
 - `packages/mcp-server/build/`: MCP runtime output
-- `.claude/agents/`: Agent behavior docs
+- `.codex/agents/`: Agent behavior docs (canonical)
+- `.codex/skills/`: Codex skill definitions (project-local)
 
 ## Commands
 

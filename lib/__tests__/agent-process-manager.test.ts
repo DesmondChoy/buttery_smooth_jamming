@@ -13,6 +13,13 @@ vi.mock('fs', async () => {
   const actual = await vi.importActual<typeof import('fs')>('fs');
   return {
     ...actual,
+    existsSync: vi.fn((filePath: fs.PathLike) => {
+      const resolvedPath = String(filePath);
+      return (
+        resolvedPath.includes('strudel-reference.md')
+        || resolvedPath.includes('.codex/agents')
+      );
+    }),
     readFileSync: vi.fn((filePath: string) => {
       if (filePath.includes('strudel-reference.md')) return '# Strudel Ref';
       // Return a fake agent .md with YAML frontmatter
@@ -22,10 +29,19 @@ vi.mock('fs', async () => {
 });
 
 import { spawn } from 'child_process';
+import * as fs from 'fs';
 import { AgentProcessManager, BroadcastFn } from '../agent-process-manager';
 import type { MusicalContext } from '../types';
 
 const mockedSpawn = vi.mocked(spawn);
+
+const default_exists_sync_impl = (filePath: fs.PathLike) => {
+  const resolvedPath = String(filePath);
+  return (
+    resolvedPath.includes('strudel-reference.md')
+    || resolvedPath.includes('.codex/agents')
+  );
+};
 
 // ─── Helpers ────────────────────────────────────────────────────────
 
@@ -143,6 +159,7 @@ describe('AgentProcessManager turn serialization', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.clearAllMocks();
+    vi.mocked(fs.existsSync).mockImplementation(default_exists_sync_impl);
   });
 
   afterEach(async () => {
@@ -208,6 +225,58 @@ describe('AgentProcessManager turn serialization', () => {
       .map(([msg]: unknown[]) => (msg as { payload: { jamState: { currentRound: number } } }).payload.jamState.currentRound);
 
     expect(jamStateUpdates).toEqual([1, 2, 3]);
+  });
+
+  it('loads personas from .codex/agents when available', async () => {
+    const mockedExistsSync = vi.mocked(fs.existsSync);
+    const mockedReadFileSync = vi.mocked(fs.readFileSync);
+
+    mockedExistsSync.mockImplementation((filePath: fs.PathLike) => {
+      const resolvedPath = String(filePath);
+      return (
+        resolvedPath.includes('strudel-reference.md')
+        || resolvedPath.includes('.codex/agents')
+      );
+    });
+
+    const { manager, processes } = createTestManager();
+    const startPromise = manager.start(['drums']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const drumsProc = getNthProcess(processes, 0);
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd sd")',
+      thoughts: 'Opening beat',
+      reaction: 'Ready',
+    });
+
+    await startPromise;
+
+    expect(mockedReadFileSync).toHaveBeenCalledWith(
+      expect.stringContaining('/.codex/agents/drummer.md'),
+      'utf-8'
+    );
+  });
+
+  it('skips spawning when a .codex persona file is missing', async () => {
+    const mockedExistsSync = vi.mocked(fs.existsSync);
+    mockedExistsSync.mockImplementation((filePath: fs.PathLike) => {
+      const resolvedPath = String(filePath);
+      if (resolvedPath.includes('strudel-reference.md')) return true;
+      return false;
+    });
+
+    const { manager, processes, broadcast } = createTestManager();
+    await manager.start(['drums']);
+
+    expect(processes.size).toBe(0);
+
+    const statusEvents = broadcast.mock.calls
+      .map(([msg]: unknown[]) => msg as { type: string; payload?: { status?: string } })
+      .filter((msg) => msg.type === 'agent_status');
+
+    expect(statusEvents).toHaveLength(1);
+    expect(statusEvents[0].payload?.status).toBe('timeout');
   });
 
   it('two simultaneous directives serialize correctly', async () => {

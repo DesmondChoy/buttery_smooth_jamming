@@ -1,16 +1,16 @@
 ---
 name: skill-creator
-description: Guide for creating effective skills. This skill should be used when users want to create a new skill (or update an existing skill) that extends Claude's capabilities with specialized knowledge, workflows, or tool integrations.
+description: Guide for creating effective skills. This skill should be used when users want to create a new skill (or update an existing skill) that extends Codex's capabilities with specialized knowledge, workflows, or tool integrations.
 ---
 
 # Skill Creator
 
-Skills are modular packages that extend Claude's capabilities by providing specialized knowledge, workflows, and tools.
+Skills are modular packages that extend Codex's capabilities by providing specialized knowledge, workflows, and tools.
 
 ## Core Principles
 
 ### Conciseness
-The context window is shared. Only add information Claude doesn't already have. Challenge each piece: "Does this justify its token cost?"
+The context window is shared. Only add information Codex doesn't already have. Challenge each piece: "Does this justify its token cost?"
 
 ### Degrees of Freedom
 - **High freedom** (text instructions): Multiple valid approaches, context-dependent decisions
@@ -39,7 +39,7 @@ skill-name/
 
 1. **Metadata** (name + description) - Always in context (~100 words)
 2. **SKILL.md body** - When skill triggers (<5k words, <500 lines)
-3. **Bundled resources** - As needed by Claude
+3. **Bundled resources** - As needed by Codex
 
 For design patterns, see:
 - `references/workflows.md` - Multi-step processes and conditional logic

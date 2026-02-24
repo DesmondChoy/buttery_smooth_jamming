@@ -1,7 +1,6 @@
 ---
 name: playwright-testing
 description: Comprehensive Playwright MCP testing guide for the Strudel live coding app. Use this skill to systematically validate the frontend using structured checklists. Trigger with /playwright-testing.
-allowed-tools: Bash(npm run dev:*), Bash(npm run build:*), Bash(npx playwright:*), mcp__plugin_playwright_playwright__*, Read, Edit, Glob, Grep
 ---
 
 # Playwright MCP Testing Guide for Strudel Live Coding App
@@ -26,28 +25,28 @@ Work through the structured checklists systematically. Do NOT skip items or test
 
 ### Critical: Test Through the User's Code Path
 
-**IMPORTANT:** When testing MCP/WebSocket integration, ALWAYS test through the **Claude Terminal** in the browser, NOT by calling MCP tools directly from Playwright.
+**IMPORTANT:** When testing MCP/WebSocket integration, ALWAYS test through the **AI terminal** (currently labeled "Claude Terminal" in the UI) in the browser, NOT by calling MCP tools directly from Playwright.
 
 **Why?** Direct MCP calls (like `mcp__strudel__execute_pattern`) bypass part of the code path:
 - Direct MCP: Playwright → MCP Server → WebSocket → Browser
-- Claude Terminal: Browser → Claude WS → Claude CLI → MCP Server → WebSocket → Browser
+- AI terminal path: Browser → app WS route (`/api/claude-ws`, legacy name) → runtime CLI process → MCP Server → WebSocket → Browser
 
-Testing through Claude Terminal exercises the **complete integration** and catches bugs that direct MCP calls miss (e.g., WebSocket connection issues, ref timing problems).
+Testing through the AI terminal exercises the **complete integration** and catches bugs that direct MCP calls miss (e.g., WebSocket connection issues, ref timing problems).
 
-### How to Test Through Claude Terminal
+### How to Test Through the AI Terminal
 
 1. Navigate to the app with Playwright
 2. Enable audio (click the audio button)
-3. Wait for Claude Terminal to show "Ready" status
-4. Use Playwright to type in the Claude Terminal input field
-5. Submit the message and wait for Claude's response
+3. Wait for the AI terminal to show "Ready" status
+4. Use Playwright to type in the terminal input field
+5. Submit the message and wait for the assistant response
 6. Verify the editor updates and audio plays
 
 ```typescript
-// Example: Type in Claude Terminal input
+// Example: Type in the AI terminal input
 await page.getByRole('textbox', { name: 'Chat input' }).fill('Make me a simple beat');
 await page.getByRole('textbox', { name: 'Chat input' }).press('Enter');
-// Wait for Claude to respond and execute pattern
+// Wait for the assistant to respond and execute pattern
 await page.waitForSelector('button:has-text("Playing")');
 ```
 
@@ -129,30 +128,30 @@ await page.waitForSelector('button:has-text("Playing")');
 
 ---
 
-## Phase 4: WebSocket Integration (CRITICAL - Use Claude Terminal)
+## Phase 4: WebSocket Integration (CRITICAL - Use AI Terminal)
 
-**WARNING:** Do NOT test this phase using direct MCP tool calls. Always test through the Claude Terminal UI to exercise the complete code path.
+**WARNING:** Do NOT test this phase using direct MCP tool calls. Always test through the AI terminal UI to exercise the complete code path.
 
 ### Pre-flight Checks
 - [ ] No "WebSocket connection error" banner visible
 - [ ] Console shows no WebSocket connection failures for `/api/ws`
 - [ ] Console shows no WebSocket connection failures for `/api/claude-ws`
 
-### Claude Terminal Connection
+### AI Terminal Connection
 - [ ] Terminal panel shows connection status indicator
 - [ ] Status transitions: Connecting → Ready (within ~3 seconds)
 - [ ] No rapid reconnection loop (client IDs should stabilize, not increment endlessly)
 - [ ] Reconnection attempts on disconnect (up to 5 retries with exponential backoff)
 - [ ] Error message displayed after max reconnection failures
 
-### Claude Terminal → MCP → Editor Flow (THE CRITICAL TEST)
+### AI Terminal → MCP → Editor Flow (THE CRITICAL TEST)
 
 This tests the complete integration path:
 
-1. [ ] Type "Make me a simple beat" in Claude Terminal input
+1. [ ] Type "Make me a simple beat" in the AI terminal input
 2. [ ] Press Enter to send message
 3. [ ] User message appears in terminal (prefixed with ">")
-4. [ ] Claude responds (may take a few seconds)
+4. [ ] assistant responds (may take a few seconds)
 5. [ ] Tool use displays: `[mcp__strudel__execute_pattern]` with code
 6. [ ] **Editor updates to show the new pattern code** (not default code!)
 7. [ ] **Play button changes to "Playing"** (audio starts)
@@ -160,10 +159,10 @@ This tests the complete integration path:
 
 If step 6 or 7 fails, there's a WebSocket or ref-forwarding bug.
 
-### Additional Claude Terminal Tests
+### Additional AI Terminal Tests
 - [ ] Can request different music styles ("classical", "techno", "ambient")
-- [ ] Can ask Claude to stop the music
-- [ ] Can ask Claude to modify the current pattern
+- [ ] Can ask the assistant to stop the music
+- [ ] Can ask the assistant to modify the current pattern
 - [ ] Multiple requests work consecutively
 
 ---
@@ -178,14 +177,14 @@ If step 6 or 7 fails, there's a WebSocket or ref-forwarding bug.
 - [ ] StrudelPanel renders at the bottom (visible in normal mode; hidden via `h-0 overflow-hidden` in jam mode, but still rendered so audio continues)
 
 ### Header
-- [ ] Header shows "Claude Terminal" title
+- [ ] Header shows terminal title (currently `Claude Terminal` in legacy UI copy)
 - [ ] Status indicator visible (dot + text)
 - [ ] Ctrl+L hint displayed for clearing
 
 ### Content Area
-- [ ] Empty state message: "Ask Claude to create music patterns. Try: \"Make me a funky beat\""
+- [ ] Empty state message appears (legacy copy may still reference Claude)
 - [ ] Messages display with proper formatting
-- [ ] User messages distinguishable from Claude responses
+- [ ] User messages distinguishable from assistant responses
 - [ ] Auto-scroll to latest message
 
 ### Input
@@ -227,11 +226,11 @@ If step 6 or 7 fails, there's a WebSocket or ref-forwarding bug.
 - [ ] "Start Jam" button visible
 
 ### Connection Gate
-- [ ] "Start Jam" button disabled when Claude status is NOT "Ready"
-- [ ] Helper text "Connect to Claude to start a jam" shown when disconnected
-- [ ] "Start Jam" button enabled when Claude terminal shows "Ready"
+- [ ] "Start Jam" button disabled when terminal status is NOT "Ready"
+- [ ] Helper text `Connect to Claude to start a jam` is shown when disconnected (legacy copy still acceptable until UI rename)
+- [ ] "Start Jam" button enabled when terminal shows "Ready"
 
-### Jam Session Lifecycle (requires Claude connection)
+### Jam Session Lifecycle (requires terminal connection)
 - [ ] Clicking "Start Jam" → Agent Selection Modal appears
 - [ ] Modal shows all 4 agents (BEAT, GROOVE, ARIA, GLITCH) with emoji and checkboxes
 - [ ] Can toggle individual agents on/off
@@ -533,16 +532,16 @@ Use this 15-item checklist for rapid validation:
 
 1. [ ] App loads at localhost:3000
 2. [ ] Normal mode layout: Terminal (left), content area (right), StrudelPanel (bottom)
-3. [ ] Terminal panel shows "Claude Terminal" header
+3. [ ] Terminal panel shows the terminal header (currently `Claude Terminal` in legacy UI copy)
 4. [ ] Terminal status shows "Ready" (not "Disconnected" or "Connecting...")
 5. [ ] No "WebSocket connection error" banner visible
 6. [ ] Strudel editor visible with code at bottom
 7. [ ] Play button clickable (after enabling audio)
-8. [ ] **Claude Terminal chat works: type message → Claude responds**
-9. [ ] **Claude can execute patterns: editor updates + audio plays**
+8. [ ] **AI terminal chat works: type message → assistant responds**
+9. [ ] **Assistant can execute patterns: editor updates + audio plays**
 10. [ ] No WebSocket errors in console
 11. [ ] JamControls panel visible with "Start Jam" button
-12. [ ] "Start Jam" button disabled when Claude not connected, enabled when ready
+12. [ ] "Start Jam" button disabled when terminal is not connected, enabled when ready
 13. [ ] Starting a jam → agent selection modal → layout switches to jam mode (AgentColumns + BossInputBar)
 14. [ ] Agent columns show thoughts/reactions per agent, PatternDisplay shows patterns with emoji/names
 15. [ ] Stopping jam (via "Stop" button in JamTopBar) → layout reverts to normal mode

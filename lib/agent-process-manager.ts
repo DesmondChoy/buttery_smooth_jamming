@@ -17,13 +17,18 @@ import { parseMusicalContextChanges } from './musical-context-parser';
 // Callback type for broadcasting messages to browser clients
 export type BroadcastFn = (message: { type: string; payload: unknown }) => void;
 
-// Agent key → .claude/agents/ filename (without .md)
+// Agent key → agent persona filename (without .md)
 const AGENT_KEY_TO_FILE: Record<string, string> = {
   drums: 'drummer',
   bass: 'bassist',
   melody: 'melody',
   fx: 'fx-artist',
 };
+
+// Canonical Codex path for jam agent persona prompts.
+const AGENT_PROMPT_DIR_CANDIDATES = [
+  ['.codex', 'agents'],
+] as const;
 
 // Expected JSON response from each agent
 interface AgentResponse {
@@ -339,6 +344,14 @@ export class AgentProcessManager {
     console.log(`[AgentManager] Spawned agent: ${key} (model=${model}, pid=${proc.pid})`);
   }
 
+  private resolveAgentPromptPath(agentFile: string): string | null {
+    for (const segments of AGENT_PROMPT_DIR_CANDIDATES) {
+      const candidate = path.join(this.workingDir, ...segments, `${agentFile}.md`);
+      if (fs.existsSync(candidate)) return candidate;
+    }
+    return null;
+  }
+
   /**
    * Read agent .md file, parse YAML frontmatter for model, strip frontmatter,
    * and return the prompt body + model.
@@ -347,7 +360,17 @@ export class AgentProcessManager {
     const agentFile = AGENT_KEY_TO_FILE[agentKey];
     if (!agentFile) return null;
 
-    const filePath = path.join(this.workingDir, '.claude', 'agents', `${agentFile}.md`);
+    const filePath = this.resolveAgentPromptPath(agentFile);
+    if (!filePath) {
+      console.error(
+        `[AgentManager] Agent file not found for key "${agentKey}". Tried: ` +
+        AGENT_PROMPT_DIR_CANDIDATES
+          .map((segments) => path.join(this.workingDir, ...segments, `${agentFile}.md`))
+          .join(', ')
+      );
+      return null;
+    }
+
     try {
       const content = fs.readFileSync(filePath, 'utf-8');
 

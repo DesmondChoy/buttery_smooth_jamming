@@ -52,7 +52,7 @@ Author: {{author}}
 
 ### Input/Output Examples
 
-Show Claude what good output looks like:
+Show Codex what good output looks like:
 
 ```markdown
 ## Examples

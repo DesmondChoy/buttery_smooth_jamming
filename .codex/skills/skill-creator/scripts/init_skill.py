@@ -45,7 +45,7 @@ This is an example reference document for {skill_name}.
 
 ## Contents
 
-Add domain knowledge, guidelines, or documentation here that Claude
+Add domain knowledge, guidelines, or documentation here that Codex
 can load as needed during skill execution.
 '''
 

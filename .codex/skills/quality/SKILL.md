@@ -1,7 +1,6 @@
 ---
 name: quality
 description: Review recent code changes with "fresh eyes" and fix any issues found. Use before commits to catch bugs. Trigger with /quality or before git commit, bd sync, or bd close.
-allowed-tools: Bash(git status:*), Bash(git diff:*), Bash(git log:*), Bash(git show:*), Bash(npm run lint:*), Bash(npx tsc --noEmit:*), Read, Edit, Glob, Grep
 ---
 
 Review all code changes with "fresh eyes" before committing. This catches bugs that accumulate during implementation when focus is on making things work.

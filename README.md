@@ -70,7 +70,8 @@ buttery_smooth_jamming/
 ├── components/                   # UI: JamTopBar, AgentColumn, BossInputBar, etc.
 ├── hooks/                        # useJamSession, useClaudeTerminal, useStrudel
 ├── lib/                          # agent-process-manager, claude-process, types
-├── .claude/agents/               # Band member personas (drummer.md, bassist.md, etc.)
+├── .codex/agents/                # Band member personas (drummer.md, bassist.md, etc.)
+├── .codex/skills/                # Project-local Codex skills
 ├── packages/mcp-server/          # MCP server (Strudel bridge + jam state)
 └── docs/                         # Documentation (v1-mvp/, v2-jam-session/)
 ```
