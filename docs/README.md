@@ -17,10 +17,11 @@ replacing the v1 orchestrator architecture (22-29s).
 | [V2 Implementation Plan](./v2-jam-session/implementation-plan.md) | Historical: phases 1-6, v1-to-v2 evolution story |
 | [V3 Migration Plan](./v3/codex-cli-migration-implementation-plan.md) | Provider migration workstreams and acceptance criteria |
 | [V3 Codex Runtime Setup](./v3/codex-runtime-setup.md) | Codex profiles, config locations, startup checks (Workstream E) |
+| [V3 Workstream G Checkpoint](./v3/bsj-6ud.1-validation-rollout-2026-02-25.md) | Regression gate status, benchmark harness, staged rollout controls |
 
 ## V1: MVP (Complete)
 
-The single-agent MVP is complete: a web app connecting Claude Code to Strudel.cc for
+The single-agent MVP is complete: a web app connecting Codex CLI to Strudel.cc for
 AI-assisted live coding music. V1 docs are preserved as a historical record.
 
 | Document | Purpose |

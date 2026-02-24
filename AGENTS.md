@@ -49,7 +49,7 @@ Current focus is v2 jam mode with low-latency coordination via per-agent persist
 - `.codex/agents/`: Agent behavior docs (canonical)
 - `.codex/skills/`: Codex skill definitions (project-local)
 
-Legacy compatibility files still exist for transition safety (`app/api/claude-ws/route.ts`, `hooks/useClaudeTerminal.ts`, `lib/claude-process.ts`) and should not be used for new work.
+Legacy compatibility shims still exist for transition safety and should not be used for new work.
 
 ## Commands
 

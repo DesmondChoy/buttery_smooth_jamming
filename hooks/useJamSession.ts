@@ -21,7 +21,6 @@ interface UseJamSessionOptions {
   sendStopJam: () => void;
   isRuntimeConnected?: boolean;
   isAiConnected?: boolean;
-  isClaudeConnected?: boolean;
 }
 
 export interface UseJamSessionReturn {
@@ -71,7 +70,6 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
   const isRuntimeConnected =
     options.isRuntimeConnected
     ?? options.isAiConnected
-    ?? options.isClaudeConnected
     ?? false;
 
   const [isJamming, setIsJamming] = useState(false);

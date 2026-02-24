@@ -4,7 +4,6 @@ interface JamControlsProps {
   isJamming: boolean;
   isRuntimeConnected?: boolean;
   isAiConnected?: boolean;
-  isClaudeConnected?: boolean;
   onStartJam: () => void;
   onStopJam: () => void;
   className?: string;
@@ -14,7 +13,6 @@ export function JamControls({
   isJamming,
   isRuntimeConnected,
   isAiConnected,
-  isClaudeConnected,
   onStartJam,
   onStopJam,
   className = '',
@@ -22,7 +20,6 @@ export function JamControls({
   const runtimeConnected =
     isRuntimeConnected
     ?? isAiConnected
-    ?? isClaudeConnected
     ?? false;
 
   return (

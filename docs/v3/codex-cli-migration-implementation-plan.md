@@ -1,4 +1,4 @@
-# V3 Implementation Plan: Migrate from Claude Code to Codex CLI + OpenAI Subagents
+# V3 Implementation Plan: Migrate to Codex CLI + OpenAI Subagents
 
 > Status: Execution in progress (Workstreams A-E closed on February 24, 2026; F-G open)
 > Last updated: February 24, 2026 (sync after same-day commit + beads closure review)
@@ -12,8 +12,8 @@
 
 Migrate Buttery Smooth Jamming from:
 
-- `Claude Code CLI` for normal mode and jam mode runtime
-- Claude-oriented sub-agent orchestration (`.claude/agents/*` + `claude --print` processes)
+- legacy provider-specific normal/jam runtime wiring
+- legacy sub-agent orchestration patterns
 
 To:
 
@@ -32,7 +32,7 @@ GA defaults locked for this plan:
 2. Headless/CI runtime via API key is out of scope for v3 GA.
 3. Jam mode GA uses manager-controlled long-lived per-agent Codex CLI processes.
 4. Jam agents are hard-toolless (no built-in tools and no MCP).
-5. WebSocket cutover is direct to `/api/ai-ws` (no `/api/claude-ws` compatibility alias in GA).
+5. WebSocket cutover is direct to `/api/ai-ws` (no legacy compatibility alias in GA).
 6. Jam sub-agent default model is `gpt-5-codex-mini` (latency-optimized and validated in ChatGPT-auth Codex CLI flow).
 7. Normal mode default model is `gpt-5-codex`.
 
@@ -45,13 +45,13 @@ GA defaults locked for this plan:
 
 ## Current State (v2)
 
-The current architecture is tightly coupled to Claude CLI process semantics:
+The current architecture is tightly coupled to Codex CLI process semantics:
 
-- Normal mode process wrapper: `lib/claude-process.ts`
+- Normal mode process wrapper: `lib/codex-process.ts`
 - Jam mode per-agent manager: `lib/agent-process-manager.ts`
-- WebSocket route and process orchestration: `app/api/claude-ws/route.ts`
-- Client hook naming and status model: `hooks/useClaudeTerminal.ts`
-- Persona files loaded by jam manager: `.claude/agents/*.md`
+- WebSocket route and process orchestration: `app/api/ai-ws/route.ts`
+- Client hook naming and status model: `hooks/useAiTerminal.ts`
+- Persona files loaded by jam manager: `.codex/agents/*.md`
 
 Key behaviors to preserve during migration:
 
@@ -65,14 +65,14 @@ Key behaviors to preserve during migration:
 Recommended GA approach: **manager-controlled Codex processes per logical agent** (not model-decided routing).
 
 1. Normal mode:
-- Replace `ClaudeProcess` with `CodexProcess` wrapper.
+- Replace `CodexProcess` with `CodexProcess` wrapper.
 - Preserve process-lifetime continuity as baseline behavior.
 - Treat session resume as optional optimization/fallback, not a correctness dependency.
 - Preserve websocket message payload contract where practical while moving endpoint naming to provider-neutral paths.
 
 2. Jam mode:
 - Keep `AgentProcessManager` orchestration pattern (deterministic, server-owned).
-- Replace `claude --print` workers with long-lived Codex CLI workers.
+- Replace `codex exec` workers with long-lived Codex CLI workers.
 - Maintain one active long-lived process per active band agent (`drums`, `bass`, `melody`, `fx`) for session duration.
 - Enforce structured responses for each agent turn.
 - Keep jam-state ownership in manager and server-side `stack()` composition.
@@ -84,8 +84,8 @@ Recommended GA approach: **manager-controlled Codex processes per logical agent*
 - Enforce hard toolless jam agents via dedicated profile and fail-closed startup checks.
 
 4. Frontend transport contract:
-- Move route from `/api/claude-ws` to `/api/ai-ws` in GA.
-- Rename `useClaudeTerminal` and related provider-specific identifiers to neutral names.
+- Move route from `/api/ai-ws` to `/api/ai-ws` in GA.
+- Rename `useAiTerminal` and related provider-specific identifiers to neutral names.
 - Preserve message payload schema (`text`, `tool_use`, `tool_result`, `status`, `error`, jam broadcast types) where possible.
 
 ## Why This Migration Is Feasible (Research Summary)
@@ -133,7 +133,7 @@ Deliverables:
 
 ### Workstream B: Runtime Abstraction Layer
 
-Goal: decouple websocket/business logic from Claude-specific process classes.
+Goal: decouple websocket/business logic from Codex-specific process classes.
 
 Tasks:
 
@@ -151,11 +151,11 @@ Deliverables:
 
 ### Workstream C: Normal Mode Migration
 
-Goal: replace Claude runtime in normal assistant mode with Codex runtime.
+Goal: harden and finalize Codex runtime in normal assistant mode.
 
 Tasks:
 
-1. Port system prompt/tool instructions from `ClaudeProcess` into Codex invocation prompt contract.
+1. Port system prompt/tool instructions into Codex invocation prompt contract.
 2. Wire MCP server access through Codex config/profile.
 3. Map Codex JSON events into existing frontend message types.
 4. Preserve existing stop/reconnect behaviors.
@@ -165,19 +165,17 @@ Tasks:
 Deliverables:
 
 - Normal mode runs end-to-end on Codex CLI only.
-- No Claude CLI dependency on normal mode path.
+- No legacy provider dependency on normal mode path.
 
 ### Workstream D: Jam Sub-Agent Migration
 
-Goal: move jam agents from Claude processes to Codex-backed sessions while preserving deterministic orchestration.
+Goal: move jam agents from legacy worker orchestration to Codex-backed sessions while preserving deterministic orchestration.
 
 Tasks:
 
-1. Replace jam worker spawn logic:
-- from `spawn('claude', ...)`
-- to long-lived Codex-backed worker processes
+1. Replace legacy jam worker spawn logic with long-lived Codex-backed worker processes.
 2. Preserve per-agent personas and state continuity:
-- migrate `.claude/agents/*.md` content to provider-agnostic location (for example `prompts/agents/` or `.codex/agents/`)
+- migrate `.codex/agents/*.md` content to provider-agnostic location (for example `prompts/agents/` or `.codex/agents/`)
 - maintain `AGENT_META` and deterministic key mapping as canonical
 3. Enforce strict output shape for each agent turn:
 - `pattern`, `thoughts`, `reaction`
@@ -191,7 +189,7 @@ Tasks:
 Deliverables:
 
 - Jam start/directive/stop flows running on Codex-backed sub-agents.
-- No Claude CLI dependency on jam path.
+- No legacy provider dependency on jam path.
 
 ### Workstream E: Codex Config, Policy, and Security Hardening
 
@@ -214,7 +212,7 @@ Tasks:
 - verify required MCP server availability for normal mode only
 4. Add clear fallback errors in UI when Codex is unavailable.
 5. Define configuration migration/deprecation steps:
-- deprecate Claude-specific runtime config usage on v3 code paths
+- deprecate legacy runtime config usage on v3 code paths
 - document one source of truth to avoid split config drift
 
 Deliverables:
@@ -224,13 +222,13 @@ Deliverables:
 
 ### Workstream F: Frontend/Contract Cleanup and Naming
 
-Goal: remove Claude-specific naming while preserving behavior.
+Goal: remove provider-specific naming while preserving behavior.
 
 Tasks:
 
-1. Rename Claude-specific route/hook/type names in active paths:
-- route: `/api/claude-ws` -> `/api/ai-ws` (direct cutover)
-- hook: `useClaudeTerminal` -> provider-neutral equivalent
+1. Rename provider-specific route/hook/type names in active paths:
+- route: legacy aliases -> `/api/ai-ws` (direct cutover)
+- hook: runtime/provider-specific aliases -> provider-neutral equivalents
 2. Update frontend wiring and imports in the same migration window to avoid mixed naming.
 3. Update docs and developer commands to Codex-first language.
 
@@ -257,16 +255,16 @@ Tasks:
 3. Performance benchmark pass versus v2 baseline with explicit thresholds.
 4. Cutover rollout:
 - default runtime is Codex after acceptance gates pass
-- no `/api/claude-ws` compatibility alias in GA
+- no legacy compatibility websocket alias in GA
 
 Deliverables:
 
 - Benchmarked v3 report with exact measurement date/method.
-- Claude runtime removable after stabilization window.
+- Legacy compatibility runtime shims removable after stabilization window.
 
 ## Acceptance Criteria (v3 Migration Complete)
 
-1. All runtime paths use Codex CLI by default; Claude CLI is not required for standard operation.
+1. All runtime paths use Codex CLI by default; no legacy provider runtime is required for standard operation.
 2. Jam mode uses manager-controlled long-lived Codex sub-agent processes with deterministic routing intact.
 3. Normal mode MCP Strudel tooling remains functional.
 4. No direct API-key integration is required in default runtime flow.
@@ -332,7 +330,7 @@ Workstream-linked task status:
 
 Additional same-day cleanup related to Workstream F:
 
-1. `bsj-wtg` (rename runtime-facing Claude identifiers to Codex) is closed.
+1. `bsj-wtg` (rename runtime-facing legacy identifiers to provider-neutral naming) is closed.
 
 Remaining execution focus after this snapshot:
 

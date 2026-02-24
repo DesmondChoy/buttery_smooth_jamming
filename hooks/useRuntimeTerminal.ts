@@ -5,7 +5,6 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 export type RuntimeStatus = 'connecting' | 'ready' | 'thinking' | 'done' | 'error';
 export type AiStatus = RuntimeStatus;
 export type CodexStatus = RuntimeStatus;
-export type ClaudeStatus = RuntimeStatus;
 
 export interface TerminalLine {
   id: string;
@@ -32,8 +31,6 @@ export interface UseRuntimeTerminalReturn {
   clearLines: () => void;
 }
 
-export type UseClaudeTerminalOptions = UseRuntimeTerminalOptions;
-export type UseClaudeTerminalReturn = UseRuntimeTerminalReturn;
 export type UseCodexTerminalOptions = UseRuntimeTerminalOptions;
 export type UseCodexTerminalReturn = UseRuntimeTerminalReturn;
 export type UseAiTerminalOptions = UseRuntimeTerminalOptions;
@@ -304,4 +301,3 @@ export function useRuntimeTerminal(
 export const useAiTerminal = useRuntimeTerminal;
 // Backward-compatibility aliases while older imports migrate.
 export const useCodexTerminal = useRuntimeTerminal;
-export const useClaudeTerminal = useRuntimeTerminal;
