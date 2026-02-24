@@ -6,7 +6,7 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 
 // Read from shared markdown file at project root
-// MCP server is always spawned from the project root by Claude
+// MCP server is always spawned from the project root by the runtime process
 let reference: string;
 try {
   reference = readFileSync(

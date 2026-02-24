@@ -1,18 +1,18 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback, FormEvent, KeyboardEvent } from 'react';
-import type { ClaudeStatus, TerminalLine } from '@/hooks/useClaudeTerminal';
+import type { RuntimeStatus, TerminalLine } from '@/hooks/useRuntimeTerminal';
 
 interface TerminalPanelProps {
   lines: TerminalLine[];
-  status: ClaudeStatus;
+  status: RuntimeStatus;
   isConnected: boolean;
   sendMessage: (text: string) => void;
   clearLines: () => void;
   className?: string;
 }
 
-function StatusIndicator({ status, isConnected }: { status: ClaudeStatus; isConnected: boolean }) {
+function StatusIndicator({ status, isConnected }: { status: RuntimeStatus; isConnected: boolean }) {
   const getStatusColor = () => {
     if (!isConnected) return 'bg-red-500';
     switch (status) {
@@ -154,7 +154,7 @@ export function TerminalPanel({
       {/* Header */}
       <header className="flex items-center justify-between px-4 py-3 border-b border-gray-700 bg-gray-800">
         <div className="flex items-center gap-3">
-          <h2 className="text-lg font-semibold text-white">Claude Terminal</h2>
+          <h2 className="text-lg font-semibold text-white">Runtime Terminal</h2>
           <span className="text-xs text-gray-500">Ctrl+L to clear</span>
         </div>
         <StatusIndicator status={status} isConnected={isConnected} />
@@ -166,11 +166,11 @@ export function TerminalPanel({
         className="flex-1 overflow-y-auto p-4 space-y-2 text-sm"
         role="log"
         aria-live="polite"
-        aria-label="Claude terminal output"
+        aria-label="Runtime terminal output"
       >
         {lines.length === 0 ? (
           <div className="text-gray-500 italic">
-            Ask Claude to create music patterns. Try: &quot;Make me a funky beat&quot;
+            Ask the runtime to create music patterns. Try: &quot;Make me a funky beat&quot;
           </div>
         ) : (
           lines.map((line) => <TerminalLineDisplay key={line.id} line={line} />)
@@ -192,7 +192,7 @@ export function TerminalPanel({
           placeholder={
             isConnected
               ? status === 'thinking'
-                ? 'Claude is thinking...'
+                ? 'Runtime is thinking...'
                 : 'Type your request...'
               : 'Connecting...'
           }

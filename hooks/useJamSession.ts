@@ -19,7 +19,8 @@ const ALL_AGENT_KEYS = Object.keys(AGENT_META);
 interface UseJamSessionOptions {
   sendStartJam: (activeAgents: string[]) => void;
   sendStopJam: () => void;
-  isClaudeConnected: boolean;
+  isRuntimeConnected?: boolean;
+  isClaudeConnected?: boolean;
 }
 
 export interface UseJamSessionReturn {
@@ -65,7 +66,8 @@ const DEFAULT_MUSICAL_CONTEXT: MusicalContext = {
 };
 
 export function useJamSession(options: UseJamSessionOptions): UseJamSessionReturn {
-  const { sendStartJam, sendStopJam, isClaudeConnected } = options;
+  const { sendStartJam, sendStopJam } = options;
+  const isRuntimeConnected = options.isRuntimeConnected ?? options.isClaudeConnected ?? false;
 
   const [isJamming, setIsJamming] = useState(false);
   const [agentStates, setAgentStates] = useState<Record<string, AgentState>>({ ...DEFAULT_AGENTS });
@@ -96,10 +98,10 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
   }, []);
 
   const startJam = useCallback(() => {
-    if (!isClaudeConnected) return;
+    if (!isRuntimeConnected) return;
     setIsJamming(true);
     sendStartJam(selectedAgentsRef.current);
-  }, [isClaudeConnected, sendStartJam]);
+  }, [isRuntimeConnected, sendStartJam]);
 
   const stopJam = useCallback(() => {
     setIsJamming(false);
@@ -116,9 +118,9 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
   }, [clearChatMessages, sendStopJam]);
 
   const requestStartJam = useCallback(() => {
-    if (!isClaudeConnected) return;
+    if (!isRuntimeConnected) return;
     setShowAgentSelection(true);
-  }, [isClaudeConnected]);
+  }, [isRuntimeConnected]);
 
   const confirmStartJam = useCallback((agents: string[]) => {
     setSelectedAgents(agents);

@@ -2,7 +2,8 @@
 
 interface JamControlsProps {
   isJamming: boolean;
-  isClaudeConnected: boolean;
+  isRuntimeConnected?: boolean;
+  isClaudeConnected?: boolean;
   onStartJam: () => void;
   onStopJam: () => void;
   className?: string;
@@ -10,11 +11,14 @@ interface JamControlsProps {
 
 export function JamControls({
   isJamming,
+  isRuntimeConnected,
   isClaudeConnected,
   onStartJam,
   onStopJam,
   className = '',
 }: JamControlsProps) {
+  const runtimeConnected = isRuntimeConnected ?? isClaudeConnected ?? false;
+
   return (
     <div className={`bg-gray-800 border border-gray-700 rounded-lg p-4 ${className}`}>
       <div className="flex items-center gap-4">
@@ -28,15 +32,15 @@ export function JamControls({
         ) : (
           <button
             onClick={onStartJam}
-            disabled={!isClaudeConnected}
+            disabled={!runtimeConnected}
             className="px-4 py-2 bg-green-600 hover:bg-green-500 text-white rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Start Jam
           </button>
         )}
 
-        {!isClaudeConnected && !isJamming && (
-          <span className="text-sm text-gray-500">Connect to Claude to start a jam</span>
+        {!runtimeConnected && !isJamming && (
+          <span className="text-sm text-gray-500">Connect to runtime to start a jam</span>
         )}
       </div>
     </div>

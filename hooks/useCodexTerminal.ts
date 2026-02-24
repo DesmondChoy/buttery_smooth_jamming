@@ -1,14 +1,14 @@
 export {
   useRuntimeTerminal,
-  useRuntimeTerminal as useClaudeTerminal,
+  useRuntimeTerminal as useCodexTerminal,
 } from './useRuntimeTerminal';
 
 export type {
   RuntimeStatus,
-  ClaudeStatus,
+  CodexStatus,
   TerminalLine,
   UseRuntimeTerminalOptions,
   UseRuntimeTerminalReturn,
-  UseClaudeTerminalOptions,
-  UseClaudeTerminalReturn,
+  UseCodexTerminalOptions,
+  UseCodexTerminalReturn,
 } from './useRuntimeTerminal';

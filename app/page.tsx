@@ -10,7 +10,7 @@ import { BossInputBar } from '@/components/BossInputBar';
 import { PatternDisplay } from '@/components/PatternDisplay';
 import { AgentSelectionModal } from '@/components/AgentSelectionModal';
 import { AudioStartButton } from '@/components/AudioStartButton';
-import { useWebSocket, useStrudel, useClaudeTerminal, useJamSession } from '@/hooks';
+import { useWebSocket, useStrudel, useRuntimeTerminal, useJamSession } from '@/hooks';
 
 const StrudelPanel = dynamic(
   () => import('@/components/StrudelPanel'),
@@ -24,7 +24,7 @@ export default function Home() {
 
   const { ref, setCode, evaluate, stop, onEditorReady } = useStrudel();
 
-  // Handle tool calls from Claude terminal
+  // Handle tool calls from the runtime terminal
   const handleToolUse = useCallback((toolName: string, toolInput: Record<string, unknown>) => {
     console.log('[Page] Tool use:', toolName, toolInput);
   }, []);
@@ -36,23 +36,23 @@ export default function Home() {
     jamBroadcastRef.current?.(message);
   }, []);
 
-  // Lift useClaudeTerminal to page level so sendStartJam is accessible
-  const claude = useClaudeTerminal({ onToolUse: handleToolUse, onJamBroadcast: handleJamBroadcast });
+  // Lift useRuntimeTerminal to page level so sendStartJam is accessible
+  const runtimeTerminal = useRuntimeTerminal({ onToolUse: handleToolUse, onJamBroadcast: handleJamBroadcast });
 
   const jam = useJamSession({
-    sendStartJam: claude.sendStartJam,
-    sendStopJam: claude.sendStopJam,
-    isClaudeConnected: claude.isConnected,
+    sendStartJam: runtimeTerminal.sendStartJam,
+    sendStopJam: runtimeTerminal.sendStopJam,
+    isRuntimeConnected: runtimeTerminal.isConnected,
   });
 
   const {
-    lines: claudeLines,
-    status: claudeStatus,
-    isConnected: isClaudeConnected,
+    lines: runtimeLines,
+    status: runtimeStatus,
+    isConnected: isRuntimeConnected,
     sendMessage,
     clearLines,
     sendBossDirective,
-  } = claude;
+  } = runtimeTerminal;
 
   // Destructure stable callbacks to satisfy React Compiler + exhaustive-deps
   const {
@@ -114,7 +114,7 @@ export default function Home() {
     setIsPlaying(false);
   }, [stop]);
 
-  // Wire jam broadcast messages from claude-ws to jam session handlers
+  // Wire jam broadcast messages from runtime-ws to jam session handlers
   // AgentProcessManager sends these directly to the browser client (not via /api/ws)
   useEffect(() => {
     jamBroadcastRef.current = (message: { type: string; payload: unknown }) => {
@@ -239,7 +239,7 @@ export default function Home() {
             {/* Boss input bar */}
             <BossInputBar
               selectedAgents={selectedAgents}
-              isConnected={isClaudeConnected}
+              isConnected={isRuntimeConnected}
               isJamming={isJamming}
               onSendDirective={handleSendDirective}
             />
@@ -254,9 +254,9 @@ export default function Home() {
           <>
             {/* Normal mode: terminal on left */}
             <TerminalPanel
-              lines={claudeLines}
-              status={claudeStatus}
-              isConnected={isClaudeConnected}
+              lines={runtimeLines}
+              status={runtimeStatus}
+              isConnected={isRuntimeConnected}
               sendMessage={sendMessage}
               clearLines={clearLines}
               className="w-1/3 min-w-[300px] border-r border-gray-700"
@@ -304,7 +304,7 @@ export default function Home() {
               {/* Jam session controls */}
               <JamControls
                 isJamming={isJamming}
-                isClaudeConnected={isClaudeConnected}
+                isRuntimeConnected={isRuntimeConnected}
                 onStartJam={requestStartJam}
                 onStopJam={stopJam}
                 className="w-full max-w-4xl mb-4"
