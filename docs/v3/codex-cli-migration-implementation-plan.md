@@ -1,6 +1,6 @@
 # V3 Implementation Plan: Migrate from Claude Code to Codex CLI + OpenAI Subagents
 
-> Status: Decision-locked draft
+> Status: Decision-locked draft (updated after `bsj-6u9.1` compatibility spike)
 > Last updated: February 24, 2026
 > Scope: Repository-level migration plan only (no code changes in this document)
 
@@ -33,7 +33,7 @@ GA defaults locked for this plan:
 3. Jam mode GA uses manager-controlled long-lived per-agent Codex CLI processes.
 4. Jam agents are hard-toolless (no built-in tools and no MCP).
 5. WebSocket cutover is direct to `/api/ai-ws` (no `/api/claude-ws` compatibility alias in GA).
-6. Jam sub-agent default model is `codex-mini-latest` (Codex low-latency/cost tier; replacement for previous Claude Haiku intent).
+6. Jam sub-agent default model is `gpt-5-codex-mini` (latency-optimized and validated in ChatGPT-auth Codex CLI flow).
 7. Normal mode default model is `gpt-5-codex`.
 
 ## Non-Goals
@@ -76,7 +76,7 @@ Recommended GA approach: **manager-controlled Codex processes per logical agent*
 - Maintain one active long-lived process per active band agent (`drums`, `bass`, `melody`, `fx`) for session duration.
 - Enforce structured responses for each agent turn.
 - Keep jam-state ownership in manager and server-side `stack()` composition.
-- Use `codex-mini-latest` as the default jam-agent model in GA.
+- Use `gpt-5-codex-mini` as the default jam-agent model in GA.
 
 3. Config + policy:
 - Introduce project-level `.codex/config.toml` as canonical Codex runtime config.
@@ -123,7 +123,7 @@ Tasks:
 - define minimum directive success-rate target
 - define degraded behavior for auth/quota failures
 6. Validate model defaults:
-- confirm `codex-mini-latest` jam-agent quality/latency meets gates
+- confirm `gpt-5-codex-mini` jam-agent quality/latency meets gates
 - confirm `gpt-5-codex` normal-mode quality is acceptable with MCP workflows
 
 Deliverables:
@@ -205,7 +205,7 @@ Tasks:
 - MCP server registration for Strudel tools
 2. Define separate profiles:
 - `normal_mode` profile (MCP tools enabled, default model `gpt-5-codex`)
-- `jam_agent` profile (hard toolless + no MCP, default model `codex-mini-latest`)
+- `jam_agent` profile (hard toolless + no MCP, default model `gpt-5-codex-mini`)
 3. Add startup checks:
 - verify `codex` binary present
 - verify auth state
@@ -273,14 +273,12 @@ Deliverables:
 6. Frontend/runtime route uses `/api/ai-ws` and provider-neutral naming in active code paths.
 7. Documentation and onboarding steps are Codex-first and reproducible.
 8. Latency and reliability meet explicit benchmark gates:
-- `p95 targeted directive latency <= X seconds`
-- `p95 jam start latency (4 agents) <= Y seconds`
-- `directive success rate >= Z%` over benchmark run
+- `p95 targeted directive latency <= 8 seconds`
+- `p95 jam start latency (4 agents) <= 20 seconds`
+- `directive success rate >= 98%` over benchmark run
 9. Model defaults are enforced in config and docs:
 - normal mode: `gpt-5-codex`
-- jam sub-agents: `codex-mini-latest`
-
-Set `X`, `Y`, and `Z` in Workstream A deliverables.
+- jam sub-agents: `gpt-5-codex-mini`
 
 ## Risks and Mitigations
 
@@ -302,9 +300,18 @@ Set `X`, `Y`, and `Z` in Workstream A deliverables.
 6. Risk: model alias or account-availability mismatch for selected defaults.
 - Mitigation: add startup validation with clear error messaging and a documented operator override path.
 
-## Open Questions (Need Product/Engineering Decision)
+## Workstream A Outcome Snapshot (2026-02-24)
 
-1. What exact values should we set for `X`, `Y`, and `Z` acceptance thresholds after Workstream A measurements?
+Compatibility spike artifacts:
+
+1. Report: `docs/v3/bsj-6u9.1-codex-compatibility-spike-2026-02-24.md`
+2. Runner: `scripts/spikes/run-bsj-6u9-1-spike.sh`
+
+Outcome summary:
+
+1. `bsj-6u9.1` compatibility checks passed with `gpt-5-codex` (normal) and `gpt-5-codex-mini` (jam schema/semantic checks).
+2. `codex-mini-latest` is not viable in the tested ChatGPT-auth Codex CLI setup and is not the GA default.
+3. Manager-managed long-lived sessions remain the selected jam strategy.
 
 ## Proposed Beads Tracking Structure
 
