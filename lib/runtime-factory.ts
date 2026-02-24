@@ -1,20 +1,21 @@
-import { ClaudeProcess } from './claude-process';
 import { CodexProcess } from './codex-process';
 import type { RuntimeProcess, RuntimeProcessOptions } from './runtime-process';
 
-export type RuntimeProvider = 'codex' | 'claude';
+export type RuntimeProvider = 'codex';
+export type RuntimeRolloutStage = 'pre_gate' | 'post_gate';
+
+export function getRuntimeRolloutStage(): RuntimeRolloutStage {
+  const configured = process.env.NORMAL_RUNTIME_ROLLOUT_STAGE?.toLowerCase();
+  if (configured === 'pre_gate') return 'pre_gate';
+  return 'post_gate';
+}
 
 export function getRuntimeProvider(): RuntimeProvider {
   const configured = process.env.NORMAL_RUNTIME_PROVIDER?.toLowerCase();
-  if (configured === 'claude') return 'claude';
+  if (configured === 'codex') return 'codex';
   return 'codex';
 }
 
 export function createNormalRuntimeProcess(options: RuntimeProcessOptions): RuntimeProcess {
-  switch (getRuntimeProvider()) {
-    case 'codex':
-      return new CodexProcess(options);
-    case 'claude':
-      return new ClaudeProcess(options);
-  }
+  return new CodexProcess(options);
 }

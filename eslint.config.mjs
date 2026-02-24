@@ -32,6 +32,18 @@ export default tseslint.config(
     },
   },
   {
+    // Node scripts
+    files: ['scripts/**/*.mjs'],
+    languageOptions: {
+      globals: {
+        console: 'readonly',
+        process: 'readonly',
+        setTimeout: 'readonly',
+        clearTimeout: 'readonly',
+      },
+    },
+  },
+  {
     ignores: [
       'node_modules/**',
       '.next/**',

@@ -44,6 +44,23 @@ Profile intent:
 
 If any check fails, the websocket returns a clear runtime start error and does not proceed.
 
+## Rollout Controls (Workstream G)
+
+Normal-mode runtime selection is controlled by `lib/runtime-factory.ts` with two environment overrides:
+
+1. `NORMAL_RUNTIME_PROVIDER` (explicit override)
+   - `codex` => force Codex
+   - `codex` => force Codex fallback
+2. `NORMAL_RUNTIME_ROLLOUT_STAGE` (default selection when provider is not forced)
+   - `pre_gate` => Codex default before benchmark/test gates pass
+   - `post_gate` (default) => Codex-first default after gates pass
+
+Operational fallback strategy:
+
+- Keep `NORMAL_RUNTIME_ROLLOUT_STAGE=post_gate` in normal operation.
+- If Codex runtime is unavailable in production-like usage, set `NORMAL_RUNTIME_PROVIDER=codex` temporarily while investigating.
+- Remove the temporary override after Codex runtime health is restored.
+
 ## Quick Verification
 
 Run from repo root:
