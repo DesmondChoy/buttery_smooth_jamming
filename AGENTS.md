@@ -115,3 +115,11 @@ Also remove dead/debug code and verify no regression in relevant normal/jam flow
 ## Maintenance Note
 
 Keep this file concise. Put detailed design, rationale, and history in `docs/` and link to those docs here.
+
+## Subagents
+
+- ALWAYS wait for all subagents to complete before yielding.
+- Spawn subagents automatically when:
+    - Parallelizable work (e.g., install + verify, npm test + typecheck, multiple tasks from plan)
+    - Long-running or blocking tasks where a worker can run independently.
+    - Isolation for risky changes or checks
