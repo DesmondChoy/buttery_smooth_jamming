@@ -1,36 +1,54 @@
 # AGENTS.md
 
-This file mirrors `CLAUDE.md` for Codex and other agent-based tools.
+Codex instruction file for this repository. Keep this short, practical, and up to date.
 
-## Project Overview
+## Scope and Priority
 
-Buttery Smooth Jamming is an autonomous AI jam session where four band-member
-agents (drums, bass, melody, FX) play together in real time via Strudel,
-react to one another, and follow a human "boss" directing the session.
+1. This file applies to the whole repo.
+2. More deeply nested `AGENTS.md` files override this file for their subtree.
+3. Direct user instructions override file instructions.
 
-The core behavior in v2 is low-latency coordination via **per-agent
-persistent Claude processes**. Targeted directives should stay in the
-single-digit-second range, while preserving musical coherence through
-shared context (key, scale, BPM, harmony, and recent band state).
+## Project Snapshot
 
-This is a practical prototype-style project. Favor clear, working
-solutions and fast iteration over heavy architecture.
+Buttery Smooth Jamming is an autonomous AI jam session with four agents (drums, bass, melody, FX) using Strudel, coordinated by a human boss.
 
-## Operational Defaults
+Current focus is v2 jam mode with low-latency coordination via per-agent persistent Claude processes.
 
-1. Read `docs/README.md` first for documentation map and current focus.
-2. Treat `docs/v2-jam-session/README.md` and `docs/v2-jam-session/architecture.md`
-   as the primary source of truth for active work.
-3. Use `docs/v2-jam-session/technical-notes.md` first when debugging.
-4. Preserve the dual-mode architecture (normal assistant mode + jam mode).
-5. Prefer small, testable increments over broad rewrites.
-6. Preserve existing conventions unless there is a concrete reason to change them.
+## Read First
 
-## Environment and Commands
+1. `docs/README.md` (documentation map)
+2. `docs/v2-jam-session/README.md` (active implementation)
+3. `docs/v2-jam-session/architecture.md` (source of truth)
+4. `docs/v2-jam-session/technical-notes.md` (debugging first stop)
 
-Do NOT use git worktrees. Work in the main working directory.
+## Working Rules
 
-### JavaScript / TypeScript workflow
+1. Preserve dual-mode architecture (normal assistant mode + jam mode).
+2. Keep deterministic `@mention` routing in code, not model inference.
+3. Preserve per-agent persistent processes in jam mode for latency.
+4. Keep server-side composition of final `stack()` pattern.
+5. Preserve websocket broadcast-callback pattern (avoid `ws` native addon pitfalls).
+6. Keep jam agents toolless (`--tools '' --strict-mcp-config`) unless intentionally changed.
+7. Treat `AGENT_META` and agent key mappings as canonical.
+8. Prefer small, testable increments over broad rewrites.
+
+## Repo Map (Quick)
+
+- `app/page.tsx`: Normal mode + jam mode layout
+- `app/api/claude-ws/route.ts`: Claude terminal websocket + jam routing
+- `app/api/ws/route.ts`: MCP bridge websocket
+- `hooks/useJamSession.ts`: Jam state and directive routing
+- `hooks/useClaudeTerminal.ts`: Claude stream handling and jam broadcast
+- `lib/agent-process-manager.ts`: Per-agent persistent lifecycle
+- `lib/claude-process.ts`: Single-process normal assistant mode
+- `lib/types.ts`: Shared contracts, includes `AGENT_META`
+- `packages/mcp-server/src/`: MCP source
+- `packages/mcp-server/build/`: MCP runtime output
+- `.claude/agents/`: Agent behavior docs
+
+## Commands
+
+### JS/TS
 
 ```sh
 npm install
@@ -40,12 +58,9 @@ npm run build
 npx vitest run
 ```
 
-### MCP server workflow
+### MCP server
 
-The MCP server source is in `packages/mcp-server/src/`, but runtime uses
-compiled output in `packages/mcp-server/build/`.
-
-After editing MCP server source, rebuild before testing:
+After editing `packages/mcp-server/src/`, rebuild before testing:
 
 ```sh
 cd packages/mcp-server
@@ -53,11 +68,11 @@ npm run build
 cd ../..
 ```
 
-Then restart the app dev server so Claude picks up the updated MCP server.
+Then restart the app dev server.
 
-### Python tooling (if needed)
+### Python (if needed)
 
-Use `uv` for Python dependency operations:
+Use `uv`:
 
 ```sh
 uv add <package>
@@ -65,149 +80,38 @@ uv sync
 uv run <command>
 ```
 
-## Architecture Snapshot
+## Issue Tracking (`bd`)
 
-### App and APIs (`app/`)
+Use beads for task tracking:
 
-- `app/page.tsx` — Dual layout for normal mode and jam mode
-- `app/api/claude-ws/route.ts` — Claude Terminal websocket + jam routing
-- `app/api/ws/route.ts` — MCP bridge websocket endpoint
+```sh
+bd list
+bd ready
+bd show <id>
+bd create "title" -d "description"
+bd update <id> --status in_progress
+bd close <id>
+bd sync
+```
 
-### UI (`components/`)
+## Quality Gate (Before Finishing)
 
-- Jam UI: `JamTopBar`, `JamControls`, `AgentColumn`, `BossInputBar`,
-  `AgentSelectionModal`, `PatternDisplay`
-- Normal mode UI: `TerminalPanel`, `StrudelPanel`, `StrudelEditor`
+Run relevant checks for touched areas:
 
-### Hooks (`hooks/`)
+1. `npm run lint`
+2. `npx vitest run` (or targeted tests)
+3. `npm run build` for app/runtime-impacting changes
+4. `cd packages/mcp-server && npm run build` when MCP source changes
 
-- `useJamSession` — Jam state, agent selection, directive routing
-- `useClaudeTerminal` — Claude websocket stream + jam broadcast handling
-- `useWebSocket`, `useStrudel` — Strudel connectivity and playback control
+Also remove dead/debug code and verify no regression in relevant normal/jam flows.
 
-### Core server logic (`lib/`)
+## Style
 
-- `agent-process-manager.ts` — Per-agent persistent process lifecycle
-- `claude-process.ts` — Single-process normal assistant mode
-- `types.ts` — Shared contracts, including `AGENT_META` source-of-truth mapping
-- `pattern-parser.ts` — Pattern parsing utilities
+1. Imports: standard library, third-party, local.
+2. Naming: `snake_case` for vars/functions, `PascalCase` for types/components.
+3. Keep comments concise and only for non-obvious logic.
+4. Match existing TypeScript/React conventions.
 
-### Agents (`.claude/agents/`)
+## Maintenance Note
 
-- `drummer.md` (BEAT), `bassist.md` (GROOVE), `melody.md` (ARIA), `fx-artist.md` (GLITCH)
-
-### MCP server (`packages/mcp-server/`)
-
-- `src/index.ts` — Tool server entrypoint and normal-mode tools
-- `src/strudel-reference.ts` — Strudel docs exposed to tools
-
-### Documentation (`docs/`)
-
-- `docs/v2-jam-session/` — Active architecture, notes, implementation history
-- `docs/v1-mvp/` — Historical reference for v1
-
-### Tests
-
-- `lib/__tests__/` — Unit tests for parsing and process-manager behavior
-
-## Implementation Principles
-
-- Keep deterministic `@mention` routing in code, not LLM inference.
-- Preserve per-agent persistent processes in jam mode for low latency.
-- Keep server-side composition of the final `stack()` pattern.
-- Preserve the websocket broadcast-callback pattern to avoid `ws` native addon issues.
-- Keep jam agents toolless (`--tools '' --strict-mcp-config`) unless intentionally changed.
-- Treat `AGENT_META` and agent key mappings as canonical and update consistently.
-- If you change MCP tool contracts, verify orchestrator permissions and rebuild MCP server.
-
-## Code Style
-
-- Imports: standard library, then third-party, then local.
-- Naming: `snake_case` for functions/variables, `PascalCase` for classes/types/components.
-- Keep comments concise and focused on non-obvious logic.
-- Match existing TypeScript/React and hook dependency conventions.
-
-## Quality Gate Before Commit
-
-Before creating a commit:
-
-1. Run `/quality` (or equivalent manual review) before finalizing changes.
-2. Review complete changed files, not only diffs.
-3. Run targeted checks for touched areas:
-   - `npm run lint`
-   - `npx vitest run` (or targeted vitest files)
-   - `npm run build` for app-level/runtime-impacting changes
-   - `cd packages/mcp-server && npm run build` when MCP server code changes
-4. Remove dead code and debug remnants.
-5. Verify no regressions in normal mode and jam mode flows relevant to the change.
-
-If ambiguity is low-risk, proceed with explicit assumptions and document them.
-If ambiguity affects correctness or architecture, ask one concise clarifying question.
-
-## Issue Tracking with Beads (`bd`)
-
-Use `bd` (beads) for issue tracking.
-
-### Before starting work
-
-- Run `bd list` (or `bd ready`) to find active work.
-- If the task maps to an existing issue, reference its ID.
-- If no issue exists, create one:
-
-  ```sh
-  bd create "Short descriptive title" -d "Description of what needs to be done"
-  ```
-
-### During implementation
-
-- Set status when claiming work:
-
-  ```sh
-  bd update <id> --status in_progress
-  ```
-
-- Reference issue IDs in commits when relevant.
-
-### After completing work
-
-- Close done issues:
-
-  ```sh
-  bd close <id>
-  ```
-
-- Sync issue state with git:
-
-  ```sh
-  bd sync
-  ```
-
-### Key commands
-
-| Action | Command |
-|---|---|
-| List issues | `bd list` |
-| Find ready work | `bd ready` |
-| Show issue details | `bd show <id>` |
-| Create issue | `bd create "title" -d "description"` |
-| Mark in progress | `bd update <id> --status in_progress` |
-| Close issue | `bd close <id>` |
-| Sync with git | `bd sync` |
-
-## Session Completion
-
-When ending a session:
-
-1. File follow-up issues for unfinished work.
-2. Run relevant quality gates for changed code.
-3. Update/close issue statuses in `bd`.
-4. Sync and push:
-
-   ```sh
-   git pull --rebase
-   bd sync
-   git push
-   git status
-   ```
-
-5. Ensure the branch is clean or intentionally dirty with clear handoff notes.
+Keep this file concise. Put detailed design, rationale, and history in `docs/` and link to those docs here.
