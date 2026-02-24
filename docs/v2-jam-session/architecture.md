@@ -2,7 +2,7 @@
 
 ## System Overview
 
-Buttery Smooth Jamming v2 uses a **dual-mode architecture**: a single-agent Strudel assistant for normal interactions, and per-agent persistent Claude processes for jam sessions.
+Buttery Smooth Jamming v2 uses a **dual-mode architecture**: a single-agent Strudel assistant for normal interactions, and per-agent Codex-backed sessions for jam sessions.
 
 ## Architecture Diagram
 
@@ -39,53 +39,52 @@ Buttery Smooth Jamming v2 uses a **dual-mode architecture**: a single-agent Stru
            │ WebSocket                                 │ WebSocket
            ▼                                           ▼
 ┌─────────────────────────┐              ┌──────────────────────────────────────┐
-│ /api/claude-ws          │              │ /api/ws                              │
+│ /api/runtime-ws         │              │ /api/ws                              │
 │                         │              │ (MCP bridge — broadcasts to browser) │
 │ Normal mode:            │              └──────────────────┬───────────────────┘
-│   ClaudeProcess         │                                 │ WebSocket
-│   (Strudel assistant)   │                                 ▼
+│   RuntimeProcess        │                                 │ WebSocket
+│   (Codex default)       │                                 ▼
 │                         │              ┌──────────────────────────────────────┐
 │ Jam mode:               │              │ MCP Server (packages/mcp-server)     │
 │   AgentProcessManager   │              │ execute_pattern, stop_pattern,       │
 │   ┌───────────────────┐ │              │ send_message, get_user_messages      │
-│   │ claude --print    │ │              └──────────────────────────────────────┘
-│   │ --model sonnet    │ │
-│   │ drums process     │ │
+│   │ Codex jam session │ │              └──────────────────────────────────────┘
+│   │ drums thread_id   │ │
 │   ├───────────────────┤ │
-│   │ bass process      │ │
+│   │ bass thread_id    │ │
 │   ├───────────────────┤ │
-│   │ melody process    │ │
+│   │ melody thread_id  │ │
 │   ├───────────────────┤ │
-│   │ fx process        │ │
+│   │ fx thread_id      │ │
 │   └───────────────────┘ │
 │                         │
-│ Broadcast callback ─────│──→ client.send() on the /api/claude-ws WebSocket
+│ Broadcast callback ─────│──→ client.send() on the /api/runtime-ws WebSocket
 └─────────────────────────┘
 ```
 
 ## Two Modes of Operation
 
 ### Normal Mode (Strudel Assistant)
-- `ClaudeProcess` spawns a single Claude CLI process
-- User chats via TerminalPanel, Claude generates Strudel patterns via MCP tools
-- Standard MCP tool flow: Claude CLI → MCP server → `/api/ws` → browser
+- `createNormalRuntimeProcess()` chooses the configured runtime provider (Codex by default)
+- User chats via TerminalPanel, runtime generates Strudel patterns via MCP tools
+- Standard MCP tool flow: runtime process → MCP server → `/api/ws` → browser
 
-### Jam Mode (Per-Agent Persistent Processes)
-- `AgentProcessManager` spawns one `claude --print --model <frontmatter>` per active agent (currently Sonnet, configured in each `.claude/agents/*.md` YAML frontmatter)
-- Boss directives route deterministically to agent stdin
+### Jam Mode (Per-Agent Persistent Sessions)
+- `AgentProcessManager` prepares one Codex-backed session per active agent, keyed by `thread_id`
+- Boss directives route deterministically to the targeted agent session
 - Agents respond with JSON: `{ pattern, thoughts, reaction }`
 - Manager composes `stack()` pattern and broadcasts via callback closure
 - `AgentProcessManager` is the canonical jam-state source in v2 (round, context, per-agent status/pattern)
-- The orchestrator (`ClaudeProcess`) is **bypassed** during jams
+- The normal-mode runtime process is **bypassed** during jams
 
 ## Message Flow
 
 ### Jam Start
 ```
 Browser → { type: 'start_jam', activeAgents: ['drums','bass','melody','fx'] }
-  → claude-ws creates AgentProcessManager with broadcast callback
-    → Manager spawns 4 claude processes (parallel)
-      → Each agent receives initial jam context on stdin
+  → runtime-ws creates AgentProcessManager with broadcast callback
+    → Manager prepares 4 Codex-backed sessions (parallel)
+      → Each agent receives initial jam context
         → Agents respond with JSON
           → Manager composes stack(), broadcasts state → Browser
 ```
@@ -93,7 +92,7 @@ Browser → { type: 'start_jam', activeAgents: ['drums','bass','melody','fx'] }
 ### Boss Directive
 ```
 BossInputBar → { type: 'boss_directive', text: '@BEAT double time', targetAgent: 'drums' }
-  → Manager routes to drums process stdin only (deterministic)
+  → Manager routes to drums session only (deterministic)
     → Drums responds with updated JSON
       → Manager recomposes stack() with updated pattern
         → Broadcasts agent_thought, agent_status, execute → Browser
@@ -102,8 +101,8 @@ BossInputBar → { type: 'boss_directive', text: '@BEAT double time', targetAgen
 ### Stop Jam
 ```
 Browser → { type: 'stop_jam' }
-  → Manager sends SIGTERM to all agent processes
-    → Processes exit, UI returns to normal mode
+  → Manager stops any in-flight jam turns and clears agent sessions
+    → UI returns to normal mode
 ```
 
 ## File Structure
@@ -119,7 +118,8 @@ buttery_smooth_jamming/
 │   ├── globals.css                  # Tailwind + Strudel visualization hiding
 │   └── api/
 │       ├── ws/route.ts              # WebSocket for Strudel MCP bridge
-│       └── claude-ws/route.ts       # WebSocket for Claude Terminal + jam routing
+│       ├── runtime-ws/route.ts      # Runtime WebSocket + jam routing
+│       └── claude-ws/route.ts       # Compatibility alias to runtime-ws
 ├── components/
 │   ├── TerminalPanel.tsx            # Chat panel (normal mode)
 │   ├── StrudelPanel.tsx             # Strudel editor wrapper
@@ -135,13 +135,14 @@ buttery_smooth_jamming/
 ├── hooks/
 │   ├── index.ts                     # Exports
 │   ├── useWebSocket.ts              # Strudel MCP WebSocket connection
-│   ├── useClaudeTerminal.ts         # Claude Terminal WS + jam broadcast forwarding
+│   ├── useRuntimeTerminal.ts        # Runtime WS + jam broadcast forwarding
+│   ├── useClaudeTerminal.ts         # Compatibility hook alias
 │   ├── useJamSession.ts             # Jam state management + agent selection
 │   └── useStrudel.ts                # setCode, evaluate, stop
 ├── lib/
 │   ├── types.ts                     # Shared types (AGENT_META, JamState, WSMessage)
 │   ├── claude-process.ts            # Spawns Claude CLI (Strudel assistant only)
-│   ├── agent-process-manager.ts     # Per-agent persistent processes (jam mode)
+│   ├── agent-process-manager.ts     # Per-agent Codex-backed sessions (jam mode)
 │   ├── pattern-parser.ts            # Parses Strudel patterns into structured summaries
 │   ├── musical-context-parser.ts    # Parses key/BPM/energy from boss directives
 │   ├── agent-status-ui.ts           # Status label/color mapping for jam agent UI
@@ -154,7 +155,7 @@ buttery_smooth_jamming/
 │       ├── agent-meta-consistency.test.ts  # AGENT_META ↔ agent file consistency
 │       ├── agent-status-ui.test.ts         # Status mapping coverage (idle/thinking/playing/error/timeout)
 │       └── jam-admission.test.ts           # Concurrency limit admission tests
-├── .claude/agents/
+├── .codex/agents/
 │   ├── drummer.md                   # 🥁 BEAT persona + Strudel drum patterns
 │   ├── bassist.md                   # 🎸 GROOVE persona + bass patterns
 │   ├── melody.md                    # 🎹 ARIA persona + melodic patterns
@@ -179,7 +180,7 @@ buttery_smooth_jamming/
 | Component | Responsibility | Mode |
 |-----------|----------------|------|
 | `page.tsx` | Layout switching (normal ↔ jam), wires broadcast messages | Both |
-| `TerminalPanel` | Chat UI, Claude interaction | Normal |
+| `TerminalPanel` | Chat UI, runtime interaction | Normal |
 | `StrudelPanel` | Audio visualization + editor | Normal |
 | `JamTopBar` | Start/stop jam, musical context display | Jam |
 | `AgentColumn` | Per-agent status, thoughts, pattern preview | Jam |
@@ -187,9 +188,9 @@ buttery_smooth_jamming/
 | `BossInputBar` | Directive input with @mention parsing | Jam |
 | `PatternDisplay` | Shows per-agent pattern rows (collapsible) | Jam |
 | `useJamSession` | Jam state, agent selection, directive routing | Jam |
-| `useClaudeTerminal` | Claude CLI streaming + jam broadcast forwarding | Both |
-| `AgentProcessManager` | Spawns/manages per-agent Claude processes | Jam (server) |
-| `ClaudeProcess` | Single Claude CLI for Strudel assistant | Normal (server) |
+| `useRuntimeTerminal` | Runtime streaming + jam broadcast forwarding | Both |
+| `AgentProcessManager` | Manages per-agent Codex-backed jam sessions | Jam (server) |
+| `CodexProcess`/`ClaudeProcess` | Normal-mode runtime implementation | Normal (server) |
 | MCP Server | Normal-mode tool execution + user message queue | Normal (server) |
 
 ## Key Types
@@ -212,11 +213,11 @@ const AGENT_META: Record<string, {
 
 ## Latency
 
-v2 persistent processes are significantly faster than v1's orchestrator approach:
+v2 persistent sessions are significantly faster than v1's orchestrator approach:
 
 - **v1 (Orchestrator):** 22-35s per directive — each directive spawned fresh subagents
-- **v2 (Persistent Processes):** Seconds, not tens of seconds — agents stay alive for the entire jam
+- **v2 (Persistent Sessions):** Seconds, not tens of seconds — agent state persists for the entire jam
 
-Model is sourced from agent persona YAML frontmatter (currently Sonnet). Latency varies by model choice.
+Default jam model is sourced from the Codex `jam_agent` profile (`config/codex/config.toml`). Latency varies by model choice.
 
 See [Implementation Plan: Architecture Evolution](./implementation-plan.md#architecture-evolution-orchestrator-v1--per-agent-persistent-processes-v2) for the full v1-to-v2 migration story.

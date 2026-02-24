@@ -4,7 +4,7 @@ An **autonomous AI jam session** where 4 band member agents (drums, bass, melody
 
 ## Status: Active Development
 
-The jam session is fully functional with per-agent persistent Claude processes for low-latency directive response.
+The jam session is fully functional with per-agent Codex-backed sessions for low-latency directive response.
 
 ## Documentation Map
 
@@ -52,11 +52,11 @@ npm run dev
 
 ## Key Design Decisions
 
-1. **Per-agent persistent processes** — each agent is a dedicated `claude --print --model <frontmatter>` process (currently Sonnet) alive for the entire jam, avoiding the 22-29s latency of spawning fresh subagents per directive
-2. **Deterministic routing** — `@BEAT` routes to drums process via code, no LLM inference needed
+1. **Per-agent Codex-backed sessions** — each agent maintains isolated Codex conversation state (`thread_id`) across turns, avoiding the 22-29s latency of spawning fresh subagents per directive
+2. **Deterministic routing** — `@BEAT` routes to the drums session via code, no LLM inference needed
 3. **Server-side pattern composition** — `composePatterns()` builds `stack()` in TypeScript, not LLM reasoning
 4. **Broadcast callback pattern** — route handler passes a closure to the process manager, avoiding `ws` native addon issues in Next.js webpack
-5. **No MCP tools for agents** — `--tools '' --strict-mcp-config` eliminates ~20k tokens of tool definitions per agent
+5. **No MCP tools for jam agents** — the `jam_agent` Codex profile disables MCP/tool access for jam workers
 
 ## Latency Tracking
 
@@ -65,6 +65,6 @@ npm run dev
 | v1 orchestrator, targeted directive | 22-29s | 2026-02-09 | Server `[TIMING]` logs captured in the implementation history | Historical baseline |
 | v2 persistent processes, targeted directive | 5.3s | 2026-02-09 | Server `[TIMING]` logs captured in the implementation history | Historical baseline |
 | v2 persistent processes, broadcast directive | 7.0s | 2026-02-09 | Server `[TIMING]` logs captured in the implementation history | Historical baseline |
-| v2 current runtime (frontmatter Sonnet) | Pending re-benchmark | 2026-02-18 | Attempted headless CLI probe in this sandbox; unable to capture reliable end-to-end jam timing | Re-run manually on a full local jam session before publishing new SLA claims |
+| v2 current runtime (Codex jam_agent profile) | Pending re-benchmark | 2026-02-24 | Attempted headless CLI probe in this sandbox; unable to capture reliable end-to-end jam timing | Re-run manually on a full local jam session before publishing new SLA claims |
 
 Current documented values are historical unless explicitly tagged with a newer measurement date/method.

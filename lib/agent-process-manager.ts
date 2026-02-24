@@ -13,6 +13,13 @@ import type {
 import { AGENT_META } from './types';
 import { formatBandStateLine } from './pattern-parser';
 import { parseMusicalContextChanges } from './musical-context-parser';
+import { map_codex_event_to_runtime_events } from './codex-process';
+import {
+  assert_codex_runtime_ready,
+  build_codex_overrides,
+  CODEX_JAM_PROFILE,
+  load_project_codex_config,
+} from './codex-runtime-checks';
 
 // Callback type for broadcasting messages to browser clients
 export type BroadcastFn = (message: { type: string; payload: unknown }) => void;
@@ -37,12 +44,14 @@ interface AgentResponse {
   reaction: string;
 }
 
-// Per-agent process handle
+// Per-agent Codex-backed session handle
 interface AgentProcess {
   key: string;
-  process: ChildProcess;
-  rl: readline.Interface;
-  messageBuffer: string;
+  systemPrompt: string;
+  model: string;
+  threadId: string | null;
+  activeTurn: ChildProcess | null;
+  activeTurnRl: readline.Interface | null;
 }
 
 interface AgentProcessManagerOptions {
@@ -62,8 +71,8 @@ const DEFAULT_MUSICAL_CONTEXT: MusicalContext = {
 const AGENT_TIMEOUT_MS = 15000;
 
 /**
- * Manages per-agent Claude processes for jam sessions.
- * Each agent gets a dedicated `claude --print` process (model from YAML frontmatter).
+ * Manages per-agent Codex-backed sessions for jam mode.
+ * Each agent keeps an isolated, resumable Codex session (`thread_id`) across turns.
  * Directives are routed deterministically (no LLM inference for routing).
  */
 export class AgentProcessManager {
@@ -82,6 +91,8 @@ export class AgentProcessManager {
   private turnCounter = 0;
   private strudelReference: string = '';
   private sessionId = 'direct-0';
+  private codexConfigOverrides: string[] = [];
+  private codexJamDefaultModel = 'gpt-5-codex-mini';
 
   constructor(options: AgentProcessManagerOptions) {
     this.workingDir = options.workingDir;
@@ -130,6 +141,13 @@ export class AgentProcessManager {
    * send initial context, and broadcast opening patterns.
    */
   async start(activeAgents: string[]): Promise<void> {
+    await assert_codex_runtime_ready({
+      working_dir: this.workingDir,
+    });
+    const codexConfig = load_project_codex_config(this.workingDir);
+    this.codexConfigOverrides = build_codex_overrides(codexConfig);
+    this.codexJamDefaultModel = codexConfig.jam_agent_model;
+
     this.activeAgents = activeAgents;
     this.stopped = false;
     this.roundNumber = 0;
@@ -153,7 +171,7 @@ export class AgentProcessManager {
       };
     }
 
-    // Spawn a Claude process per agent
+    // Prepare one Codex-backed session per agent
     await Promise.all(activeAgents.map((key) => this.spawnAgent(key)));
 
     // Send initial jam context to each agent and collect responses
@@ -255,7 +273,7 @@ export class AgentProcessManager {
     }
     this.tickScheduled = false;
 
-    // Kill all agent processes
+    // Kill all active agent turns
     const killPromises = Array.from(this.agents.values()).map((agent) =>
       this.killProcess(agent)
     );
@@ -268,6 +286,7 @@ export class AgentProcessManager {
     this.sessionId = 'direct-0';
     this.turnInProgress = Promise.resolve();
     this.turnCounter = 0;
+    this.codexConfigOverrides = [];
   }
 
   /**
@@ -292,7 +311,7 @@ export class AgentProcessManager {
     };
   }
 
-  // ─── Private: Process Spawning ───────────────────────────────────
+  // ─── Private: Session Setup ─────────────────────────────────────
 
   private async spawnAgent(key: string): Promise<void> {
     const result = this.buildAgentSystemPrompt(key);
@@ -302,46 +321,18 @@ export class AgentProcessManager {
     }
     const { prompt: systemPrompt, model } = result;
 
-    const proc = spawn('claude', [
-      '--print',
-      '--verbose',
-      '--model', model,
-      '--input-format', 'stream-json',
-      '--output-format', 'stream-json',
-      '--system-prompt', systemPrompt,
-      '--no-session-persistence',
-      '--tools', '',             // Disable all built-in tools
-      '--strict-mcp-config',     // Don't load project MCP servers
-    ], {
-      cwd: this.workingDir,
-      stdio: ['pipe', 'pipe', 'pipe'],
-      env: {
-        ...process.env,
-        CLAUDE_CODE_ENTRYPOINT: 'cli',
-      },
+    this.agents.set(key, {
+      key,
+      systemPrompt,
+      model,
+      threadId: null,
+      activeTurn: null,
+      activeTurnRl: null,
     });
-
-    const rl = readline.createInterface({
-      input: proc.stdout!,
-      crlfDelay: Infinity,
-    });
-
-    proc.stderr!.on('data', (data) => {
-      console.error(`[Agent:${key} stderr]:`, data.toString().trim());
-    });
-
-    proc.on('error', (err) => {
-      console.error(`[Agent:${key}] Process error:`, err);
-      this.setAgentStatus(key, 'error');
-    });
-
-    proc.on('exit', (code, signal) => {
-      console.log(`[Agent:${key}] Exited: code=${code}, signal=${signal}`);
-      this.agents.delete(key);
-    });
-
-    this.agents.set(key, { key, process: proc, rl, messageBuffer: '' });
-    console.log(`[AgentManager] Spawned agent: ${key} (model=${model}, pid=${proc.pid})`);
+    console.log(
+      `[AgentManager] Prepared Codex jam session for ${key} ` +
+      `(profile=${CODEX_JAM_PROFILE}, model=${model})`
+    );
   }
 
   private resolveAgentPromptPath(agentFile: string): string | null {
@@ -354,7 +345,8 @@ export class AgentProcessManager {
 
   /**
    * Read agent .md file, parse YAML frontmatter for model, strip frontmatter,
-   * and return the prompt body + model.
+   * and return the prompt body + model. Non-Codex models in frontmatter are
+   * ignored in favor of the configured jam_agent profile default.
    */
   private buildAgentSystemPrompt(agentKey: string): { prompt: string; model: string } | null {
     const agentFile = AGENT_KEY_TO_FILE[agentKey];
@@ -374,12 +366,14 @@ export class AgentProcessManager {
     try {
       const content = fs.readFileSync(filePath, 'utf-8');
 
-      // Parse model from YAML frontmatter
-      let model = 'haiku';
+      // Parse optional Codex model override from YAML frontmatter
+      let modelOverride: string | null = null;
       const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---/);
       if (frontmatterMatch) {
         const modelMatch = frontmatterMatch[1].match(/model:\s*(\S+)/);
-        if (modelMatch) model = modelMatch[1];
+        if (modelMatch && modelMatch[1].toLowerCase().startsWith('gpt-')) {
+          modelOverride = modelMatch[1];
+        }
       }
 
       // Strip YAML frontmatter (between --- markers at start of file)
@@ -390,76 +384,203 @@ export class AgentProcessManager {
         prompt += `\n\n<strudel_reference>\n${this.strudelReference}\n</strudel_reference>`;
       }
 
-      return { prompt, model };
+      return {
+        prompt,
+        model: modelOverride ?? this.codexJamDefaultModel,
+      };
     } catch (err) {
       console.error(`[AgentManager] Failed to read agent file: ${filePath}`, err);
       return null;
     }
   }
 
+  private buildCodexTurnArgs(agent: AgentProcess): string[] {
+    const args = agent.threadId
+      ? ['exec', 'resume', '--json', '--skip-git-repo-check']
+      : ['exec', '--json', '--profile', CODEX_JAM_PROFILE, '--skip-git-repo-check', '--color', 'never'];
+
+    if (agent.model) {
+      args.push('--model', agent.model);
+    }
+
+    for (const override of this.codexConfigOverrides) {
+      args.push('-c', override);
+    }
+    args.push('-c', 'features.runtime_metrics=false');
+
+    if (agent.threadId) {
+      args.push(agent.threadId, '-');
+    } else {
+      args.push('-');
+    }
+
+    return args;
+  }
+
+  private buildAgentTurnPrompt(agent: AgentProcess, text: string): string {
+    return [
+      agent.systemPrompt,
+      '',
+      '<manager_turn>',
+      text,
+      '</manager_turn>',
+      '',
+      'Output only one JSON object with keys pattern, thoughts, reaction.',
+    ].join('\n');
+  }
+
   // ─── Private: Communication ──────────────────────────────────────
 
   /**
-   * Send a text message to an agent's stdin using stream-json format
-   * and collect the full text response.
+   * Send one manager turn to a Codex-backed session and collect response text.
+   * Supports both Codex JSONL events and legacy stream-json fixtures used by tests.
    */
   private sendToAgentAndCollect(
     key: string,
     text: string
   ): Promise<AgentResponse | null> {
     const agent = this.agents.get(key);
-    if (!agent || !agent.process.stdin) {
+    if (!agent) {
       console.error(`[AgentManager] No process for agent: ${key}`);
       return Promise.resolve(null);
     }
 
     return new Promise((resolve) => {
+      const args = this.buildCodexTurnArgs(agent);
+      const proc = spawn('codex', args, {
+        cwd: this.workingDir,
+        stdio: ['pipe', 'pipe', 'pipe'],
+        env: {
+          ...process.env,
+          JAM_AGENT_KEY: key,
+        },
+      });
+      const rl = readline.createInterface({
+        input: proc.stdout!,
+        crlfDelay: Infinity,
+      });
+      agent.activeTurn = proc;
+      agent.activeTurnRl = rl;
+
       const timeout = setTimeout(() => {
         console.warn(`[Agent:${key}] Response timeout after ${AGENT_TIMEOUT_MS}ms`);
-        cleanup();
-        resolve(null);
+        if (!proc.killed) {
+          proc.kill('SIGTERM');
+        }
+        finish();
       }, AGENT_TIMEOUT_MS);
 
       let fullText = '';
+      let settled = false;
+      let parseState = { saw_assistant_delta: false };
 
       const onLine = (line: string) => {
         if (!line.trim()) return;
         try {
-          const msg = JSON.parse(line);
-          if (msg.type === 'assistant' && msg.message?.content) {
-            for (const block of msg.message.content) {
+          const msg = JSON.parse(line) as Record<string, unknown>;
+          const legacyMessage = msg.message as {
+            content?: Array<{ type?: string; text?: string }>;
+          } | undefined;
+
+          // Backward-compatible stream-json handling (used heavily in tests).
+          if (msg.type === 'assistant' && legacyMessage?.content) {
+            const content = legacyMessage.content;
+            for (const block of content) {
               if (block.type === 'text' && block.text) {
                 fullText += block.text;
               }
             }
+            return;
           } else if (msg.type === 'result') {
-            // Turn complete — parse the accumulated text
-            cleanup();
-            const parsed = this.parseAgentResponse(fullText, key);
-            resolve(parsed);
+            finish();
+            return;
+          }
+
+          if (msg.type === 'thread.started' && typeof msg.thread_id === 'string') {
+            agent.threadId = msg.thread_id;
+          }
+
+          const mapped = map_codex_event_to_runtime_events(msg, parseState);
+          parseState = mapped.next_state;
+          for (const event of mapped.events) {
+            if (event.type === 'text') {
+              fullText += event.text;
+            }
+          }
+          if (mapped.turn_completed) {
+            finish();
           }
         } catch {
-          // Incomplete JSON line, ignore
+          // Non-JSON line (or partial line) — ignore.
         }
       };
 
       const cleanup = () => {
         clearTimeout(timeout);
-        agent.rl.removeListener('line', onLine);
+        rl.removeListener('line', onLine);
+        rl.close();
+        agent.activeTurn = null;
+        agent.activeTurnRl = null;
       };
 
-      agent.rl.on('line', onLine);
-
-      // Send user message in stream-json format
-      const userMessage = {
-        type: 'user',
-        message: {
-          role: 'user',
-          content: text,
-        },
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        resolve(this.parseAgentResponse(fullText, key));
       };
-      agent.process.stdin!.write(JSON.stringify(userMessage) + '\n');
+
+      rl.on('line', onLine);
+
+      proc.stderr?.on('data', (data) => {
+        const text = data.toString().trim();
+        if (!text) return;
+        console.error(`[Agent:${key} stderr]:`, text);
+      });
+
+      proc.on('error', (err) => {
+        console.error(`[Agent:${key}] Process error:`, err);
+        this.setAgentStatus(key, 'error');
+      });
+
+      proc.on('exit', (code, signal) => {
+        console.log(`[Agent:${key}] Turn exited: code=${code}, signal=${signal}`);
+        if (typeof code === 'number' && code !== 0) {
+          console.warn(`[Agent:${key}] Session became unavailable after non-zero exit (${code})`);
+          this.agents.delete(key);
+          this.setAgentStatus(key, 'error');
+        }
+        finish();
+      });
+
+      const prompt = this.buildAgentTurnPrompt(agent, text);
+      proc.stdin?.write(prompt);
+      proc.stdin?.write('\n');
+      proc.stdin?.end();
     });
+  }
+
+  private validateAgentResponseShape(value: unknown, key: string): AgentResponse | null {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      console.warn(`[Agent:${key}] Invalid response schema (not object)`);
+      return null;
+    }
+
+    const parsed = value as Record<string, unknown>;
+    if (
+      typeof parsed.pattern !== 'string'
+      || typeof parsed.thoughts !== 'string'
+      || typeof parsed.reaction !== 'string'
+    ) {
+      console.warn(`[Agent:${key}] Invalid response schema (missing pattern/thoughts/reaction strings)`);
+      return null;
+    }
+
+    return {
+      pattern: parsed.pattern,
+      thoughts: parsed.thoughts,
+      reaction: parsed.reaction,
+    };
   }
 
   /**
@@ -467,22 +588,34 @@ export class AgentProcessManager {
    * Handles markdown code fences and extracts JSON.
    */
   private parseAgentResponse(text: string, key: string): AgentResponse | null {
-    try {
-      // Try direct JSON parse first
-      return JSON.parse(text.trim()) as AgentResponse;
-    } catch {
-      // Try extracting JSON from code fences or surrounding text
-      const jsonMatch = text.match(/\{[\s\S]*"pattern"[\s\S]*\}/);
-      if (jsonMatch) {
-        try {
-          return JSON.parse(jsonMatch[0]) as AgentResponse;
-        } catch {
-          // fall through
-        }
-      }
-      console.warn(`[Agent:${key}] Failed to parse response:`, text.substring(0, 200));
+    const trimmed = text.trim();
+    if (!trimmed) {
+      console.warn(`[Agent:${key}] Empty response`);
       return null;
     }
+
+    try {
+      // Try direct JSON parse first
+      const direct = JSON.parse(trimmed);
+      const validated = this.validateAgentResponseShape(direct, key);
+      if (validated) return validated;
+    } catch {
+      // Try extracting JSON from surrounding text.
+    }
+
+    const jsonMatch = text.match(/\{[\s\S]*"pattern"[\s\S]*\}/);
+    if (jsonMatch) {
+      try {
+        const extracted = JSON.parse(jsonMatch[0]);
+        const validated = this.validateAgentResponseShape(extracted, key);
+        if (validated) return validated;
+      } catch {
+        // fall through
+      }
+    }
+
+    console.warn(`[Agent:${key}] Failed to parse response:`, text.substring(0, 200));
+    return null;
   }
 
   // ─── Private: Jam Flow ───────────────────────────────────────────
@@ -760,8 +893,8 @@ export class AgentProcessManager {
 
   private killProcess(agent: AgentProcess): Promise<void> {
     return new Promise((resolve) => {
-      const proc = agent.process;
-      if (proc.killed) {
+      const proc = agent.activeTurn;
+      if (!proc || proc.killed || proc.exitCode !== null) {
         resolve();
         return;
       }
@@ -773,10 +906,14 @@ export class AgentProcessManager {
 
       proc.once('exit', () => {
         clearTimeout(timeout);
+        agent.activeTurn = null;
+        agent.activeTurnRl?.close();
+        agent.activeTurnRl = null;
         resolve();
       });
 
-      agent.rl.close();
+      agent.activeTurnRl?.close();
+      agent.activeTurnRl = null;
       proc.kill('SIGTERM');
     });
   }

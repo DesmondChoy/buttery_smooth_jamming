@@ -32,7 +32,10 @@ function create_temp_repo(with_config = true): string {
 }
 
 function create_success_runner() {
-  return vi.fn(async (args: string[]) => {
+  return vi.fn(async (
+    args: string[],
+    _options: { working_dir: string; config_overrides: string[] }
+  ) => {
     if (args[0] === '--version') {
       return { exit_code: 0, stdout: 'codex 0.104.0', stderr: '' };
     }

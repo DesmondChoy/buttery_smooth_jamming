@@ -2,10 +2,23 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { PassThrough } from 'stream';
 import { EventEmitter } from 'events';
 
+const runtime_check_mocks = vi.hoisted(() => ({
+  assert_codex_runtime_ready: vi.fn(),
+  load_project_codex_config: vi.fn(),
+  build_codex_overrides: vi.fn(),
+}));
+
 // ─── Mocks ──────────────────────────────────────────────────────────
 // Mock child_process.spawn to return controllable fake processes
 vi.mock('child_process', () => ({
   spawn: vi.fn(),
+}));
+
+vi.mock('../codex-runtime-checks', () => ({
+  CODEX_JAM_PROFILE: 'jam_agent',
+  assert_codex_runtime_ready: runtime_check_mocks.assert_codex_runtime_ready,
+  load_project_codex_config: runtime_check_mocks.load_project_codex_config,
+  build_codex_overrides: runtime_check_mocks.build_codex_overrides,
 }));
 
 // Mock fs.readFileSync to return fake agent files + strudel reference
@@ -43,11 +56,35 @@ const default_exists_sync_impl = (filePath: fs.PathLike) => {
   );
 };
 
+function setupRuntimeCheckMocks() {
+  runtime_check_mocks.assert_codex_runtime_ready.mockResolvedValue(undefined);
+  runtime_check_mocks.load_project_codex_config.mockReturnValue({
+    config_path: '/fake/dir/config/codex/config.toml',
+    normal_mode_model: 'gpt-5-codex',
+    jam_agent_model: 'gpt-5-codex-mini',
+  });
+  runtime_check_mocks.build_codex_overrides.mockReturnValue([
+    'profiles.normal_mode.model="gpt-5-codex"',
+    'profiles.jam_agent.model="gpt-5-codex-mini"',
+    'mcp_servers.strudel.transport="stdio"',
+    'mcp_servers.strudel.command="node"',
+    'mcp_servers.strudel.args=["packages/mcp-server/build/index.js"]',
+    'mcp_servers.strudel.required=false',
+    'mcp_servers.playwright.enabled=false',
+    'mcp_servers.playwright.required=false',
+  ]);
+}
+
 // ─── Helpers ────────────────────────────────────────────────────────
 
 /** Create a fake ChildProcess with controllable stdin/stdout/stderr. */
 function createFakeProcess() {
-  const stdin = new PassThrough();
+  const stdin = new PassThrough() as PassThrough & {
+    end: (...args: unknown[]) => PassThrough;
+  };
+  // Codex turns are separate processes in production; tests may reuse one fake
+  // process per agent key, so keep stdin writable across turns.
+  stdin.end = vi.fn(() => stdin);
   const stdout = new PassThrough();
   const stderr = new PassThrough();
   const proc = new EventEmitter() as EventEmitter & {
@@ -90,6 +127,17 @@ function sendAgentResponse(
   proc.stdout.write(JSON.stringify(resultMsg) + '\n');
 }
 
+function sendRawAgentText(proc: ReturnType<typeof createFakeProcess>, rawText: string) {
+  const assistantMsg = {
+    type: 'assistant',
+    message: {
+      content: [{ type: 'text', text: rawText }],
+    },
+  };
+  proc.stdout.write(JSON.stringify(assistantMsg) + '\n');
+  proc.stdout.write(JSON.stringify({ type: 'result', result: 'ok' }) + '\n');
+}
+
 /** Create a manager with mocked spawn, returns the manager + fake processes. */
 function createTestManager(): {
   manager: AgentProcessManager;
@@ -99,12 +147,14 @@ function createTestManager(): {
   const processes = new Map<string, ReturnType<typeof createFakeProcess>>();
   const broadcast = vi.fn() as ReturnType<typeof vi.fn> & BroadcastFn;
 
-  mockedSpawn.mockImplementation((_cmd, _args) => {
-    const proc = createFakeProcess();
-    // Infer agent key from args: look for --system-prompt value
-    // The spawn call order matches activeAgents order
-    const key = `proc_${processes.size}`;
-    processes.set(key, proc);
+  mockedSpawn.mockImplementation((_cmd, _args, options) => {
+    const env = (options as { env?: NodeJS.ProcessEnv } | undefined)?.env;
+    const key = env?.JAM_AGENT_KEY || `proc_${processes.size}`;
+    let proc = processes.get(key);
+    if (!proc) {
+      proc = createFakeProcess();
+      processes.set(key, proc);
+    }
     return proc as unknown as ReturnType<typeof spawn>;
   });
 
@@ -160,6 +210,7 @@ describe('AgentProcessManager turn serialization', () => {
     vi.useFakeTimers();
     vi.clearAllMocks();
     vi.mocked(fs.existsSync).mockImplementation(default_exists_sync_impl);
+    setupRuntimeCheckMocks();
   });
 
   afterEach(async () => {
@@ -277,6 +328,23 @@ describe('AgentProcessManager turn serialization', () => {
 
     expect(statusEvents).toHaveLength(1);
     expect(statusEvents[0].payload?.status).toBe('timeout');
+  });
+
+  it('rejects invalid agent response schema and falls back safely', async () => {
+    const { manager, processes } = createTestManager();
+
+    const startPromise = manager.start(['drums']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const drumsProc = getNthProcess(processes, 0);
+    sendRawAgentText(drumsProc, '{"pattern":"s(\\"bd sd\\")","thoughts":"Missing reaction"}');
+    await startPromise;
+
+    const snapshot = manager.getJamStateSnapshot();
+    expect(snapshot.agents.drums?.status).toBe('timeout');
+    expect(snapshot.agents.drums?.reaction).toContain('timed out');
+
+    await manager.stop();
   });
 
   it('two simultaneous directives serialize correctly', async () => {
@@ -526,6 +594,8 @@ describe('AgentProcessManager musical context updates', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.clearAllMocks();
+    vi.mocked(fs.existsSync).mockImplementation(default_exists_sync_impl);
+    setupRuntimeCheckMocks();
   });
 
   afterEach(async () => {
@@ -656,6 +726,8 @@ describe('AgentProcessManager directive targeting', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.clearAllMocks();
+    vi.mocked(fs.existsSync).mockImplementation(default_exists_sync_impl);
+    setupRuntimeCheckMocks();
   });
 
   afterEach(async () => {
@@ -858,6 +930,8 @@ describe('AgentProcessManager jam state snapshots', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.clearAllMocks();
+    vi.mocked(fs.existsSync).mockImplementation(default_exists_sync_impl);
+    setupRuntimeCheckMocks();
   });
 
   afterEach(async () => {

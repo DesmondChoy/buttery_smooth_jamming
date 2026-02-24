@@ -196,6 +196,7 @@ export function build_codex_overrides(config: ProjectCodexConfig): string[] {
   return [
     `profiles.${CODEX_NORMAL_PROFILE}.model=${quote_toml_string(config.normal_mode_model)}`,
     `profiles.${CODEX_JAM_PROFILE}.model=${quote_toml_string(config.jam_agent_model)}`,
+    'mcp_servers.strudel.transport="stdio"',
     'mcp_servers.strudel.command="node"',
     'mcp_servers.strudel.args=["packages/mcp-server/build/index.js"]',
     'mcp_servers.strudel.required=false',

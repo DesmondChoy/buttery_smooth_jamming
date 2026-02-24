@@ -9,6 +9,7 @@ model_reasoning_effort = "low"
 model_reasoning_summary = "detailed"
 
 [mcp_servers.strudel]
+transport = "stdio"
 command = "node"
 args = ["packages/mcp-server/build/index.js"]
 required = false
