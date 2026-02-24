@@ -2,7 +2,7 @@
 
 ## System Overview
 
-CC Sick Beats v2 uses a **dual-mode architecture**: a single-agent Strudel assistant for normal interactions, and per-agent persistent Claude processes for jam sessions.
+Buttery Smooth Jamming v2 uses a **dual-mode architecture**: a single-agent Strudel assistant for normal interactions, and per-agent persistent Claude processes for jam sessions.
 
 ## Architecture Diagram
 
@@ -112,7 +112,7 @@ Browser → { type: 'stop_jam' }
 > update this tree in the same PR. Run `ls -R` against changed sections to verify.
 
 ```
-cc_sick_beats/
+buttery_smooth_jamming/
 ├── app/
 │   ├── page.tsx                     # Dual layout: normal mode + jam mode
 │   ├── layout.tsx

@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'CC Sick Beats',
+  title: 'Buttery Smooth Jamming',
   description: 'AI-assisted live coding music with Strudel',
 };
 

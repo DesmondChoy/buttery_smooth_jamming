@@ -69,7 +69,7 @@ await page.waitForSelector('button:has-text("Playing")');
 - [ ] Title is correct
 
 ### Layout Structure (Normal Mode — before jam starts)
-- [ ] "CC Sick Beats" heading and subtitle visible
+- [ ] "Buttery Smooth Jamming" heading and subtitle visible
 - [ ] Terminal panel visible on left (1/3 width)
 - [ ] Right content area with Play/Stop buttons and JamControls
 - [ ] StrudelPanel visible at bottom of page (full width, below both panels)
@@ -301,7 +301,7 @@ Every ~30 seconds, the system sends an auto-tick to all agents. This triggers th
 ### Layout Switch
 - [ ] Clicking "Start Jam" (after agent selection) swaps normal mode layout to jam mode layout
 - [ ] Terminal panel (left) disappears
-- [ ] Heading ("CC Sick Beats") and Play/Stop buttons disappear from right area
+- [ ] Heading ("Buttery Smooth Jamming") and Play/Stop buttons disappear from right area
 - [ ] JamTopBar appears at top (Stop button, musical context, energy bar)
 - [ ] Agent Columns appear in CSS grid (one column per selected agent)
 - [ ] BossInputBar appears below the agent columns

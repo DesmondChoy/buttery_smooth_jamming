@@ -5,7 +5,7 @@
 ## Files Created
 
 ```
-cc_sick_beats/
+buttery_smooth_jamming/
 ├── package.json
 ├── tsconfig.json
 ├── next.config.js

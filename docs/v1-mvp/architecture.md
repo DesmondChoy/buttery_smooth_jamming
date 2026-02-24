@@ -2,7 +2,7 @@
 
 ## System Overview
 
-CC Sick Beats uses a dual WebSocket architecture to connect Claude Code with the Strudel live coding environment.
+Buttery Smooth Jamming uses a dual WebSocket architecture to connect Claude Code with the Strudel live coding environment.
 
 ## Architecture Diagram
 
@@ -52,7 +52,7 @@ Claude → Strudel:      MCP tool calls via WebSocket bridge
 ## File Structure
 
 ```
-cc_sick_beats/
+buttery_smooth_jamming/
 ├── app/
 │   ├── page.tsx                   # Split pane layout with keyboard shortcuts
 │   ├── layout.tsx

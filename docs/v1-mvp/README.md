@@ -1,4 +1,4 @@
-# CC Sick Beats Documentation
+# Buttery Smooth Jamming Documentation
 
 A web app connecting Claude Code to Strudel.cc for AI-assisted live coding music.
 

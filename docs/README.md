@@ -1,4 +1,4 @@
-# CC Sick Beats Documentation
+# Buttery Smooth Jamming Documentation
 
 ## Current Focus: V2 Autonomous Jam Session
 

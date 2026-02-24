@@ -4,7 +4,7 @@ This file mirrors `CLAUDE.md` for Codex and other agent-based tools.
 
 ## Project Overview
 
-CC Sick Beats is an autonomous AI jam session where four band-member
+Buttery Smooth Jamming is an autonomous AI jam session where four band-member
 agents (drums, bass, melody, FX) play together in real time via Strudel,
 react to one another, and follow a human "boss" directing the session.
 

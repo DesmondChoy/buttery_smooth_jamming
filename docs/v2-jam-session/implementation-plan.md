@@ -6,7 +6,7 @@
 > story begins at [Architecture Evolution](#architecture-evolution-orchestrator-v1--per-agent-persistent-processes-v2).
 
 ## Overview
-Transform CC Sick Beats into an **autonomous AI jam session** where band members:
+Transform Buttery Smooth Jamming into an **autonomous AI jam session** where band members:
 - React to each other's playing in real-time
 - Share thoughts/reasoning alongside their code
 - Have independent personalities (may disagree with the "boss"!)

@@ -1,6 +1,6 @@
 # Pattern Parsing Research: Approach Comparison
 
-**Issue**: `cc_sick_beats-m5e` (P4 research task)
+**Issue**: `buttery_smooth_jamming-m5e` (P4 research task)
 **Date**: 2026-02-18
 **Status**: Implemented (Approach A — Hybrid acorn + regex)
 
@@ -20,7 +20,7 @@ Agents must "listen" to each other by parsing this code. A structured summary he
 | A | **Hybrid: acorn AST + regex** | High — acorn already in node_modules | <1ms | ~120 LOC | Good for all observed patterns | **SELECTED** |
 | B | **Pure regex extraction** | Medium — breaks on nested structures | <0.1ms | ~50 LOC | Misses method chains, callbacks | Too fragile |
 | C | **LLM pre-summarization** | High but expensive | 500-2000ms per call | Low code, high cost | Best possible | 12 calls/tick = 6-24s, exceeds budget |
-| D | **Enhanced prompt heuristics** | Already shipped (cc_sick_beats-lx3) | 0ms | Already done | Inconsistent — depends on LLM | Baseline, not sufficient |
+| D | **Enhanced prompt heuristics** | Already shipped (buttery_smooth_jamming-lx3) | 0ms | Already done | Inconsistent — depends on LLM | Baseline, not sufficient |
 | E | **Strudel runtime queryArc()** | Low — requires browser context | N/A | High | Would be perfect | @strudel/core needs browser window |
 
 ### Key Finding: Two Parsing Layers

@@ -1,4 +1,4 @@
-# CC Sick Beats
+# Buttery Smooth Jamming
 
 An autonomous AI jam session where band member agents play together in real-time, react to each other's music, and respond to a human "boss" directing the session — all powered by Claude and [Strudel](https://strudel.cc).
 
@@ -65,7 +65,7 @@ Each agent keeps full conversational memory across the jam session. Directive-to
 ## Project Structure
 
 ```
-cc_sick_beats/
+buttery_smooth_jamming/
 ├── app/                          # Next.js app (pages + API routes)
 ├── components/                   # UI: JamTopBar, AgentColumn, BossInputBar, etc.
 ├── hooks/                        # useJamSession, useClaudeTerminal, useStrudel

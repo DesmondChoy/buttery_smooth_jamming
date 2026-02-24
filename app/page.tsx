@@ -264,7 +264,7 @@ export default function Home() {
 
             {/* Normal mode: content on right */}
             <div className="flex-1 flex flex-col items-center p-8 relative overflow-y-auto">
-              <h1 className="text-4xl font-bold mb-4">CC Sick Beats</h1>
+              <h1 className="text-4xl font-bold mb-4">Buttery Smooth Jamming</h1>
               <p className="text-gray-400 text-lg mb-8">
                 AI-assisted live coding music with Strudel
               </p>
@@ -318,7 +318,7 @@ export default function Home() {
       <div className={`border-t border-gray-700 shrink-0 ${isJamming ? 'h-0 overflow-hidden' : ''}`}>
         <StrudelPanel
           ref={ref}
-          initialCode={`// Welcome to CC Sick Beats!
+          initialCode={`// Welcome to Buttery Smooth Jamming!
 // Press play or Ctrl+Enter to start
 note("c3 e3 g3 c4").sound("piano")._pianoroll({ fold: 1 })`}
           className="rounded-none overflow-hidden"
