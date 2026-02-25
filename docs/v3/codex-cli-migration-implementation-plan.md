@@ -1,7 +1,7 @@
 # V3 Implementation Plan: Migrate to Codex CLI + OpenAI Subagents
 
-> Status: Execution in progress (Workstreams A-E closed on February 24, 2026; F-G open)
-> Last updated: February 24, 2026 (sync after same-day commit + beads closure review)
+> Status: Execution in progress (Workstreams A-F closed on February 25, 2026; G open)
+> Last updated: February 25, 2026 (jam-agent resume reasoning + auto-tick hardening)
 > Scope: Repository-level migration plan only (no code changes in this document)
 
 ## Terminology
@@ -256,6 +256,9 @@ Tasks:
 4. Cutover rollout:
 - default runtime is Codex after acceptance gates pass
 - no legacy compatibility websocket alias in GA
+5. Reliability hardening for jam continuity:
+- resumed jam turns must not inherit incompatible global reasoning defaults
+- unavailable agents must remain `error` until a real process recovery occurs (no auto-tick masking)
 
 Deliverables:
 
@@ -299,6 +302,12 @@ Deliverables:
 6. Risk: model alias or account-availability mismatch for selected defaults.
 - Mitigation: add startup validation with clear error messaging and a documented operator override path.
 
+7. Risk: resumed jam turns inherit global Codex defaults that are invalid for jam model settings.
+- Mitigation: always inject profile-scoped and top-level reasoning overrides per turn; verify with resume-path regression tests.
+
+8. Risk: auto-tick can mask crashed agents by reapplying fallback statuses.
+- Mitigation: auto-tick only targets currently available agent sessions and preserves `error` state for unavailable agents.
+
 ## Workstream A Outcome Snapshot (2026-02-24)
 
 Compatibility spike artifacts:
@@ -312,7 +321,7 @@ Outcome summary:
 2. `codex-mini-latest` is not viable in the tested ChatGPT-auth Codex CLI setup and is not the GA default.
 3. Manager-managed long-lived sessions remain the selected jam strategy.
 
-## Beads Execution Snapshot (as of 2026-02-24 +08:00)
+## Beads Execution Snapshot (as of 2026-02-25 +08:00)
 
 Migration epic status:
 
@@ -325,7 +334,7 @@ Workstream-linked task status:
 3. Workstream C (`bsj-6u9.5`) is closed.
 4. Workstream D (`bsj-3xy.2`) is closed.
 5. Workstream E (`bsj-3xy.4`) is closed.
-6. Workstream F (`bsj-3xy.5`) is open.
+6. Workstream F (`bsj-3xy.5`) is closed.
 7. Workstream G (`bsj-6ud.1`) is open.
 
 Additional same-day cleanup related to Workstream F:
@@ -334,8 +343,26 @@ Additional same-day cleanup related to Workstream F:
 
 Remaining execution focus after this snapshot:
 
-1. Complete Workstream F provider-neutral naming and contract cleanup (`bsj-3xy.5`).
-2. Complete Workstream G tests, benchmark tranche, and staged rollout (`bsj-6ud.1`).
+1. Complete Workstream G tests, benchmark tranche, and staged rollout (`bsj-6ud.1`).
+
+## Workstream G Hardening Note (2026-02-25)
+
+During directive-phase validation, jam mode showed an intermittent mixed-state failure:
+
+1. Some agents succeeded quickly while others failed on resumed turns with `turn.failed` and non-zero exits.
+2. Failed agents appeared to recover around the 30-second mark because auto-tick reapplied fallback status updates.
+
+Root causes identified and addressed:
+
+1. `codex exec resume` inherited global reasoning defaults (for example `reasoning.effort=xhigh`) incompatible with `gpt-5-codex-mini`.
+2. Auto-tick processed unavailable agents and could overwrite `error` with fallback `playing`/`timeout`.
+
+Hardening implemented:
+
+1. Runtime config overrides now include profile-scoped plus top-level reasoning settings (`model_reasoning_effort`, `model_reasoning_summary`) chosen by execution profile.
+2. Jam manager uses jam-profile defaults; normal mode uses normal-profile defaults.
+3. Auto-tick targets only currently available agents, preserving crashed-agent `error` status until genuine recovery.
+4. Jam logs now surface parsed `turn.failed` details for faster diagnosis.
 
 ## Source Links (Corroboration)
 

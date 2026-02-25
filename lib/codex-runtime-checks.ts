@@ -39,6 +39,10 @@ export interface ProjectCodexConfig {
   config_path: string;
   normal_mode_model: string;
   jam_agent_model: string;
+  normal_mode_reasoning_effort: string;
+  jam_agent_reasoning_effort: string;
+  normal_mode_reasoning_summary: string;
+  jam_agent_reasoning_summary: string;
 }
 
 export type RunCodexCommand = (
@@ -55,6 +59,8 @@ export interface CodexRuntimeCheckOptions {
 }
 
 const success_cache = new Map<string, number>();
+const DEFAULT_MODEL_REASONING_EFFORT = 'low';
+const DEFAULT_MODEL_REASONING_SUMMARY = 'detailed';
 
 function quote_toml_string(value: string): string {
   return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
@@ -117,6 +123,14 @@ export function resolve_project_codex_config_path(working_dir: string): string |
 }
 
 function extract_profile_model(config_text: string, profile: string): string | null {
+  return extract_profile_string(config_text, profile, 'model');
+}
+
+function extract_profile_string(
+  config_text: string,
+  profile: string,
+  key: string
+): string | null {
   const lines = config_text.split(/\r?\n/);
   const section_header = `[profiles.${profile}]`;
   let in_section = false;
@@ -132,13 +146,78 @@ function extract_profile_model(config_text: string, profile: string): string | n
 
     if (!in_section) continue;
 
-    const model_match = line.match(/^model\s*=\s*"([^"]+)"\s*$/);
-    if (model_match) {
-      return model_match[1];
+    const key_match = line.match(new RegExp(`^${key}\\s*=\\s*"([^"]+)"\\s*$`));
+    if (key_match) {
+      return key_match[1];
     }
   }
 
   return null;
+}
+
+function extract_top_level_string(config_text: string, key: string): string | null {
+  const lines = config_text.split(/\r?\n/);
+  let in_section = false;
+
+  for (const raw_line of lines) {
+    const line = raw_line.trim();
+    if (!line || line.startsWith('#')) continue;
+
+    if (line.startsWith('[') && line.endsWith(']')) {
+      in_section = true;
+      continue;
+    }
+
+    if (in_section) continue;
+
+    const key_match = line.match(new RegExp(`^${key}\\s*=\\s*"([^"]+)"\\s*$`));
+    if (key_match) {
+      return key_match[1];
+    }
+  }
+
+  return null;
+}
+
+function normalize_reasoning_effort(raw: string | null): string {
+  const value = raw?.trim().toLowerCase();
+  if (value === 'low' || value === 'medium' || value === 'high') {
+    return value;
+  }
+  return DEFAULT_MODEL_REASONING_EFFORT;
+}
+
+function normalize_reasoning_summary(raw: string | null): string {
+  const value = raw?.trim().toLowerCase();
+  if (value === 'auto' || value === 'concise' || value === 'detailed') {
+    return value;
+  }
+  return DEFAULT_MODEL_REASONING_SUMMARY;
+}
+
+function normalize_summary_for_model(model: string, summary: string): string {
+  // Mini models currently require detailed summaries in non-interactive turns.
+  if (model.includes('mini') && summary !== 'detailed') {
+    return DEFAULT_MODEL_REASONING_SUMMARY;
+  }
+  return summary;
+}
+
+function get_profile_reasoning(config: ProjectCodexConfig, profile: string): {
+  effort: string;
+  summary: string;
+} {
+  if (profile === CODEX_JAM_PROFILE) {
+    return {
+      effort: config.jam_agent_reasoning_effort,
+      summary: config.jam_agent_reasoning_summary,
+    };
+  }
+
+  return {
+    effort: config.normal_mode_reasoning_effort,
+    summary: config.normal_mode_reasoning_summary,
+  };
 }
 
 export function load_project_codex_config(working_dir: string): ProjectCodexConfig {
@@ -185,17 +264,59 @@ export function load_project_codex_config(working_dir: string): ProjectCodexConf
     );
   }
 
+  const top_level_reasoning_effort = extract_top_level_string(config_text, 'model_reasoning_effort');
+  const top_level_reasoning_summary = extract_top_level_string(config_text, 'model_reasoning_summary');
+
+  const normal_mode_reasoning_effort = normalize_reasoning_effort(
+    extract_profile_string(config_text, CODEX_NORMAL_PROFILE, 'model_reasoning_effort')
+    ?? top_level_reasoning_effort
+  );
+  const jam_agent_reasoning_effort = normalize_reasoning_effort(
+    extract_profile_string(config_text, CODEX_JAM_PROFILE, 'model_reasoning_effort')
+    ?? top_level_reasoning_effort
+  );
+
+  const normal_mode_reasoning_summary = normalize_summary_for_model(
+    normal_mode_model,
+    normalize_reasoning_summary(
+      extract_profile_string(config_text, CODEX_NORMAL_PROFILE, 'model_reasoning_summary')
+      ?? top_level_reasoning_summary
+    )
+  );
+  const jam_agent_reasoning_summary = normalize_summary_for_model(
+    jam_agent_model,
+    normalize_reasoning_summary(
+      extract_profile_string(config_text, CODEX_JAM_PROFILE, 'model_reasoning_summary')
+      ?? top_level_reasoning_summary
+    )
+  );
+
   return {
     config_path,
     normal_mode_model,
     jam_agent_model,
+    normal_mode_reasoning_effort,
+    jam_agent_reasoning_effort,
+    normal_mode_reasoning_summary,
+    jam_agent_reasoning_summary,
   };
 }
 
-export function build_codex_overrides(config: ProjectCodexConfig): string[] {
+export function build_codex_overrides(
+  config: ProjectCodexConfig,
+  default_profile: string = CODEX_NORMAL_PROFILE
+): string[] {
+  const default_reasoning = get_profile_reasoning(config, default_profile);
+
   return [
     `profiles.${CODEX_NORMAL_PROFILE}.model=${quote_toml_string(config.normal_mode_model)}`,
     `profiles.${CODEX_JAM_PROFILE}.model=${quote_toml_string(config.jam_agent_model)}`,
+    `profiles.${CODEX_NORMAL_PROFILE}.model_reasoning_effort=${quote_toml_string(config.normal_mode_reasoning_effort)}`,
+    `profiles.${CODEX_JAM_PROFILE}.model_reasoning_effort=${quote_toml_string(config.jam_agent_reasoning_effort)}`,
+    `profiles.${CODEX_NORMAL_PROFILE}.model_reasoning_summary=${quote_toml_string(config.normal_mode_reasoning_summary)}`,
+    `profiles.${CODEX_JAM_PROFILE}.model_reasoning_summary=${quote_toml_string(config.jam_agent_reasoning_summary)}`,
+    `model_reasoning_effort=${quote_toml_string(default_reasoning.effort)}`,
+    `model_reasoning_summary=${quote_toml_string(default_reasoning.summary)}`,
     'mcp_servers.strudel.transport="stdio"',
     'mcp_servers.strudel.command="node"',
     'mcp_servers.strudel.args=["packages/mcp-server/build/index.js"]',

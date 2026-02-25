@@ -145,7 +145,7 @@ export class AgentProcessManager {
       working_dir: this.workingDir,
     });
     const codexConfig = load_project_codex_config(this.workingDir);
-    this.codexConfigOverrides = build_codex_overrides(codexConfig);
+    this.codexConfigOverrides = build_codex_overrides(codexConfig, CODEX_JAM_PROFILE);
     this.codexJamDefaultModel = codexConfig.jam_agent_model;
 
     this.activeAgents = activeAgents;
@@ -473,6 +473,7 @@ export class AgentProcessManager {
       let fullText = '';
       let settled = false;
       let parseState = { saw_assistant_delta: false };
+      let lastCodexError: string | null = null;
 
       const onLine = (line: string) => {
         if (!line.trim()) return;
@@ -505,6 +506,12 @@ export class AgentProcessManager {
           for (const event of mapped.events) {
             if (event.type === 'text') {
               fullText += event.text;
+            } else if (event.type === 'error') {
+              const formatted = this.formatCodexErrorForLog(event.error);
+              if (formatted !== lastCodexError) {
+                console.error(`[Agent:${key}] Codex turn failed: ${formatted}`);
+              }
+              lastCodexError = formatted;
             }
           }
           if (mapped.turn_completed) {
@@ -546,7 +553,14 @@ export class AgentProcessManager {
       proc.on('exit', (code, signal) => {
         console.log(`[Agent:${key}] Turn exited: code=${code}, signal=${signal}`);
         if (typeof code === 'number' && code !== 0) {
-          console.warn(`[Agent:${key}] Session became unavailable after non-zero exit (${code})`);
+          if (lastCodexError) {
+            console.warn(
+              `[Agent:${key}] Session became unavailable after non-zero exit (${code}). ` +
+              `Last Codex error: ${lastCodexError}`
+            );
+          } else {
+            console.warn(`[Agent:${key}] Session became unavailable after non-zero exit (${code})`);
+          }
           this.agents.delete(key);
           this.setAgentStatus(key, 'error');
         }
@@ -581,6 +595,33 @@ export class AgentProcessManager {
       thoughts: parsed.thoughts,
       reaction: parsed.reaction,
     };
+  }
+
+  private formatCodexErrorForLog(raw: string): string {
+    const trimmed = raw.trim();
+    if (!trimmed) return 'unknown error';
+
+    try {
+      const parsed = JSON.parse(trimmed) as {
+        message?: unknown;
+        error?: { message?: unknown; param?: unknown; code?: unknown };
+      };
+      const baseMessage =
+        typeof parsed.error?.message === 'string'
+          ? parsed.error.message
+          : typeof parsed.message === 'string'
+            ? parsed.message
+            : trimmed;
+      const paramSuffix = typeof parsed.error?.param === 'string'
+        ? ` (param=${parsed.error.param})`
+        : '';
+      const codeSuffix = typeof parsed.error?.code === 'string'
+        ? ` [${parsed.error.code}]`
+        : '';
+      return `${baseMessage}${paramSuffix}${codeSuffix}`;
+    } catch {
+      return trimmed.replace(/\s+/g, ' ');
+    }
   }
 
   /**
@@ -726,12 +767,11 @@ export class AgentProcessManager {
 
       this.roundNumber++;
       const ctx = this.musicalContext;
+      const activeTargets = this.activeAgents.filter((key) => this.agents.has(key));
 
       console.log(`[AgentManager] Auto-tick round ${this.roundNumber}`);
 
-      const responsePromises = this.activeAgents.map((key) => {
-        if (!this.agents.has(key)) return Promise.resolve(null);
-
+      const responsePromises = activeTargets.map((key) => {
         const bandStateLines = this.activeAgents
           .filter((k) => k !== key)
           .map((k) => this.formatAgentBandState(k));
@@ -762,8 +802,8 @@ export class AgentProcessManager {
       // If stopped during await, don't apply stale responses
       if (this.stopped) return;
 
-      for (let i = 0; i < this.activeAgents.length; i++) {
-        const key = this.activeAgents[i];
+      for (let i = 0; i < activeTargets.length; i++) {
+        const key = activeTargets[i];
         const response = responses[i];
         this.applyAgentResponse(key, response);
       }

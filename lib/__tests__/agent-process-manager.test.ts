@@ -62,10 +62,20 @@ function setupRuntimeCheckMocks() {
     config_path: '/fake/dir/config/codex/config.toml',
     normal_mode_model: 'gpt-5-codex',
     jam_agent_model: 'gpt-5-codex-mini',
+    normal_mode_reasoning_effort: 'low',
+    jam_agent_reasoning_effort: 'low',
+    normal_mode_reasoning_summary: 'detailed',
+    jam_agent_reasoning_summary: 'detailed',
   });
   runtime_check_mocks.build_codex_overrides.mockReturnValue([
     'profiles.normal_mode.model="gpt-5-codex"',
     'profiles.jam_agent.model="gpt-5-codex-mini"',
+    'profiles.normal_mode.model_reasoning_effort="low"',
+    'profiles.jam_agent.model_reasoning_effort="low"',
+    'profiles.normal_mode.model_reasoning_summary="detailed"',
+    'profiles.jam_agent.model_reasoning_summary="detailed"',
+    'model_reasoning_effort="low"',
+    'model_reasoning_summary="detailed"',
     'mcp_servers.strudel.transport="stdio"',
     'mcp_servers.strudel.command="node"',
     'mcp_servers.strudel.args=["packages/mcp-server/build/index.js"]',
@@ -819,6 +829,47 @@ describe('AgentProcessManager directive targeting', () => {
     expect(errorMsgs).toHaveLength(1);
     expect((errorMsgs[0][0] as { payload: { message: string } }).payload.message)
       .toBe("GROOVE's process is unavailable");
+
+    await manager.stop();
+  });
+
+  it('auto-tick does not clear error status for crashed agents', async () => {
+    const { manager, processes } = createTestManager();
+
+    const startPromise = manager.start(['drums', 'bass']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const drumsProc = getNthProcess(processes, 0);
+    const bassProc = getNthProcess(processes, 1);
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd sd")',
+      thoughts: 'Opening drums',
+      reaction: 'Go!',
+    });
+    sendAgentResponse(bassProc, {
+      pattern: 'note("c2 g2")',
+      thoughts: 'Opening bass',
+      reaction: 'Locked!',
+    });
+    await startPromise;
+
+    // Crash bass and verify immediate error status.
+    bassProc.emit('exit', 1, 'SIGTERM');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(manager.getJamStateSnapshot().agents.bass?.status).toBe('error');
+
+    // Advance to auto-tick and respond only for healthy drums.
+    vi.advanceTimersByTime(30000);
+    await vi.advanceTimersByTimeAsync(0);
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd sd bd sd")',
+      thoughts: 'Evolving drums',
+      reaction: 'Still driving',
+    });
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Crashed bass remains error after auto-tick.
+    expect(manager.getJamStateSnapshot().agents.bass?.status).toBe('error');
 
     await manager.stop();
   });

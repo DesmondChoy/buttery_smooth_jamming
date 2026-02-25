@@ -532,7 +532,7 @@ export class CodexProcess extends EventEmitter implements RuntimeProcess {
     const ws_url = this.options.wsUrl ?? DEFAULT_WS_URL;
     const model = this.options.model;
     const config = load_project_codex_config(this.working_dir);
-    const config_overrides = build_codex_overrides(config);
+    const config_overrides = build_codex_overrides(config, CODEX_NORMAL_PROFILE);
     const args = [
       'exec',
       '--json',

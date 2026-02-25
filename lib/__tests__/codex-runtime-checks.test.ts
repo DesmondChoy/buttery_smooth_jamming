@@ -202,6 +202,26 @@ describe('assert_codex_runtime_ready', () => {
         overrides.some((entry) => entry.startsWith('profiles.normal_mode.model='))
       )
     ).toBe(true);
+    expect(
+      override_calls.some((overrides) =>
+        overrides.includes('profiles.jam_agent.model_reasoning_effort="low"')
+      )
+    ).toBe(true);
+    expect(
+      override_calls.some((overrides) =>
+        overrides.includes('profiles.jam_agent.model_reasoning_summary="detailed"')
+      )
+    ).toBe(true);
+    expect(
+      override_calls.some((overrides) =>
+        overrides.includes('model_reasoning_effort="low"')
+      )
+    ).toBe(true);
+    expect(
+      override_calls.some((overrides) =>
+        overrides.includes('model_reasoning_summary="detailed"')
+      )
+    ).toBe(true);
 
     fs.rmSync(working_dir, { recursive: true, force: true });
   });
