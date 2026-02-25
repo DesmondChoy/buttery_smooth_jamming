@@ -65,7 +65,7 @@ claude --print --verbose --model sonnet \
   --strict-mcp-config            # Don't load project MCP servers
 ```
 
-- The `--model` value comes from each agent's YAML frontmatter in `.claude/agents/*.md` (currently `model: sonnet`)
+- The `--model` value comes from each agent's YAML frontmatter in `.claude/agents/*.md` (via the `model` field)
 - `--tools ''` eliminates ~20k tokens of tool definitions from each agent's context
 - `--strict-mcp-config` prevents agents from connecting to the Strudel MCP server (they don't need it)
 - Without both flags, agents may hallucinate MCP tool results

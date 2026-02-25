@@ -36,7 +36,7 @@ vi.mock('fs', async () => {
     readFileSync: vi.fn((filePath: string) => {
       if (filePath.includes('strudel-reference.md')) return '# Strudel Ref';
       // Return a fake agent .md with YAML frontmatter
-      return '---\nmodel: sonnet\n---\nYou are a test agent.';
+      return '---\nmodel: legacy-test-model\n---\nYou are a test agent.';
     }),
   };
 });
