@@ -21,6 +21,7 @@ export default function Home() {
   const [audioReady, setAudioReady] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const pendingExecuteFrameRef = useRef<number | null>(null);
 
   const { ref, setCode, evaluate, stop, onEditorReady } = useStrudel();
 
@@ -105,8 +106,18 @@ export default function Home() {
 
   const handleExecute = useCallback((code: string) => {
     setCode(code);
-    evaluate(true);
-    setIsPlaying(true);
+    setError(null);
+
+    if (pendingExecuteFrameRef.current !== null) {
+      cancelAnimationFrame(pendingExecuteFrameRef.current);
+      pendingExecuteFrameRef.current = null;
+    }
+
+    pendingExecuteFrameRef.current = requestAnimationFrame(() => {
+      evaluate(true);
+      setIsPlaying(true);
+      pendingExecuteFrameRef.current = null;
+    });
   }, [setCode, evaluate]);
 
   const handleStop = useCallback(() => {
@@ -152,7 +163,7 @@ export default function Home() {
   }, [isJamming, addChatMessage]);
 
   // Keep the WebSocket connection for MCP server to send execute/stop commands
-  const { error: wsError } = useWebSocket({
+  const { isConnected: isExecutionWsConnected, error: wsError } = useWebSocket({
     onExecute: handleExecute,
     onStop: handleStop,
     onMessage: handleWsMessage,
@@ -161,6 +172,15 @@ export default function Home() {
     onMusicalContextUpdate: handleMusicalContextUpdate,
     onJamStateUpdate: handleJamStateUpdate,
   });
+
+  useEffect(() => {
+    return () => {
+      if (pendingExecuteFrameRef.current !== null) {
+        cancelAnimationFrame(pendingExecuteFrameRef.current);
+        pendingExecuteFrameRef.current = null;
+      }
+    };
+  }, []);
 
   const handleAudioReady = useCallback(() => {
     setAudioReady(true);
@@ -270,9 +290,13 @@ export default function Home() {
               </p>
 
               {/* Error banner */}
-              {(wsError || error) && (
+              {(wsError || error || !isExecutionWsConnected) && (
                 <div className="w-full max-w-4xl mb-4 bg-red-900/50 border border-red-500 rounded-lg p-3">
-                  <p className="text-red-200 text-sm font-mono">{wsError || error}</p>
+                  <p className="text-red-200 text-sm font-mono">
+                    {wsError
+                      || error
+                      || 'Execution WebSocket disconnected. Playback updates may not reach Strudel until it reconnects.'}
+                  </p>
                 </div>
               )}
 

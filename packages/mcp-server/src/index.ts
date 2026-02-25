@@ -137,20 +137,102 @@ function send(
   }
 }
 
+function validatePatternSyntax(code: string): string | null {
+  try {
+    // Parse-only validation to catch malformed snippets before dispatching.
+    new Function(code);
+    return null;
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
+}
+
+function normalizeSynthName(name: string): string {
+  const normalized = name.trim().toLowerCase();
+  if (normalized === "saw") return "sawtooth";
+  if (normalized === "tri") return "triangle";
+  return normalized;
+}
+
+function normalizePatternCode(code: string): { code: string; rewrites: string[] } {
+  let normalized = code;
+  const rewrites: string[] = [];
+
+  // Common hallucination: .wave("saw") — Strudel uses .s("sawtooth")
+  normalized = normalized.replace(
+    /\.wave\(\s*(['"])([^'"]+)\1\s*\)/g,
+    (_match, _quote, waveName: string) => {
+      rewrites.push("wave() -> s()");
+      return `.s("${normalizeSynthName(waveName)}")`;
+    }
+  );
+
+  // Common hallucination: .band() — Strudel uses .bpf()
+  if (normalized.includes(".band(")) {
+    rewrites.push("band() -> bpf()");
+    normalized = normalized.replace(/\.band\(/g, ".bpf(");
+  }
+
+  // Common hallucination: .pan(sin) / .pan(sin(rate=...))
+  // Strudel exposes `sine` as the modulation source.
+  normalized = normalized.replace(
+    /\.pan\(\s*sin\s*\(\s*rate\s*=\s*([0-9.]+)\s*\)\s*\)/g,
+    (_match, rawRate: string) => {
+      const rate = Number.parseFloat(rawRate);
+      const slow = Number.isFinite(rate) && rate > 0 ? (1 / rate) : 1;
+      const slowRounded = Number(slow.toFixed(3));
+      rewrites.push("pan(sin(rate=...)) -> pan(sine.slow(...).range(0,1))");
+      return `.pan(sine.slow(${slowRounded}).range(0,1))`;
+    }
+  );
+
+  normalized = normalized.replace(
+    /\.pan\(\s*sin\s*\)/g,
+    () => {
+      rewrites.push("pan(sin) -> pan(sine.range(0,1))");
+      return `.pan(sine.range(0,1))`;
+    }
+  );
+
+  return { code: normalized, rewrites };
+}
+
 // Tool: execute_pattern
 server.tool(
   "execute_pattern",
   "Send Strudel code to the web app for execution",
   { code: z.string().describe("Strudel/Tidal code to execute") },
   async ({ code }) => {
+    const normalized = normalizePatternCode(code);
+    const syntaxError = validatePatternSyntax(normalized.code);
+    if (syntaxError) {
+      return {
+        content: [
+          {
+            type: "text",
+            text:
+              "Pattern not sent: JavaScript syntax check failed. " +
+              "The current audio was left unchanged.\n" +
+              `Details: ${syntaxError}`,
+          },
+        ],
+      };
+    }
+
     await connect();
-    const result = send("execute", { code });
+    const result = send("execute", { code: normalized.code });
+    const rewriteNote = normalized.rewrites.length > 0
+      ? `\nApplied compatibility rewrites: ${normalized.rewrites.join(", ")}.`
+      : "";
     return {
       content: [
         {
           type: "text",
           text: result.success
-            ? `Pattern sent for execution: ${code.substring(0, 100)}${code.length > 100 ? "..." : ""}`
+            ? (
+              `Pattern sent for execution: ${normalized.code.substring(0, 100)}${normalized.code.length > 100 ? "..." : ""}` +
+              rewriteNote
+            )
             : result.error!,
         },
       ],
