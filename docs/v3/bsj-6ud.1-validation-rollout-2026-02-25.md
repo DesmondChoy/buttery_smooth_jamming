@@ -77,13 +77,38 @@ Coverage added in `lib/__tests__/runtime-factory.test.ts` for:
 2. pre-gate fallback default behavior,
 3. explicit provider overrides.
 
-## 4) Remaining Work to Close bsj-6ud.1
+## 4) Benchmark Results (Local Execution)
 
-Run benchmark harness on an unrestricted local environment and attach artifacts:
+Executed on **2026-02-26 +08:00** on unrestricted local machine (macOS Darwin 25.3.0, Codex CLI v0.104.0):
 
 ```sh
 npm run dev
 npm run benchmark:workstream-g -- --jam-start-runs 8 --targeted-runs 12 --broadcast-runs 12
 ```
 
-Then update this report with measured p95 values and gate pass/fail status.
+Duration: ~3 minutes (22:10:22Z – 22:13:16Z UTC).
+
+### Measured Metrics
+
+| Scenario | Runs | Success Rate | p50 (ms) | p95 (ms) | Mean (ms) |
+|---|---:|---:|---:|---:|---:|
+| Jam start (4 agents) | 8 | 100.00% | 5337 | 8757 | 5756.4 |
+| Targeted directive (@BEAT) | 12 | 100.00% | 4279 | 6201 | 4437.8 |
+| Broadcast directive (all agents) | 12 | 100.00% | 4770 | 8538 | 5071.6 |
+
+Combined directive success rate: **100.00%**
+
+### Gate Evaluation
+
+| Gate | Threshold | Measured | Result |
+|---|---|---|---|
+| Jam start p95 | ≤ 20,000 ms | 8,757 ms | **PASS** |
+| Targeted directive p95 | ≤ 8,000 ms | 6,201 ms | **PASS** |
+| Directive success rate | ≥ 98% | 100.00% | **PASS** |
+| **Overall** | | | **PASS** |
+
+Artifacts: `tmp/benchmarks/bsj-6ud.1-20260225T221022/` (`results.json`, `summary.md`).
+
+### Conclusion
+
+All Workstream G acceptance gates pass. The bsj-6ud.1 validation is complete.
