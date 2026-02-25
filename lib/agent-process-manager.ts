@@ -13,6 +13,7 @@ import type {
 import { AGENT_META } from './types';
 import { formatBandStateLine } from './pattern-parser';
 import { parseMusicalContextChanges } from './musical-context-parser';
+import { randomMusicalContext } from './musical-context-presets';
 import { map_codex_event_to_runtime_events } from './codex-process';
 import {
   assert_codex_runtime_ready,
@@ -59,15 +60,6 @@ interface AgentProcessManagerOptions {
   broadcast: BroadcastFn;
 }
 
-const DEFAULT_MUSICAL_CONTEXT: MusicalContext = {
-  key: 'C minor',
-  scale: ['C', 'D', 'Eb', 'F', 'G', 'Ab', 'Bb'],
-  chordProgression: ['Cm', 'Ab', 'Eb', 'Bb'],
-  bpm: 120,
-  timeSignature: '4/4',
-  energy: 5,
-};
-
 const AGENT_TIMEOUT_MS = 15000;
 
 /**
@@ -79,7 +71,7 @@ export class AgentProcessManager {
   private agents = new Map<string, AgentProcess>();
   private agentPatterns: Record<string, string> = {};
   private agentStates: Record<string, AgentState> = {};
-  private musicalContext: MusicalContext = { ...DEFAULT_MUSICAL_CONTEXT };
+  private musicalContext: MusicalContext = randomMusicalContext();
   private activeAgents: string[] = [];
   private broadcast: BroadcastFn;
   private workingDir: string;
@@ -153,6 +145,7 @@ export class AgentProcessManager {
     this.roundNumber = 0;
     this.tickScheduled = false;
     this.sessionId = 'direct-' + Date.now();
+    this.musicalContext = randomMusicalContext();
 
     // Initialize state for each agent
     for (const key of activeAgents) {

@@ -21,6 +21,18 @@ vi.mock('../codex-runtime-checks', () => ({
   build_codex_overrides: runtime_check_mocks.build_codex_overrides,
 }));
 
+// Pin randomMusicalContext to the old C minor defaults so existing assertions stay stable
+vi.mock('../musical-context-presets', () => ({
+  randomMusicalContext: () => ({
+    key: 'C minor',
+    scale: ['C', 'D', 'Eb', 'F', 'G', 'Ab', 'Bb'],
+    chordProgression: ['Cm', 'Ab', 'Eb', 'Bb'],
+    bpm: 120,
+    timeSignature: '4/4',
+    energy: 5,
+  }),
+}));
+
 // Mock fs.readFileSync to return fake agent files + strudel reference
 vi.mock('fs', async () => {
   const actual = await vi.importActual<typeof import('fs')>('fs');
