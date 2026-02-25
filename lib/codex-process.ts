@@ -1,6 +1,8 @@
 import { spawn, ChildProcess } from 'child_process';
 import { EventEmitter } from 'events';
 import * as readline from 'readline';
+import * as fs from 'fs';
+import * as path from 'path';
 import type {
   RuntimeEvent,
   RuntimeProcess,
@@ -13,37 +15,12 @@ import {
   load_project_codex_config,
 } from './codex-runtime-checks';
 
-const SYSTEM_PROMPT = `You are a Strudel live coding assistant. Help users create music patterns using Strudel.
-
-## Strudel Quick Reference
-note("c3 e3 g3").s("piano")  — melodic patterns
-s("bd sd hh")                — drum sounds
-stack(a, b, c)               — layer patterns simultaneously
-cat(a, b)                    — sequence patterns across cycles
-silence                      — empty pattern (no sound)
-Effects: .lpf() .hpf() .gain() .delay() .room() .distort() .crush() .pan() .speed()
-Synth timbres: use .s("sine" | "square" | "sawtooth" | "triangle") after note(...)
-Full API: read the strudel://reference MCP resource when needed.
-
-## MCP Tools
-- execute_pattern(code) — send Strudel code to the web app for playback
-- stop_pattern() — stop playback
-- send_message(text) — display a chat message in the web app
-
-## Behavior
-- When the user asks for a pattern, generate valid Strudel code and call execute_pattern().
-- Never use .wave(); Strudel uses .s("...") for waveform/synth selection.
-- Prefer only API methods listed in the reference to avoid runtime no-op errors.
-- Tempo guidance:
-  - "a bit/slightly faster" or "turn up BPM a little": increase by ~5-10%.
-  - "a bit/slightly slower" or "turn down BPM a little": decrease by ~5-10%.
-  - "faster/slower" without qualifier: adjust by ~10-20%.
-  - Only use drastic jumps (>25%) when explicitly asked (e.g. "double time", "half time", or explicit BPM value).
-- Explain briefly what the pattern does.
-- Keep responses concise.`;
-
 const DEFAULT_WS_URL = 'ws://localhost:3000/api/ws';
 const HISTORY_LIMIT = 12;
+const NORMAL_MODE_SYSTEM_PROMPT_FILE = 'normal-mode-system-prompt.md';
+const NORMAL_MODE_PROMPT_DIR_CANDIDATES = [
+  ['.codex', 'agents'],
+] as const;
 
 export type CodexProcessOptions = RuntimeProcessOptions & {
   model?: string;
@@ -60,6 +37,40 @@ interface CodexJsonEvent {
   error?: unknown;
   message?: unknown;
   [key: string]: unknown;
+}
+
+function resolve_normal_mode_prompt_path(root_dir: string): string | null {
+  for (const segments of NORMAL_MODE_PROMPT_DIR_CANDIDATES) {
+    const candidate = path.join(root_dir, ...segments, NORMAL_MODE_SYSTEM_PROMPT_FILE);
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return null;
+}
+
+function load_system_prompt(working_dir: string): string {
+  const search_roots = [working_dir, process.cwd()];
+  const visited = new Set<string>();
+  const attempted_paths: string[] = [];
+
+  for (const root of search_roots) {
+    if (!root || visited.has(root)) continue;
+    visited.add(root);
+    for (const segments of NORMAL_MODE_PROMPT_DIR_CANDIDATES) {
+      attempted_paths.push(path.join(root, ...segments, NORMAL_MODE_SYSTEM_PROMPT_FILE));
+    }
+    const prompt_path = resolve_normal_mode_prompt_path(root);
+    if (!prompt_path) continue;
+
+    const prompt = fs.readFileSync(prompt_path, 'utf-8').trim();
+    if (!prompt) {
+      throw new Error(`Normal mode system prompt is empty: ${prompt_path}`);
+    }
+    return prompt;
+  }
+
+  throw new Error(
+    `Normal mode system prompt not found. Tried: ${attempted_paths.join(', ')}`
+  );
 }
 
 export interface CodexEventParseState {
@@ -454,6 +465,7 @@ function terminate_child(child: ChildProcess): Promise<void> {
 export class CodexProcess extends EventEmitter implements RuntimeProcess {
   private readonly options: CodexProcessOptions;
   private readonly working_dir: string;
+  private readonly system_prompt: string;
   private running = false;
   private stopping = false;
   private exit_emitted = false;
@@ -470,6 +482,7 @@ export class CodexProcess extends EventEmitter implements RuntimeProcess {
     super();
     this.options = options;
     this.working_dir = options.workingDir || process.cwd();
+    this.system_prompt = load_system_prompt(this.working_dir);
   }
 
   async start(): Promise<void> {
@@ -576,7 +589,7 @@ export class CodexProcess extends EventEmitter implements RuntimeProcess {
       ? `\n\nConversation history:\n${history_lines.join('\n\n')}`
       : '';
 
-    return `${SYSTEM_PROMPT}${history_section}
+    return `${this.system_prompt}${history_section}
 
 Current user request:
 ${user_text}
