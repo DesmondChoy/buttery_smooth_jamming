@@ -12,14 +12,14 @@ Codex instruction file for this repository. Keep this short, practical, and up t
 
 Buttery Smooth Jamming is an autonomous AI jam session with four agents (drums, bass, melody, FX) using Strudel, coordinated by a human boss.
 
-Current focus is v2 jam mode with low-latency coordination via per-agent persistent Codex-backed sessions.
+Current focus is v3 Codex runtime architecture while preserving jam-mode invariants (deterministic routing, per-agent persistent sessions, server-side composition).
 
 ## Read First
 
 1. `docs/README.md` (documentation map)
-2. `docs/v2-jam-session/README.md` (active implementation)
-3. `docs/v2-jam-session/architecture.md` (source of truth)
-4. `docs/v2-jam-session/technical-notes.md` (debugging first stop)
+2. `docs/v3/codex-cli-migration-implementation-plan.md` (v3 architecture + workstreams)
+3. `docs/v3/codex-runtime-setup.md` (runtime setup + profile source of truth)
+4. `docs/v3/model-policy-boundary.md` (model-owned vs code-owned policy boundary)
 
 ## Working Rules
 

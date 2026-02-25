@@ -2,9 +2,10 @@
 
 An **autonomous AI jam session** where 4 band member agents (drums, bass, melody, FX) play together in real-time via Strudel, react to each other, and respond to a human "boss" directing the session.
 
-## Status: Active Development
+## Status: Baseline Reference
 
-The jam session is fully functional with per-agent Codex-backed sessions for low-latency directive response.
+This v2 documentation set is preserved as historical baseline context while v3
+is the active architecture path.
 
 ## Documentation Map
 
@@ -12,6 +13,7 @@ The jam session is fully functional with per-agent Codex-backed sessions for low
 |----------|---------|
 | [Architecture](./architecture.md) | System design, diagrams, file structure |
 | [Technical Notes](./technical-notes.md) | Critical gotchas for debugging |
+| [Model Policy Boundary (V3 canonical)](../v3/model-policy-boundary.md) | Current policy source of truth for model-owned autonomy vs code-owned guarantees |
 | [Implementation Plan](./implementation-plan.md) | Historical design doc: phases 1-6 + v1-to-v2 evolution |
 
 ## Quick Start
