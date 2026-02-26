@@ -57,6 +57,7 @@ vi.mock('fs', async () => {
 import { spawn } from 'child_process';
 import * as fs from 'fs';
 import { AgentProcessManager, BroadcastFn } from '../agent-process-manager';
+import { JAM_GOVERNANCE } from '../jam-governance-constants';
 import type { MusicalContext } from '../types';
 
 const mockedSpawn = vi.mocked(spawn);
@@ -290,7 +291,7 @@ describe('AgentProcessManager turn serialization', () => {
     await startPromise;
 
     // Trigger an auto-tick by advancing the timer
-    vi.advanceTimersByTime(30000);
+    vi.advanceTimersByTime(JAM_GOVERNANCE.AUTO_TICK_INTERVAL_MS);
     // Flush microtasks so the tick turn starts and attaches its readline listener
     await vi.advanceTimersByTimeAsync(0);
 
@@ -530,12 +531,72 @@ describe('AgentProcessManager turn serialization', () => {
     await startPromise;
 
     expect(rawManager.agentDecisions.drums).toEqual({
-      tempo_delta_pct: 50,
-      energy_delta: -3,
+      tempo_delta_pct: JAM_GOVERNANCE.TEMPO_DELTA_PCT_MAX,
+      energy_delta: JAM_GOVERNANCE.ENERGY_DELTA_MIN,
       arrangement_intent: 'strip_back',
       confidence: 'high',
       suggested_key: 'Eb major',
     });
+
+    await manager.stop();
+  });
+
+  it('clamps tempo_delta_pct negative overflow to governance minimum', async () => {
+    const { manager, processes } = createTestManager();
+    const rawManager = manager as unknown as {
+      agentDecisions: Record<string, unknown>;
+    };
+
+    const startPromise = manager.start(['drums']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const drumsProc = getNthProcess(processes, 0);
+    sendRawAgentText(
+      drumsProc,
+      JSON.stringify({
+        pattern: 's("bd sd")',
+        thoughts: 'Way too slow',
+        reaction: 'Pulling back hard',
+        decision: {
+          tempo_delta_pct: -72,
+          confidence: 'high',
+        },
+      })
+    );
+    await startPromise;
+
+    const decision = rawManager.agentDecisions.drums as { tempo_delta_pct: number };
+    expect(decision.tempo_delta_pct).toBe(JAM_GOVERNANCE.TEMPO_DELTA_PCT_MIN);
+
+    await manager.stop();
+  });
+
+  it('clamps energy_delta positive overflow to governance maximum', async () => {
+    const { manager, processes } = createTestManager();
+    const rawManager = manager as unknown as {
+      agentDecisions: Record<string, unknown>;
+    };
+
+    const startPromise = manager.start(['drums']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const drumsProc = getNthProcess(processes, 0);
+    sendRawAgentText(
+      drumsProc,
+      JSON.stringify({
+        pattern: 's("bd sd")',
+        thoughts: 'Cranking it',
+        reaction: 'Full blast',
+        decision: {
+          energy_delta: 5,
+          confidence: 'high',
+        },
+      })
+    );
+    await startPromise;
+
+    const decision = rawManager.agentDecisions.drums as { energy_delta: number };
+    expect(decision.energy_delta).toBe(JAM_GOVERNANCE.ENERGY_DELTA_MAX);
 
     await manager.stop();
   });
@@ -707,7 +768,7 @@ describe('AgentProcessManager turn serialization', () => {
     await startPromise;
 
     // Trigger tick, flush microtasks so listener attaches
-    vi.advanceTimersByTime(30000);
+    vi.advanceTimersByTime(JAM_GOVERNANCE.AUTO_TICK_INTERVAL_MS);
     await vi.advanceTimersByTimeAsync(0);
 
     // Queue directive behind the in-flight tick
@@ -761,7 +822,7 @@ describe('AgentProcessManager turn serialization', () => {
     await startPromise;
 
     // Trigger a tick
-    vi.advanceTimersByTime(30000);
+    vi.advanceTimersByTime(JAM_GOVERNANCE.AUTO_TICK_INTERVAL_MS);
     await vi.advanceTimersByTimeAsync(0);
 
     // Queue a directive behind the tick
@@ -868,7 +929,7 @@ describe('AgentProcessManager turn serialization', () => {
     });
 
     // First auto-tick starts and blocks.
-    vi.advanceTimersByTime(30000);
+    vi.advanceTimersByTime(JAM_GOVERNANCE.AUTO_TICK_INTERVAL_MS);
     await vi.advanceTimersByTimeAsync(0);
 
     // Multiple interval firings while blocked should not enqueue more turns.
@@ -1540,7 +1601,7 @@ describe('AgentProcessManager directive targeting', () => {
     expect(manager.getJamStateSnapshot().agents.bass?.status).toBe('error');
 
     // Advance to auto-tick and respond only for healthy drums.
-    vi.advanceTimersByTime(30000);
+    vi.advanceTimersByTime(JAM_GOVERNANCE.AUTO_TICK_INTERVAL_MS);
     await vi.advanceTimersByTimeAsync(0);
     sendAgentResponse(drumsProc, {
       pattern: 's("bd sd bd sd")',
@@ -1638,7 +1699,7 @@ describe('AgentProcessManager directive targeting', () => {
     broadcast.mockClear();
 
     // Advance time to trigger auto-tick — proves timer was re-armed
-    vi.advanceTimersByTime(30000);
+    vi.advanceTimersByTime(JAM_GOVERNANCE.AUTO_TICK_INTERVAL_MS);
     await vi.advanceTimersByTimeAsync(0);
 
     // Respond to the auto-tick
@@ -1760,7 +1821,7 @@ describe('AgentProcessManager auto-tick context drift', () => {
     // Initial context: BPM 120, energy 5
 
     // Trigger auto-tick
-    vi.advanceTimersByTime(30000);
+    vi.advanceTimersByTime(JAM_GOVERNANCE.AUTO_TICK_INTERVAL_MS);
     await vi.advanceTimersByTimeAsync(0);
 
     // Both agents suggest tempo increase (+10%) and energy increase (+2) with high confidence
@@ -1803,7 +1864,7 @@ describe('AgentProcessManager auto-tick context drift', () => {
     });
     await startPromise;
 
-    vi.advanceTimersByTime(30000);
+    vi.advanceTimersByTime(JAM_GOVERNANCE.AUTO_TICK_INTERVAL_MS);
     await vi.advanceTimersByTimeAsync(0);
 
     // Low confidence → multiplier 0 → effectively zero
@@ -1844,7 +1905,7 @@ describe('AgentProcessManager auto-tick context drift', () => {
     }
     await startPromise;
 
-    vi.advanceTimersByTime(30000);
+    vi.advanceTimersByTime(JAM_GOVERNANCE.AUTO_TICK_INTERVAL_MS);
     await vi.advanceTimersByTimeAsync(0);
 
     // Both agents suggest max increase
@@ -1869,6 +1930,89 @@ describe('AgentProcessManager auto-tick context drift', () => {
     expect(jamState!.musicalContext.bpm).toBe(150);
     // energy 3, dampened 0.5x = 1.5, rounded = 2 → 5+2=7, clamped to 10 (within bounds)
     expect(jamState!.musicalContext.energy).toBe(7);
+
+    await manager.stop();
+  });
+
+  it('auto-tick clamps BPM to floor when agents suggest extreme negative tempo', async () => {
+    const { manager, broadcast, processes } = createTestManager();
+
+    const startPromise = manager.start(['drums']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    sendAgentResponse(getProcessByKey(processes, 'drums'), {
+      pattern: 's("bd")',
+      thoughts: 'Opening',
+      reaction: 'Go',
+    });
+    await startPromise;
+
+    // Override BPM to be near the floor (after start, which resets context)
+    const rawManager = manager as unknown as { musicalContext: MusicalContext };
+    rawManager.musicalContext.bpm = 65;
+
+    vi.advanceTimersByTime(JAM_GOVERNANCE.AUTO_TICK_INTERVAL_MS);
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Agent suggests -50% tempo (max allowed by TEMPO_DELTA_PCT_MIN)
+    // -50% of 65 = -32.5, dampened 0.5x = -16.25, rounded = -16 → 65-16=49,
+    // clamped to BPM_MIN (60)
+    sendAgentResponse(getProcessByKey(processes, 'drums'), {
+      pattern: 'no_change',
+      thoughts: 'Way down',
+      reaction: 'Slowing hard',
+      decision: {
+        tempo_delta_pct: -50,
+        confidence: 'high',
+      },
+    });
+
+    await vi.advanceTimersByTimeAsync(0);
+
+    const jamState = getLatestJamState(broadcast);
+    expect(jamState).toBeDefined();
+    expect(jamState!.musicalContext.bpm).toBe(JAM_GOVERNANCE.BPM_MIN);
+
+    await manager.stop();
+  });
+
+  it('auto-tick clamps energy to ceiling when agents suggest extreme positive energy', async () => {
+    const { manager, broadcast, processes } = createTestManager();
+
+    const startPromise = manager.start(['drums']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    sendAgentResponse(getProcessByKey(processes, 'drums'), {
+      pattern: 's("bd")',
+      thoughts: 'Opening',
+      reaction: 'Go',
+    });
+    await startPromise;
+
+    // Override energy to be near the ceiling (after start, which resets context)
+    const rawManager = manager as unknown as { musicalContext: MusicalContext };
+    rawManager.musicalContext.energy = 9;
+
+    vi.advanceTimersByTime(JAM_GOVERNANCE.AUTO_TICK_INTERVAL_MS);
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Agent suggests +3 energy, dampened 0.5x = 1.5, rounded = 2 → 9+2=11,
+    // clamped to ENERGY_MAX (10)
+    sendAgentResponse(getProcessByKey(processes, 'drums'), {
+      pattern: 'no_change',
+      thoughts: 'Max it',
+      reaction: 'Full energy',
+      decision: {
+        energy_delta: 3,
+        confidence: 'high',
+      },
+    });
+
+    await vi.advanceTimersByTimeAsync(0);
+
+    const jamState = getLatestJamState(broadcast);
+    expect(jamState).toBeDefined();
+    expect(jamState!.musicalContext.energy).toBe(JAM_GOVERNANCE.ENERGY_MAX);
 
     await manager.stop();
   });
@@ -1903,7 +2047,7 @@ describe('AgentProcessManager context suggestions', () => {
 
     // Initial key: "C minor"
 
-    vi.advanceTimersByTime(30000);
+    vi.advanceTimersByTime(JAM_GOVERNANCE.AUTO_TICK_INTERVAL_MS);
     await vi.advanceTimersByTimeAsync(0);
 
     // Melody and bass both suggest Eb major
@@ -1950,7 +2094,7 @@ describe('AgentProcessManager context suggestions', () => {
     }
     await startPromise;
 
-    vi.advanceTimersByTime(30000);
+    vi.advanceTimersByTime(JAM_GOVERNANCE.AUTO_TICK_INTERVAL_MS);
     await vi.advanceTimersByTimeAsync(0);
 
     // Melody and bass both suggest Eb major
@@ -1998,7 +2142,7 @@ describe('AgentProcessManager context suggestions', () => {
     }
     await startPromise;
 
-    vi.advanceTimersByTime(30000);
+    vi.advanceTimersByTime(JAM_GOVERNANCE.AUTO_TICK_INTERVAL_MS);
     await vi.advanceTimersByTimeAsync(0);
 
     // Bass and melody both suggest A minor
@@ -2046,7 +2190,7 @@ describe('AgentProcessManager context suggestions', () => {
     }
     await startPromise;
 
-    vi.advanceTimersByTime(30000);
+    vi.advanceTimersByTime(JAM_GOVERNANCE.AUTO_TICK_INTERVAL_MS);
     await vi.advanceTimersByTimeAsync(0);
 
     // Bass suggests key change AND chord suggestion on the same turn
@@ -2098,7 +2242,7 @@ describe('AgentProcessManager context suggestions', () => {
     }
     await startPromise;
 
-    vi.advanceTimersByTime(30000);
+    vi.advanceTimersByTime(JAM_GOVERNANCE.AUTO_TICK_INTERVAL_MS);
     await vi.advanceTimersByTimeAsync(0);
 
     sendAgentResponse(getProcessByKey(processes, 'drums'), {
@@ -2144,7 +2288,7 @@ describe('AgentProcessManager context suggestions', () => {
     }
     await startPromise;
 
-    vi.advanceTimersByTime(30000);
+    vi.advanceTimersByTime(JAM_GOVERNANCE.AUTO_TICK_INTERVAL_MS);
     await vi.advanceTimersByTimeAsync(0);
 
     // Only bass suggests key change
@@ -2184,7 +2328,7 @@ describe('AgentProcessManager context suggestions', () => {
     }
     await startPromise;
 
-    vi.advanceTimersByTime(30000);
+    vi.advanceTimersByTime(JAM_GOVERNANCE.AUTO_TICK_INTERVAL_MS);
     await vi.advanceTimersByTimeAsync(0);
 
     sendAgentResponse(getProcessByKey(processes, 'drums'), {
@@ -2230,7 +2374,7 @@ describe('AgentProcessManager context suggestions', () => {
     }
     await startPromise;
 
-    vi.advanceTimersByTime(30000);
+    vi.advanceTimersByTime(JAM_GOVERNANCE.AUTO_TICK_INTERVAL_MS);
     await vi.advanceTimersByTimeAsync(0);
 
     sendAgentResponse(getProcessByKey(processes, 'drums'), {
@@ -2272,7 +2416,7 @@ describe('AgentProcessManager context suggestions', () => {
     }
     await startPromise;
 
-    vi.advanceTimersByTime(30000);
+    vi.advanceTimersByTime(JAM_GOVERNANCE.AUTO_TICK_INTERVAL_MS);
     await vi.advanceTimersByTimeAsync(0);
 
     sendAgentResponse(getProcessByKey(processes, 'drums'), {

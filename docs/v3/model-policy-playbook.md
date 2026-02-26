@@ -125,23 +125,23 @@ hardcoded behavior using three categories:
 
 ### Governance Constants
 
-These constants control jam runtime behavior. All live in
-`lib/agent-process-manager.ts` unless noted otherwise.
+All governance constants are defined in `lib/jam-governance-constants.ts`
+(the `JAM_GOVERNANCE` object) and imported by consuming modules.
 
-| Constant | Value | Function / Location | Controls | Increase Effect | Decrease Effect | Risk |
+| Constant | Value | Source → Consumers | Controls | Increase Effect | Decrease Effect | Risk |
 |----------|-------|---------------------|----------|-----------------|-----------------|------|
-| `AGENT_TIMEOUT_MS` | `15000` | `sendToAgentAndCollect()` | Max wait for a single agent turn response | More tolerance for slow models; longer perceived lag | Faster failure detection; may cut off valid slow responses | Too low → frequent timeouts; too high → UI feels stuck |
-| `DECISION_CONFIDENCE_MULTIPLIER` low | `0` | `getDecisionConfidenceMultiplier()` | Weight applied to low-confidence decisions | N/A (fixed at 0 — low-confidence deltas are zeroed) | N/A | Raising above 0 lets uncertain agents move context |
-| `DECISION_CONFIDENCE_MULTIPLIER` medium | `0.5` | `getDecisionConfidenceMultiplier()` | Weight applied to medium-confidence decisions | Medium-confidence agents drive bigger changes | Medium-confidence agents have less impact | Drift sensitivity changes unpredictably |
-| `DECISION_CONFIDENCE_MULTIPLIER` high | `1` | `getDecisionConfidenceMultiplier()` | Weight applied to high-confidence decisions | N/A (already 1x — full weight) | High-confidence agents would be partially muted | Breaks model trust contract |
-| `AUTO_TICK_DAMPENING` | `0.5` | `applyModelRelativeContextDeltaForAutoTick()` | Multiplier on averaged auto-tick tempo/energy drift | Faster autonomous evolution; potential runaway drift | More stable but potentially static jams | Runaway BPM/energy at high values; dead jams at very low |
-| Key consensus threshold | 2+ agents, `high` confidence | `applyContextSuggestions()` | Minimum agreement for key modulation | N/A (2 is already minimum meaningful consensus) | Single-agent key changes → unstable harmonic shifts | Lowering risks whiplash key changes |
+| `AGENT_TIMEOUT_MS` | `15000` | `jam-governance-constants.ts` → `sendToAgentAndCollect()` | Max wait for a single agent turn response | More tolerance for slow models; longer perceived lag | Faster failure detection; may cut off valid slow responses | Too low → frequent timeouts; too high → UI feels stuck |
+| `CONFIDENCE_MULTIPLIER` low | `0` | `jam-governance-constants.ts` → `getDecisionConfidenceMultiplier()` | Weight applied to low-confidence decisions | N/A (fixed at 0 — low-confidence deltas are zeroed) | N/A | Raising above 0 lets uncertain agents move context |
+| `CONFIDENCE_MULTIPLIER` medium | `0.5` | `jam-governance-constants.ts` → `getDecisionConfidenceMultiplier()` | Weight applied to medium-confidence decisions | Medium-confidence agents drive bigger changes | Medium-confidence agents have less impact | Drift sensitivity changes unpredictably |
+| `CONFIDENCE_MULTIPLIER` high | `1` | `jam-governance-constants.ts` → `getDecisionConfidenceMultiplier()` | Weight applied to high-confidence decisions | N/A (already 1x — full weight) | High-confidence agents would be partially muted | Breaks model trust contract |
+| `AUTO_TICK_DAMPENING` | `0.5` | `jam-governance-constants.ts` → `applyModelRelativeContextDeltaForAutoTick()` | Multiplier on averaged auto-tick tempo/energy drift | Faster autonomous evolution; potential runaway drift | More stable but potentially static jams | Runaway BPM/energy at high values; dead jams at very low |
+| `KEY_CONSENSUS_MIN_AGENTS` | `2` | `jam-governance-constants.ts` → `applyContextSuggestions()` | Minimum agreement for key modulation | N/A (2 is already minimum meaningful consensus) | Single-agent key changes → unstable harmonic shifts | Lowering risks whiplash key changes |
 | Chord consensus threshold | 1 agent, `high` confidence | `applyContextSuggestions()` | Minimum for chord progression change | More agents required → harder to change chords | N/A (1 is minimum) | Already permissive; raising prevents stale progressions |
-| `tempo_delta_pct` bounds | `[-50, 50]` | `normalizeDecisionBlock()` | Clamp range for relative tempo deltas | Allows larger per-turn tempo swings | Limits how fast tempo can change per turn | Wide range → BPM jumps; narrow range → sluggish response |
-| `energy_delta` bounds | `[-3, 3]` | `normalizeDecisionBlock()` | Clamp range for relative energy deltas | Allows larger per-turn energy swings | Limits how fast energy can change per turn | Wide range → jarring energy jumps |
-| BPM clamp | `[60, 300]` | `parseDeterministicMusicalContextChanges()`, `applyModelRelativeContextDeltaForDirectiveTurn()`, `applyModelRelativeContextDeltaForAutoTick()` | Hard bounds on final BPM value | N/A (expanding is possible but rarely useful) | Narrows the playable tempo range | Outside [60, 300] produces unmusical results |
-| Energy clamp | `[1, 10]` | Same locations as BPM clamp | Hard bounds on final energy value | N/A | N/A | Fixed scale — changing breaks UI and prompt assumptions |
-| Auto-tick interval | `30000` ms | `startAutoTick()` | Time between autonomous evolution rounds | Slower autonomous evolution; longer static stretches | Faster evolution; more API calls; potential cost/latency | Too fast → rate limits; too slow → stale jams |
+| `TEMPO_DELTA_PCT_MIN/MAX` | `[-50, 50]` | `jam-governance-constants.ts` → `normalizeDecisionBlock()` | Clamp range for relative tempo deltas | Allows larger per-turn tempo swings | Limits how fast tempo can change per turn | Wide range → BPM jumps; narrow range → sluggish response |
+| `ENERGY_DELTA_MIN/MAX` | `[-3, 3]` | `jam-governance-constants.ts` → `normalizeDecisionBlock()` | Clamp range for relative energy deltas | Allows larger per-turn energy swings | Limits how fast energy can change per turn | Wide range → jarring energy jumps |
+| `BPM_MIN/MAX` | `[60, 300]` | `jam-governance-constants.ts` → `parseDeterministicMusicalContextChanges()`, `applyModelRelativeContextDeltaForDirectiveTurn()`, `applyModelRelativeContextDeltaForAutoTick()` | Hard bounds on final BPM value | N/A (expanding is possible but rarely useful) | Narrows the playable tempo range | Outside [60, 300] produces unmusical results |
+| `ENERGY_MIN/MAX` | `[1, 10]` | `jam-governance-constants.ts` → same locations as BPM clamp | Hard bounds on final energy value | N/A | N/A | Fixed scale — changing breaks UI and prompt assumptions |
+| `AUTO_TICK_INTERVAL_MS` | `30000` ms | `jam-governance-constants.ts` → `startAutoTick()` | Time between autonomous evolution rounds | Slower autonomous evolution; longer static stretches | Faster evolution; more API calls; potential cost/latency | Too fast → rate limits; too slow → stale jams |
 
 ### Environment Variables
 
@@ -252,7 +252,7 @@ They represent the planned sequence for further boundary hardening:
 |------|-------|
 | `bsj-7k4.12` | ~~Fence legacy `parseMusicalContextChanges()` heuristics away from jam runtime paths~~ — **Done**: legacy monolithic parser removed entirely (`df4b86e`) |
 | `bsj-7k4.13` | Broaden deterministic relative cue detection to match jam-musical-policy phrase families |
-| `bsj-7k4.14` | Document and centralize jam runtime governance constants (confidence, dampening, consensus) |
+| `bsj-7k4.14` | ~~Document and centralize jam runtime governance constants (confidence, dampening, consensus)~~ — **Done**: `JAM_GOVERNANCE` object in `lib/jam-governance-constants.ts`, all inline magic numbers replaced, invariant + boundary tests added |
 | `bsj-7k4.15` | ~~Codify boundary for runtime chord-progression fallback templates after key changes~~ — **Done**: docs + tests codify C-hybrid fallback boundary |
 | `bsj-7k4.16` | Reduce drift in shared jam policy prompt by externalizing condensed policy text |
 | `bsj-7k4.17` | Move genre-energy generic fallback guidance out of runtime code |

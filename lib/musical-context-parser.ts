@@ -5,6 +5,7 @@
  * Follows the same pure-function pattern as pattern-parser.ts.
  */
 import type { MusicalContext } from './types';
+import { JAM_GOVERNANCE } from './jam-governance-constants';
 
 // Chromatic scale representations
 const SHARP_CHROMATIC = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
@@ -117,13 +118,13 @@ export function parseDeterministicMusicalContextChanges(
     text.match(/\b(\d+)\s*bpm\b/i);
 
   if (bpmExplicit) {
-    changes.bpm = clamp(parseInt(bpmExplicit[1], 10), 60, 300);
+    changes.bpm = clamp(parseInt(bpmExplicit[1], 10), JAM_GOVERNANCE.BPM_MIN, JAM_GOVERNANCE.BPM_MAX);
     hasChanges = true;
   } else if (/\bdouble\s+time\b/i.test(text)) {
-    changes.bpm = clamp(current.bpm * 2, 60, 300);
+    changes.bpm = clamp(current.bpm * 2, JAM_GOVERNANCE.BPM_MIN, JAM_GOVERNANCE.BPM_MAX);
     hasChanges = true;
   } else if (/\bhalf\s+time\b/i.test(text)) {
-    changes.bpm = clamp(Math.round(current.bpm / 2), 60, 300);
+    changes.bpm = clamp(Math.round(current.bpm / 2), JAM_GOVERNANCE.BPM_MIN, JAM_GOVERNANCE.BPM_MAX);
     hasChanges = true;
   }
 
@@ -132,13 +133,13 @@ export function parseDeterministicMusicalContextChanges(
   const energyExplicit = text.match(/\benergy\s+(?:to\s+)?(\d+)\b/i);
 
   if (energyExplicit) {
-    changes.energy = clamp(parseInt(energyExplicit[1], 10), 1, 10);
+    changes.energy = clamp(parseInt(energyExplicit[1], 10), JAM_GOVERNANCE.ENERGY_MIN, JAM_GOVERNANCE.ENERGY_MAX);
     hasChanges = true;
   } else if (/\b(?:full|max)\s+energy\b/i.test(text)) {
-    changes.energy = 10;
+    changes.energy = JAM_GOVERNANCE.ENERGY_MAX;
     hasChanges = true;
   } else if (/\bminimal\b/i.test(text)) {
-    changes.energy = 1;
+    changes.energy = JAM_GOVERNANCE.ENERGY_MIN;
     hasChanges = true;
   }
 

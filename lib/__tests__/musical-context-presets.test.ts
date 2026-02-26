@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { PRESETS, randomMusicalContext } from '../musical-context-presets';
 import { deriveScale } from '../musical-context-parser';
+import { JAM_GOVERNANCE } from '../jam-governance-constants';
 
 describe('musical-context-presets', () => {
   describe('PRESETS validity', () => {
@@ -18,18 +19,18 @@ describe('musical-context-presets', () => {
     );
 
     it.each(PRESETS.map((p, i) => [i, p.genre, p] as const))(
-      'preset %i (%s) has BPM in [60, 300]',
+      'preset %i (%s) has BPM in [BPM_MIN, BPM_MAX]',
       (_index, _genre, preset) => {
-        expect(preset.bpm).toBeGreaterThanOrEqual(60);
-        expect(preset.bpm).toBeLessThanOrEqual(300);
+        expect(preset.bpm).toBeGreaterThanOrEqual(JAM_GOVERNANCE.BPM_MIN);
+        expect(preset.bpm).toBeLessThanOrEqual(JAM_GOVERNANCE.BPM_MAX);
       }
     );
 
     it.each(PRESETS.map((p, i) => [i, p.genre, p] as const))(
-      'preset %i (%s) has energy in [1, 10]',
+      'preset %i (%s) has energy in [ENERGY_MIN, ENERGY_MAX]',
       (_index, _genre, preset) => {
-        expect(preset.energy).toBeGreaterThanOrEqual(1);
-        expect(preset.energy).toBeLessThanOrEqual(10);
+        expect(preset.energy).toBeGreaterThanOrEqual(JAM_GOVERNANCE.ENERGY_MIN);
+        expect(preset.energy).toBeLessThanOrEqual(JAM_GOVERNANCE.ENERGY_MAX);
       }
     );
   });

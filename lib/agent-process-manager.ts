@@ -31,6 +31,7 @@ import {
 } from './codex-runtime-checks';
 import { SHARED_JAM_POLICY_PROMPT } from './jam-agent-shared-policy';
 import { buildGenreEnergySection } from './genre-energy-guidance';
+import { JAM_GOVERNANCE } from './jam-governance-constants';
 
 // Callback type for broadcasting messages to browser clients
 export type BroadcastFn = (message: { type: string; payload: unknown }) => void;
@@ -71,7 +72,6 @@ interface AgentProcessManagerOptions {
   broadcast: BroadcastFn;
 }
 
-const AGENT_TIMEOUT_MS = 15000;
 const JAM_TOOLLESS_ARGS = ['--tools', '', '--strict-mcp-config'] as const;
 // Deterministic schema canonicalization only: normalize common phrasing/spelling
 // variants into the fixed arrangement enum without prescribing musical content.
@@ -92,11 +92,6 @@ const ARRANGEMENT_INTENT_MAP: Record<string, ArrangementIntent> = {
   transition: 'transition',
 };
 const DECISION_CONFIDENCE_SET = new Set<DecisionConfidence>(['low', 'medium', 'high']);
-const DECISION_CONFIDENCE_MULTIPLIER: Record<DecisionConfidence, number> = {
-  low: 0,
-  medium: 0.5,
-  high: 1,
-};
 type RelativeCueDirection = ReturnType<typeof detectRelativeMusicalContextCues>['tempo'];
 
 /**
@@ -557,12 +552,12 @@ export class AgentProcessManager {
       agent.activeTurnRl = rl;
 
       const timeout = setTimeout(() => {
-        console.warn(`[Agent:${key}] Response timeout after ${AGENT_TIMEOUT_MS}ms`);
+        console.warn(`[Agent:${key}] Response timeout after ${JAM_GOVERNANCE.AGENT_TIMEOUT_MS}ms`);
         if (!proc.killed) {
           proc.kill('SIGTERM');
         }
         finish();
-      }, AGENT_TIMEOUT_MS);
+      }, JAM_GOVERNANCE.AGENT_TIMEOUT_MS);
 
       let fullText = '';
       let settled = false;
@@ -740,12 +735,12 @@ export class AgentProcessManager {
     // normalize their shapes, and clamp to model-agnostic bounds.
     const normalized: StructuredMusicalDecision = {};
 
-    const tempoDelta = this.normalizeNumericDecisionValue(raw.tempo_delta_pct, -50, 50);
+    const tempoDelta = this.normalizeNumericDecisionValue(raw.tempo_delta_pct, JAM_GOVERNANCE.TEMPO_DELTA_PCT_MIN, JAM_GOVERNANCE.TEMPO_DELTA_PCT_MAX);
     if (tempoDelta !== undefined) {
       normalized.tempo_delta_pct = tempoDelta;
     }
 
-    const energyDelta = this.normalizeNumericDecisionValue(raw.energy_delta, -3, 3);
+    const energyDelta = this.normalizeNumericDecisionValue(raw.energy_delta, JAM_GOVERNANCE.ENERGY_DELTA_MIN, JAM_GOVERNANCE.ENERGY_DELTA_MAX);
     if (energyDelta !== undefined) {
       normalized.energy_delta = energyDelta;
     }
@@ -791,7 +786,7 @@ export class AgentProcessManager {
 
   private getDecisionConfidenceMultiplier(confidence: DecisionConfidence | undefined): number {
     if (!confidence) return 1;
-    return DECISION_CONFIDENCE_MULTIPLIER[confidence];
+    return JAM_GOVERNANCE.CONFIDENCE_MULTIPLIER[confidence];
   }
 
   private isDeltaDirectionCompatible(value: number, cueDirection: RelativeCueDirection): boolean {
@@ -849,7 +844,7 @@ export class AgentProcessManager {
       if (tempoDeltaPct !== undefined) {
         const bpmDelta = this.roundHalfAwayFromZero((current.bpm * tempoDeltaPct) / 100);
         if (bpmDelta !== 0) {
-          const nextBpm = this.clampNumeric(current.bpm + bpmDelta, 60, 300);
+          const nextBpm = this.clampNumeric(current.bpm + bpmDelta, JAM_GOVERNANCE.BPM_MIN, JAM_GOVERNANCE.BPM_MAX);
           if (nextBpm !== current.bpm) {
             changes.bpm = nextBpm;
           }
@@ -865,7 +860,7 @@ export class AgentProcessManager {
         relativeContextCues.energy
       );
       if (energyDelta !== undefined) {
-        const nextEnergy = this.clampNumeric(current.energy + energyDelta, 1, 10);
+        const nextEnergy = this.clampNumeric(current.energy + energyDelta, JAM_GOVERNANCE.ENERGY_MIN, JAM_GOVERNANCE.ENERGY_MAX);
         if (nextEnergy !== current.energy) {
           changes.energy = nextEnergy;
         }
@@ -891,7 +886,6 @@ export class AgentProcessManager {
   ): Partial<MusicalContext> | null {
     const changes: Partial<MusicalContext> = {};
     const current = this.musicalContext;
-    const AUTO_TICK_DAMPENING = 0.5;
 
     // Aggregate tempo_delta_pct
     const tempoValues: number[] = [];
@@ -906,10 +900,10 @@ export class AgentProcessManager {
     }
     if (tempoValues.length > 0) {
       const avg = tempoValues.reduce((s, v) => s + v, 0) / tempoValues.length;
-      const dampened = avg * AUTO_TICK_DAMPENING;
+      const dampened = avg * JAM_GOVERNANCE.AUTO_TICK_DAMPENING;
       const bpmDelta = this.roundHalfAwayFromZero((current.bpm * dampened) / 100);
       if (bpmDelta !== 0) {
-        const nextBpm = this.clampNumeric(current.bpm + bpmDelta, 60, 300);
+        const nextBpm = this.clampNumeric(current.bpm + bpmDelta, JAM_GOVERNANCE.BPM_MIN, JAM_GOVERNANCE.BPM_MAX);
         if (nextBpm !== current.bpm) {
           changes.bpm = nextBpm;
         }
@@ -929,10 +923,10 @@ export class AgentProcessManager {
     }
     if (energyValues.length > 0) {
       const avg = energyValues.reduce((s, v) => s + v, 0) / energyValues.length;
-      const dampened = avg * AUTO_TICK_DAMPENING;
+      const dampened = avg * JAM_GOVERNANCE.AUTO_TICK_DAMPENING;
       const energyDelta = this.roundHalfAwayFromZero(dampened);
       if (energyDelta !== 0) {
-        const nextEnergy = this.clampNumeric(current.energy + energyDelta, 1, 10);
+        const nextEnergy = this.clampNumeric(current.energy + energyDelta, JAM_GOVERNANCE.ENERGY_MIN, JAM_GOVERNANCE.ENERGY_MAX);
         if (nextEnergy !== current.energy) {
           changes.energy = nextEnergy;
         }
@@ -972,7 +966,7 @@ export class AgentProcessManager {
     let keyApplied = false;
     keyCounts.forEach((count, suggestedKey) => {
       if (keyApplied) return;
-      if (count >= 2 && suggestedKey !== this.musicalContext.key) {
+      if (count >= JAM_GOVERNANCE.KEY_CONSENSUS_MIN_AGENTS && suggestedKey !== this.musicalContext.key) {
         const scale = deriveScale(suggestedKey);
         if (scale) {
           changes.key = suggestedKey;
@@ -1178,7 +1172,7 @@ export class AgentProcessManager {
         .finally(() => {
           this.tickScheduled = false;
         });
-    }, 30000);
+    }, JAM_GOVERNANCE.AUTO_TICK_INTERVAL_MS);
   }
 
   private async sendAutoTick(): Promise<void> {
@@ -1254,7 +1248,10 @@ export class AgentProcessManager {
       this.agentDecisions[key] = response.decision;
       const pattern = response.pattern || 'silence';
 
-      // no_change: keep existing pattern, update thoughts/reaction only
+      // APM-14 contract: 'no_change' is a sentinel value meaning "keep my current
+      // pattern playing". The agent's thoughts/reaction still update, but
+      // agentPatterns[key] is intentionally NOT overwritten. If no prior pattern
+      // exists (first round edge case), falls back to 'silence'.
       if (pattern === 'no_change') {
         // Guard: can't hold what doesn't exist (first round)
         if (!this.agentPatterns[key] || this.agentPatterns[key] === '') {
@@ -1287,7 +1284,9 @@ export class AgentProcessManager {
       // Broadcast agent thought
       this.broadcastAgentThought(key, response);
     } else {
-      // Timeout or error — use fallback
+      // APM-14 contract: when an agent times out (null response), the runtime
+      // falls back to its last known good pattern (fallbackPattern) to maintain
+      // musical continuity. Status is set to 'timeout' only if no fallback exists.
       this.agentPatterns[key] = state.fallbackPattern || 'silence';
       this.agentStates[key] = {
         ...state,
