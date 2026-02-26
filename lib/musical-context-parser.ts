@@ -187,8 +187,18 @@ function hasRelativeEnergyDecreaseCue(text: string): boolean {
 
 /**
  * Derive a basic diatonic chord progression for a given key string.
- * Returns 4 triads (I-vi-IV-V for major, i-VI-III-VII for minor) using
- * conventional chord naming (e.g. "Cm", "Ab", "Eb", "Bb").
+ *
+ * Classification: C (hybrid) — MCP-04 / bsj-7k4.15
+ * The deterministic shell (deriving chords from a key) is code-owned.
+ * The template choices (I-vi-IV-V major, i-VI-III-VII minor) are minimal
+ * diatonic fallbacks — not a musical policy assertion.
+ *
+ * This function is called from `applyContextSuggestions()` when 2+ agents
+ * achieve key consensus, providing immediate harmonic continuity after a
+ * key change. Agents may override these defaults on subsequent turns via
+ * `suggested_chords` in their decision blocks.
+ *
+ * Returns 4 triads using conventional chord naming (e.g. "Cm", "Ab", "Eb", "Bb").
  * Returns null if the key string is not recognized.
  */
 export function deriveChordProgression(key: string): string[] | null {

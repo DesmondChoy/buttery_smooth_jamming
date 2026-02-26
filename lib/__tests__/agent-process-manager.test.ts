@@ -1935,6 +1935,154 @@ describe('AgentProcessManager context suggestions', () => {
     await manager.stop();
   });
 
+  it('auto-derives chord progression when key change is applied via consensus', async () => {
+    const { manager, broadcast, processes } = createTestManager();
+
+    const startPromise = manager.start(['drums', 'bass', 'melody']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    for (const key of ['drums', 'bass', 'melody']) {
+      sendAgentResponse(getProcessByKey(processes, key), {
+        pattern: `s("${key}")`,
+        thoughts: 'Opening',
+        reaction: 'Go',
+      });
+    }
+    await startPromise;
+
+    vi.advanceTimersByTime(30000);
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Melody and bass both suggest Eb major
+    sendAgentResponse(getProcessByKey(processes, 'drums'), {
+      pattern: 'no_change',
+      thoughts: 'Steady',
+      reaction: 'Staying put',
+    });
+    sendAgentResponse(getProcessByKey(processes, 'bass'), {
+      pattern: 'no_change',
+      thoughts: 'Following melody',
+      reaction: 'Eb sounds right',
+      decision: { suggested_key: 'Eb major', confidence: 'high' },
+    });
+    sendAgentResponse(getProcessByKey(processes, 'melody'), {
+      pattern: 'no_change',
+      thoughts: 'Time for relative major',
+      reaction: 'Modulating to Eb',
+      decision: { suggested_key: 'Eb major', confidence: 'high' },
+    });
+
+    await vi.advanceTimersByTimeAsync(0);
+
+    const jamState = getLatestJamState(broadcast);
+    expect(jamState).toBeDefined();
+    expect(jamState!.musicalContext.key).toBe('Eb major');
+    // Continuity fallback: I-vi-IV-V for major key (bsj-7k4.15)
+    expect(jamState!.musicalContext.chordProgression).toEqual(['Eb', 'Cm', 'Ab', 'Bb']);
+
+    await manager.stop();
+  });
+
+  it('auto-derives minor chord progression when minor key change is applied', async () => {
+    const { manager, broadcast, processes } = createTestManager();
+
+    const startPromise = manager.start(['drums', 'bass', 'melody']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    for (const key of ['drums', 'bass', 'melody']) {
+      sendAgentResponse(getProcessByKey(processes, key), {
+        pattern: `s("${key}")`,
+        thoughts: 'Opening',
+        reaction: 'Go',
+      });
+    }
+    await startPromise;
+
+    vi.advanceTimersByTime(30000);
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Bass and melody both suggest A minor
+    sendAgentResponse(getProcessByKey(processes, 'drums'), {
+      pattern: 'no_change',
+      thoughts: 'Steady',
+      reaction: 'Staying put',
+    });
+    sendAgentResponse(getProcessByKey(processes, 'bass'), {
+      pattern: 'no_change',
+      thoughts: 'Dark mood',
+      reaction: 'A minor feels right',
+      decision: { suggested_key: 'A minor', confidence: 'high' },
+    });
+    sendAgentResponse(getProcessByKey(processes, 'melody'), {
+      pattern: 'no_change',
+      thoughts: 'Shifting to relative minor',
+      reaction: 'Going Am',
+      decision: { suggested_key: 'A minor', confidence: 'high' },
+    });
+
+    await vi.advanceTimersByTimeAsync(0);
+
+    const jamState = getLatestJamState(broadcast);
+    expect(jamState).toBeDefined();
+    expect(jamState!.musicalContext.key).toBe('A minor');
+    // Continuity fallback: i-VI-III-VII for minor key (bsj-7k4.15)
+    expect(jamState!.musicalContext.chordProgression).toEqual(['Am', 'F', 'C', 'G']);
+
+    await manager.stop();
+  });
+
+  it('skips chord suggestions on the same turn a key change is applied', async () => {
+    const { manager, broadcast, processes } = createTestManager();
+
+    const startPromise = manager.start(['drums', 'bass', 'melody']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    for (const key of ['drums', 'bass', 'melody']) {
+      sendAgentResponse(getProcessByKey(processes, key), {
+        pattern: `s("${key}")`,
+        thoughts: 'Opening',
+        reaction: 'Go',
+      });
+    }
+    await startPromise;
+
+    vi.advanceTimersByTime(30000);
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Bass suggests key change AND chord suggestion on the same turn
+    sendAgentResponse(getProcessByKey(processes, 'drums'), {
+      pattern: 'no_change',
+      thoughts: 'Steady',
+      reaction: 'Staying put',
+    });
+    sendAgentResponse(getProcessByKey(processes, 'bass'), {
+      pattern: 'no_change',
+      thoughts: 'New key with jazzy chords',
+      reaction: 'Eb with extensions',
+      decision: {
+        suggested_key: 'Eb major',
+        suggested_chords: ['Ebmaj7', 'Cm7', 'Abmaj7', 'Bb7'],
+        confidence: 'high',
+      },
+    });
+    sendAgentResponse(getProcessByKey(processes, 'melody'), {
+      pattern: 'no_change',
+      thoughts: 'Agree on Eb',
+      reaction: 'Modulating',
+      decision: { suggested_key: 'Eb major', confidence: 'high' },
+    });
+
+    await vi.advanceTimersByTimeAsync(0);
+
+    const jamState = getLatestJamState(broadcast);
+    expect(jamState).toBeDefined();
+    expect(jamState!.musicalContext.key).toBe('Eb major');
+    // Derived fallback takes precedence over same-turn chord suggestion (bsj-7k4.15)
+    expect(jamState!.musicalContext.chordProgression).toEqual(['Eb', 'Cm', 'Ab', 'Bb']);
+
+    await manager.stop();
+  });
+
   it('applies key change when suggestions differ only by casing', async () => {
     const { manager, broadcast, processes } = createTestManager();
 

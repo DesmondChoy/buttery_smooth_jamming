@@ -977,6 +977,11 @@ export class AgentProcessManager {
         if (scale) {
           changes.key = suggestedKey;
           changes.scale = scale;
+          // C (hybrid) continuity fallback (MCP-04 / bsj-7k4.15):
+          // Auto-derive minimal diatonic chords so the jam has a valid
+          // progression immediately after a key change. Agents may
+          // override with genre-specific chords on subsequent turns
+          // via suggested_chords.
           const chords = deriveChordProgression(suggestedKey);
           if (chords) {
             changes.chordProgression = chords;
@@ -986,7 +991,11 @@ export class AgentProcessManager {
       }
     });
 
-    // Apply chord suggestions (high confidence only, skip if key was just changed)
+    // Apply chord suggestions (high confidence only, skip if key was just changed).
+    // When a key change is applied above, the auto-derived fallback chords take
+    // precedence on this turn. This prevents a stale chord suggestion (targeting
+    // the old key) from overriding the freshly derived progression. Agents can
+    // suggest genre-appropriate chords on the next turn once they see the new key.
     if (!keyApplied) {
       for (const response of responses) {
         const decision = response?.decision;

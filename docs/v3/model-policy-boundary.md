@@ -39,7 +39,7 @@ is routable, bounded, schema-valid, and safely composable.
 | Arrangement evolution | Decides when to hold, vary, build, or simplify over rounds. | Owns turn serialization, session lifecycle, timeout handling, and no-overlap guarantees. |
 | Inter-agent musical adaptation | Reacts to band state and evolves in context. | Preserves canonical jam state server-side and broadcasts authoritative updates. |
 | Pattern output content | Emits Strudel pattern + thoughts + reaction with agent personality. | Validates JSON shape, handles invalid output deterministically, and preserves prior valid pattern as fallback. |
-| Harmonic context evolution | Agents suggest key changes (`suggested_key`) and chord progressions (`suggested_chords`) via structured decision blocks. | Code enforces consensus rules: key changes require 2+ agents with high confidence suggesting the same key; chord changes require a single agent with high confidence. Validated via `normalizeSuggestedKey()` and `deriveScale()`. |
+| Harmonic context evolution | Agents suggest key changes (`suggested_key`) and chord progressions (`suggested_chords`) via structured decision blocks. | Code enforces consensus rules: key changes require 2+ agents with high confidence suggesting the same key; chord changes require a single agent with high confidence. Validated via `normalizeSuggestedKey()` and `deriveScale()`. On key change, `deriveChordProgression()` auto-derives a minimal diatonic fallback (I-vi-IV-V major, i-VI-III-VII minor) so the jam has valid chords immediately; agents may override with genre-specific chords via `suggested_chords` on subsequent turns [C hybrid, MCP-04 / bsj-7k4.15]. |
 | Final playback composition | None (agents do not decide final merge algorithm). | Server composes final output via deterministic `stack(...)` composition. |
 | Runtime and process behavior | None (not model-controlled). | Preserves manager-owned, per-agent persistent Codex-backed sessions and controlled process lifecycle. |
 | Agent identity and routing metadata | None (not inferred from model text). | Treats `AGENT_META` and agent key/file mappings as canonical. |
@@ -163,7 +163,8 @@ These examples are intentionally model-owned and should not be hardcoded:
 4. Auto-tick round (no boss directive):
    ARIA suggests "Eb major" with high confidence, GLITCH also suggests "Eb major"
    with high confidence → 2+ agents agree, key changes to Eb major, scale and chords
-   auto-derived. BEAT suggests "G minor" with low confidence alone → ignored
+   auto-derived (minimal diatonic fallback; agents may suggest genre-specific chords
+   on subsequent turns). BEAT suggests "G minor" with low confidence alone → ignored
    (requires high confidence and 2+ agent consensus).
 
 ## Architecture Invariants Preserved

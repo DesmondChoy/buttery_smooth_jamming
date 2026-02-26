@@ -138,6 +138,7 @@ Docs-only change providing tuning guidance for operators. No code behavior chang
 | bsj-7k4.9 | Closed | Operator playbook (`a050fd2`) |
 | bsj-7k4.10 | **This gate** | 241 tests, lint, build all pass; behavioral evidence documented |
 | bsj-7k4.11 | In progress | Working tree changes pass all tests; to be committed alongside this gate |
+| bsj-7k4.15 | Closed | Chord-fallback boundary codified via docs + 3 integration tests; no runtime change |
 
 ## 5) Conclusion
 

@@ -186,7 +186,7 @@ native addon issues, React Compiler compatibility, etc.), see the
 | Deterministic anchor overrides model intent | Boss said "faster" but also included explicit BPM → explicit wins | `handleDirective()` step 1 vs step 7 | This is by design (deterministic precedence). If undesired, rephrase directive without explicit values |
 | Jam start rejected | `jam_capacity_exceeded` or `agent_capacity_exceeded` | `lib/jam-admission.ts` + `app/api/runtime-ws/route.ts` | Increase `MAX_CONCURRENT_JAMS` / `MAX_TOTAL_AGENT_PROCESSES` env vars, or stop existing jams |
 | Agent timeouts (15s) | Model latency too high; Codex session issues | `sendToAgentAndCollect()` timeout in `lib/agent-process-manager.ts` | Increase `AGENT_TIMEOUT_MS`; check model provider status; verify Codex auth |
-| Chord progression sounds wrong after key change | `deriveChordProgression()` fallback templates (I-vi-IV-V major, i-VI-III-VII minor) may not suit genre | `deriveChordProgression()` in `lib/musical-context-parser.ts` | Agent chord suggestions override derived defaults; prompt agents to suggest genre-appropriate progressions |
+| Chord progression sounds wrong after key change | `deriveChordProgression()` auto-derives minimal diatonic fallback chords (I-vi-IV-V major, i-VI-III-VII minor) on the same turn a key change is applied [C hybrid, MCP-04 / bsj-7k4.15]. These are continuity placeholders, not genre-tailored. | `deriveChordProgression()` in `lib/musical-context-parser.ts`; `applyContextSuggestions()` in `lib/agent-process-manager.ts` | Wait one turn: agents see the new key on the next auto-tick and can suggest genre-appropriate chords via `suggested_chords`. If chords remain unsuitable, adjust agent personas or shared policy to encourage earlier chord suggestions. |
 | Auto-tick fires during directive | Timer not reset; `tickScheduled` coalescing failed | `startAutoTick()` / `enqueueTurn()` in `lib/agent-process-manager.ts` | Check `clearInterval` call at top of `handleDirective()` |
 
 ### Rollback Guidance
@@ -253,7 +253,7 @@ They represent the planned sequence for further boundary hardening:
 | `bsj-7k4.12` | ~~Fence legacy `parseMusicalContextChanges()` heuristics away from jam runtime paths~~ — **Done**: legacy monolithic parser removed entirely (`df4b86e`) |
 | `bsj-7k4.13` | Broaden deterministic relative cue detection to match jam-musical-policy phrase families |
 | `bsj-7k4.14` | Document and centralize jam runtime governance constants (confidence, dampening, consensus) |
-| `bsj-7k4.15` | Codify boundary for runtime chord-progression fallback templates after key changes |
+| `bsj-7k4.15` | ~~Codify boundary for runtime chord-progression fallback templates after key changes~~ — **Done**: docs + tests codify C-hybrid fallback boundary |
 | `bsj-7k4.16` | Reduce drift in shared jam policy prompt by externalizing condensed policy text |
 | `bsj-7k4.17` | Move genre-energy generic fallback guidance out of runtime code |
 | `bsj-7k4.18` | Extract jam manager context/prompt phrasing templates from `AgentProcessManager` |
