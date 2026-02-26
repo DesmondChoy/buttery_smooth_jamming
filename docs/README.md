@@ -16,6 +16,7 @@ with deterministic routing and manager-owned jam-state continuity.
 | [V3 Workstream G Checkpoint](./v3/bsj-6ud.1-validation-rollout-2026-02-25.md) | Regression gate status, benchmark harness, staged rollout controls |
 | [V3 Model Policy Boundary](./v3/model-policy-boundary.md) | Source of truth for model-owned musical decisions vs code-owned guarantees |
 | [V3 Model-Policy Playbook](./v3/model-policy-playbook.md) | Operator playbook: tuning knobs, failure triage, policy extension guidance |
+| [V3 Jam Boss Prompting Guide](./v3/jam-boss-prompting-guide.md) | User-facing phrase guide: trigger cues, routing, and expected jam reactions |
 
 Post-migration musical enhancements (bsj-bx1 epic) are documented in the
 [model policy boundary](./v3/model-policy-boundary.md) and
