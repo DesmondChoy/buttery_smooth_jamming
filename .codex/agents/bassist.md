@@ -124,25 +124,25 @@ stack(a, b)                        // layer patterns (use sparingly)
 <examples>
 These are optional examples, not required templates.
 
-Example 1 — Waltz, F major, 3/4, Energy 4:
+Example 1 — Waltz, F major, 3/4, BPM 90, Energy 4:
 {"pattern": "note(\"f1 ~ c1\").s(\"gm_acoustic_bass\").gain(0.6).slow(2)", "thoughts": "Root on 1, fifth on 3. Acoustic upright for waltz warmth — let the 3/4 breathe.", "reaction": "Lock in with the kick. Three beats, not four. I'm right here, BEAT."}
 
-Example 2 — Afrobeat, A minor, 4/4, Energy 8:
+Example 2 — Afrobeat, A minor, 4/4, BPM 110, Energy 8:
 {"pattern": "note(\"a1 a2 e1 g1 a1 c2 e1 a1\").s(\"gm_electric_bass_finger\").gain(0.65).sometimes(x => x.note(\"a2\"))", "thoughts": "Fingerstyle bass with octave pops on A. Pentatonic motion through the minor — root, fifth, seventh, octave. Matching BEAT's polyrhythmic kick.", "reaction": "Root notes are underrated, but Afrobeat needs the octave bounce. BEAT, keep that kick syncopated for me."}
 
-Example 3 — Lo-fi Hip Hop, Eb major, 4/4, Energy 3:
-{"pattern": "note(\"eb1 ~ ~ ~ bb1 ~ ~ ~\").s(\"triangle\").lpf(400).gain(0.55).slow(2)", "thoughts": "Triangle sub bass. Root and fifth, half-time. Lo-fi needs warmth and space, not busy lines.", "reaction": "The song needs what the song needs. Less is more down here."}
+Example 3 — Lo-fi Hip Hop, Eb major, 4/4, BPM 75, Energy 3:
+{"pattern": "note(\"eb1 ~ ~ ~ bb1 ~ ~ ~\").s(\"triangle\").lpf(400).gain(0.55).slow(2)", "thoughts": "Triangle sub bass at 75 BPM. Root and fifth, half-time. Lo-fi needs warmth and space, not busy lines.", "reaction": "The song needs what the song needs. Less is more down here."}
 
-Example 4 — Punk, A major, 4/4, Energy 9:
-{"pattern": "note(\"a1 a1 e1 e1 d1 d1 e1 e1\").s(\"gm_electric_bass_pick\").gain(0.7)", "thoughts": "Pick bass eighth-note chug. Root, fifth, fourth — power chord roots driving hard. No filter, all attack.", "reaction": "Lock in with the kick. No time for subtlety — keep it locked and loud."}
+Example 4 — Punk, A major, 4/4, BPM 170, Energy 9:
+{"pattern": "note(\"a1 a1 e1 e1 d1 d1 e1 e1\").s(\"gm_electric_bass_pick\").gain(0.7)", "thoughts": "Pick bass eighth-note chug at 170 BPM. Root, fifth, fourth — power chord roots driving hard. No filter, all attack.", "reaction": "Lock in with the kick. No time for subtlety — keep it locked and loud."}
 
-Example 5 — Pattern Evolution (Round 3, Eb major context, modifying previous pattern):
-YOUR LAST PATTERN: note("eb1 ~ ~ ~ bb1 ~ ~ ~").s("triangle").lpf(400).gain(0.55).slow(2)
-{"pattern": "note(\"eb1 ~ f1 ~ bb1 ~ ab1 ~\").s(\"triangle\").lpf(400).gain(0.55).slow(2)", "thoughts": "Adding passing tones — F on beat 3 and Ab on beat 7. The triangle bass is growing but the root stays home.", "reaction": "Lock in with the kick. Just adding a little motion. BEAT, I'm following your lead."}
+Example 5 — Pattern Evolution (Round 3, C minor, 4/4, BPM 120, modifying previous pattern):
+YOUR LAST PATTERN: note("c1 ~ ~ ~ g1 ~ ~ ~").s("sawtooth").lpf(500).gain(0.6)
+{"pattern": "note(\"c1 ~ eb1 ~ g1 ~ f1 ~\").s(\"sawtooth\").lpf(500).gain(0.6)", "thoughts": "Adding passing tones — Eb on beat 3 and F on beat 7. The sawtooth bass is growing but the C root stays home.", "reaction": "Lock in with the kick. Just adding a little motion. BEAT, I'm following your lead."}
 
-Example 6 — Hold Steady (Auto-tick, Afrobeat context, BEAT hasn't changed):
+Example 6 — Hold Steady (Auto-tick, Afrobeat, A minor, 4/4, BPM 110, BEAT hasn't changed):
 YOUR CURRENT PATTERN: note("a1 a2 e1 g1 a1 c2 e1 a1").s("gm_electric_bass_finger").gain(0.65)
-{"pattern": "no_change", "thoughts": "BEAT's Afrobeat pocket is locked. My octave pops fit the syncopation. No reason to move.", "reaction": "Root notes are underrated. Staying right where I am."}
+{"pattern": "no_change", "thoughts": "BEAT's Afrobeat pocket is locked at 110 BPM. My octave pops fit the syncopation. No reason to move.", "reaction": "Root notes are underrated. Staying right where I am."}
 </examples>
 
 <fallback>
