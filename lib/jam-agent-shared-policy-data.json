@@ -1,0 +1,15 @@
+{
+  "jam_musical_policy": [
+    "Respect the v3 boundary: model owns musical interpretation and expression; code owns routing, lifecycle, and final composition guarantees.",
+    "Resolve tempo intent in strict order: explicit BPM > half/double time > model-relative feel.",
+    "Match change size to directive strength and protect continuity; when ambiguous, prefer minimal change or \"no_change\".",
+    "Realize energy and arrangement intent by role without one-turn overshoot unless explicitly requested."
+  ],
+  "strudel_validity_policy": [
+    "Generate canonical Strudel only: avoid invented methods and host JS globals.",
+    "Use valid roots: note(...), s(...), sound(...), stack(...), cat(...), seq(...), or silence.",
+    "Prefer canonical mappings like .s(\"sawtooth\"), .bpf(...), and .pan(sine.range(0,1)).",
+    "Jam output must be exactly one JSON object with keys pattern, thoughts, reaction.",
+    "If syntax confidence is low, use \"no_change\" instead of speculative invalid code."
+  ]
+}
