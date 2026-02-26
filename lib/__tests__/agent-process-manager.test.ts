@@ -433,7 +433,7 @@ describe('AgentProcessManager turn serialization', () => {
     await manager.stop();
   });
 
-  it('enforces hard-toolless codex args for jam turns and resumes', async () => {
+  it('uses profile-based jam codex args without deprecated tool flags', async () => {
     const { manager, processes } = createTestManager();
 
     const startPromise = manager.start(['drums']);
@@ -467,10 +467,8 @@ describe('AgentProcessManager turn serialization', () => {
 
     for (const call of jamTurnCalls) {
       const args = call[1] as string[];
-      const toolsIndex = args.indexOf('--tools');
-      expect(toolsIndex).toBeGreaterThanOrEqual(0);
-      expect(args[toolsIndex + 1]).toBe('');
-      expect(args).toContain('--strict-mcp-config');
+      expect(args).not.toContain('--tools');
+      expect(args).not.toContain('--strict-mcp-config');
     }
 
     const initialArgs = jamTurnCalls[0][1] as string[];

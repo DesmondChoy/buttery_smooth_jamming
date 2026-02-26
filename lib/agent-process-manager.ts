@@ -77,7 +77,10 @@ interface AgentProcessManagerOptions {
   broadcast: BroadcastFn;
 }
 
-const JAM_TOOLLESS_ARGS = ['--tools', '', '--strict-mcp-config'] as const;
+// Codex CLI `exec` no longer accepts legacy `--tools/--strict-mcp-config` flags.
+// Jam agents remain isolated via the dedicated `jam_agent` profile (MCP disabled)
+// plus prompt-level policy; keep this empty for CLI compatibility.
+const JAM_TOOLLESS_ARGS = [] as const;
 // Deterministic schema canonicalization only: normalize common phrasing/spelling
 // variants into the fixed arrangement enum without prescribing musical content.
 const ARRANGEMENT_INTENT_MAP: Record<string, ArrangementIntent> = {
