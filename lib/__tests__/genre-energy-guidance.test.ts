@@ -3,7 +3,7 @@ import { buildGenreEnergySection } from '../genre-energy-guidance';
 
 // Reset the module-level cache between tests so each test gets a fresh parse
 beforeEach(async () => {
-  const mod = await import('../genre-energy-guidance');
+  await import('../genre-energy-guidance');
   // Force cache invalidation by passing the real working dir (different from any cached value)
 });
 
