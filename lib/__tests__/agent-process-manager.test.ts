@@ -24,6 +24,7 @@ vi.mock('../codex-runtime-checks', () => ({
 // Pin randomMusicalContext to the old C minor defaults so existing assertions stay stable
 vi.mock('../musical-context-presets', () => ({
   randomMusicalContext: () => ({
+    genre: 'Dark Ambient',
     key: 'C minor',
     scale: ['C', 'D', 'Eb', 'F', 'G', 'Ab', 'Bb'],
     chordProgression: ['Cm', 'Ab', 'Eb', 'Bb'],

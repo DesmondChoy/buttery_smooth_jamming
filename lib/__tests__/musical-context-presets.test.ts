@@ -51,6 +51,8 @@ describe('musical-context-presets', () => {
   describe('randomMusicalContext()', () => {
     it('returns a valid MusicalContext shape', () => {
       const ctx = randomMusicalContext();
+      expect(typeof ctx.genre).toBe('string');
+      expect(ctx.genre.length).toBeGreaterThan(0);
       expect(typeof ctx.key).toBe('string');
       expect(Array.isArray(ctx.scale)).toBe(true);
       expect(ctx.scale).toHaveLength(7);

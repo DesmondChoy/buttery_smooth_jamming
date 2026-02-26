@@ -166,6 +166,7 @@ export function randomMusicalContext(): MusicalContext {
 function presetToMusicalContext(preset: Preset): MusicalContext {
   const scale = preset.scale ?? deriveScale(preset.key) ?? C_MAJOR_FALLBACK;
   return {
+    genre: preset.genre,
     key: preset.key,
     scale,
     chordProgression: preset.chordProgression,

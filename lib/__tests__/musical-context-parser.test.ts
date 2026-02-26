@@ -3,6 +3,7 @@ import { parseMusicalContextChanges, deriveScale } from '../musical-context-pars
 import type { MusicalContext } from '../types';
 
 const DEFAULT_CTX: MusicalContext = {
+  genre: 'Dark Ambient',
   key: 'C minor',
   scale: ['C', 'D', 'Eb', 'F', 'G', 'Ab', 'Bb'],
   chordProgression: ['Cm', 'Ab', 'Eb', 'Bb'],

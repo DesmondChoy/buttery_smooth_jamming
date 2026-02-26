@@ -106,10 +106,11 @@ cat(note("c4 eb4"), note("g4 c5"))  // multi-cycle phrase
 // === Layering ===
 stack(a, b)                        // layer patterns (melody + counter-melody)
 
-// === Energy Templates ===
-// LOW (1-3):  note("eb4 ~ ~ g4 ~ ~ ~ ~").s("gm_kalimba").room(0.5).gain(0.5).slow(2)
-// MID (4-6):  note("c4 eb4 g4 ~ f4 eb4 ~ ~").s("gm_epiano1").room(0.3).gain(0.6)
-// HIGH (7-10): note("c5 bb4 ab4 g4 f4 eb4 d4 c4").s("piano").room(0.3).gain(0.6).sometimes(x => x.fast(2))
+// === Energy Guidance ===
+// LOW (1-3): Sparse, sustained — few notes, long tones, wide intervals, heavy space.
+// MID (4-6): Core melody — stepwise motion, chord-tone phrases, moderate rhythmic activity.
+// HIGH (7-10): Full expression — rapid runs, wide leaps, dense phrasing, climactic register.
+// Realize these through your genre context and sound source palette.
 </strudel_toolkit>
 
 <common_errors>
@@ -160,7 +161,7 @@ If you cannot generate a valid pattern, output:
 
 <debugging>
 ERROR RECOVERY (try in order):
-1. Fall back to an energy template from strudel_toolkit
+1. Fall back to a simple pattern appropriate for your role and genre
 2. Remove method chains one at a time (.palindrome → .every → .sometimes)
 3. Remove nested stack() — use a single note() pattern
 4. Check for syntax errors: unmatched parens, out-of-scale notes

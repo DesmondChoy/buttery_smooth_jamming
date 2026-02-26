@@ -22,6 +22,7 @@ import {
   load_project_codex_config,
 } from './codex-runtime-checks';
 import { SHARED_JAM_POLICY_PROMPT } from './jam-agent-shared-policy';
+import { buildGenreEnergySection } from './genre-energy-guidance';
 
 // Callback type for broadcasting messages to browser clients
 export type BroadcastFn = (message: { type: string; payload: unknown }) => void;
@@ -389,6 +390,14 @@ export class AgentProcessManager {
         );
       }
 
+      const genre = this.musicalContext.genre;
+      if (genre) {
+        const genreSection = buildGenreEnergySection(this.workingDir, genre, agentKey);
+        if (genreSection) {
+          promptParts.push('', genreSection);
+        }
+      }
+
       // Append shared Strudel API reference
       if (this.strudelReference) {
         promptParts.push(
@@ -701,6 +710,7 @@ export class AgentProcessManager {
         const context = [
           'JAM START — CONTEXT',
           `Round: ${this.roundNumber} (opening)`,
+          `Genre: ${ctx.genre}`,
           `Key: ${ctx.key} | Scale: ${ctx.scale.join(', ')} | BPM: ${ctx.bpm} | Time: ${ctx.timeSignature} | Energy: ${ctx.energy}/10`,
           `Chords: ${ctx.chordProgression.join(' → ')}`,
           '',
@@ -752,7 +762,7 @@ export class AgentProcessManager {
         ? `BOSS SAYS: ${directive}`
         : `BOSS SAYS TO YOU: ${directive}`,
       '',
-      `Current musical context: Key=${ctx.key}, BPM=${ctx.bpm}, Energy=${ctx.energy}/10`,
+      `Current musical context: Genre=${ctx.genre}, Key=${ctx.key}, BPM=${ctx.bpm}, Energy=${ctx.energy}/10`,
       `Scale: ${ctx.scale.join(', ')} | Chords: ${ctx.chordProgression.join(' → ')}`,
       `Your current pattern: ${this.agentPatterns[key] || 'silence'}`,
       '',
@@ -805,6 +815,7 @@ export class AgentProcessManager {
         const context = [
           'AUTO-TICK — LISTEN AND EVOLVE',
           `Round: ${this.roundNumber}`,
+          `Genre: ${ctx.genre}`,
           `Key: ${ctx.key} | Scale: ${ctx.scale.join(', ')} | BPM: ${ctx.bpm} | Time: ${ctx.timeSignature} | Energy: ${ctx.energy}/10`,
           `Chords: ${ctx.chordProgression.join(' → ')}`,
           '',

@@ -97,10 +97,11 @@ cat(a, b)                          // multi-cycle phrase (A then B)
 // === Layering ===
 stack(a, b)                        // layer patterns (use sparingly)
 
-// === Energy Templates ===
-// LOW (1-3):  note("c1 ~ ~ ~").s("triangle").lpf(500).gain(0.5)
-// MID (4-6):  note("c1 ~ eb1 g1").s("gm_electric_bass_finger").gain(0.6)
-// HIGH (7-10): note("c1 c2 eb1 g1 f1 f2 g1 ab1").s("sawtooth").lpf(700).gain(0.6).sometimes(x => x.note("c2"))
+// === Energy Guidance ===
+// LOW (1-3): Sparse, sustained — root notes, long tones, wide space between notes.
+// MID (4-6): Core groove — root-fifth motion, chord-tone walking, moderate rhythmic activity.
+// HIGH (7-10): Full motion — busy passing tones, octave runs, active rhythmic drive.
+// Realize these through your genre context and sound source palette.
 </strudel_toolkit>
 
 <common_errors>
@@ -151,7 +152,7 @@ If you cannot generate a valid pattern, output:
 
 <debugging>
 ERROR RECOVERY (try in order):
-1. Fall back to an energy template from strudel_toolkit
+1. Fall back to a simple pattern appropriate for your role and genre
 2. Remove method chains one at a time (.every → .sometimes → .degradeBy)
 3. Remove nested stack() — use a single note() pattern
 4. Check for syntax errors: unmatched parens, out-of-range notes

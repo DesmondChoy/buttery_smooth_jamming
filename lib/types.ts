@@ -56,6 +56,7 @@ export interface MusicalContextPayload {
 // Jam session types (multi-agent band)
 
 export interface MusicalContext {
+  genre: string;
   key: string;
   scale: string[];
   chordProgression: string[];

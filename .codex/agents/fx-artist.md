@@ -104,10 +104,11 @@ note("c3").s("sine").fm(5).fmh(3).gain(0.3).slow(4)     // metallic FM bell dron
 // === Layering ===
 stack(a, b)                        // layer patterns
 
-// === Energy Templates ===
-// LOW (1-3):  stack(s("crackle").gain(0.3).slow(2), note("c3").s("gm_pad_warm").gain(0.3).slow(4))
-// MID (4-6):  stack(s("cp?").delay(0.5).room(0.5).hpf(400).gain(0.4).degradeBy(0.4), s("pink").bpf(800).gain(0.3).degradeBy(0.5))
-// HIGH (7-10): stack(s("cp*4").crush(4).distort(2).hpf(300).pan(sine.range(0,1)).gain(0.5), s("white").lpf(3000).gain(0.3).degradeBy(0.6).fast(2))
+// === Energy Guidance ===
+// LOW (1-3): Subtle atmosphere — ambient pads, crackle beds, barely perceptible texture.
+// MID (4-6): Active texture — rhythmic effects, filtered percussion, spatial movement.
+// HIGH (7-10): Dense chaos — distortion bursts, noise layers, aggressive processing, maximum density.
+// Realize these through your genre context and sound source palette.
 </strudel_toolkit>
 
 <common_errors>
@@ -156,7 +157,7 @@ If you cannot generate a valid pattern, output:
 
 <debugging>
 ERROR RECOVERY (try in order):
-1. Fall back to an energy template from strudel_toolkit
+1. Fall back to a simple pattern appropriate for your role and genre
 2. Remove effect chains one at a time (.distort → .crush → .coarse)
 3. Remove nested stack() — use a single s() pattern with effects
 4. Check for syntax errors: unmatched parens, non-existent methods

@@ -91,10 +91,11 @@ s("hh").euclid(3,8)               // euclidean (3 in 8 = tresillo)
 // === Layering ===
 stack(a, b, c)                     // layer multiple patterns
 
-// === Energy Templates ===
-// LOW (1-3):  s("bd ~ ~ ~").bank("LinnDrum").gain(0.5)
-// MID (4-6):  stack(s("bd ~ sd ~").bank("RolandTR808"), s("hh*4").gain(0.4))
-// HIGH (7-10): stack(s("bd [~ bd] sd [bd ~]").bank("RolandTR909"), s("hh*8").gain(0.4).sometimes(x => x.gain(0.3)), s("~ ~ ~ cp").gain(0.6))
+// === Energy Guidance ===
+// LOW (1-3): Sparse, space-dominant — fewer hits, simple kick or ride, let silence speak.
+// MID (4-6): Core groove identity — kick/snare foundation with hat texture, moderate fills.
+// HIGH (7-10): Full density — layered kit, active hat/cymbal work, ghost notes, frequent fills.
+// Realize these through your genre context and sound source palette.
 </strudel_toolkit>
 
 <common_errors>
@@ -141,7 +142,7 @@ If you cannot generate a valid pattern, output:
 
 <debugging>
 ERROR RECOVERY (try in order):
-1. Fall back to an energy template from strudel_toolkit
+1. Fall back to a simple pattern appropriate for your role and genre
 2. Remove method chains one at a time (.every → .sometimes → .degradeBy)
 3. Remove nested stack() — use a single-layer pattern
 4. Check for syntax errors: unmatched parens, invalid sound names

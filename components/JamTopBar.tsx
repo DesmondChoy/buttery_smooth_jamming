@@ -26,6 +26,11 @@ export function JamTopBar({
 
       {/* Musical context */}
       <div className="flex items-center gap-3 text-sm overflow-hidden">
+        {musicalContext.genre && (
+          <span className="bg-purple-600/30 text-purple-300 px-2 py-0.5 rounded text-xs font-medium whitespace-nowrap">
+            {musicalContext.genre}
+          </span>
+        )}
         <span className="text-white font-semibold whitespace-nowrap">{musicalContext.key}</span>
         <span className="text-gray-400 whitespace-nowrap">
           <span className="text-white font-mono">{musicalContext.bpm}</span> BPM

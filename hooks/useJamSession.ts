@@ -57,6 +57,7 @@ const DEFAULT_AGENTS: Record<string, AgentState> = Object.fromEntries(
 );
 
 const DEFAULT_MUSICAL_CONTEXT: MusicalContext = {
+  genre: '',
   key: 'C',
   scale: ['C', 'D', 'E', 'F', 'G', 'A', 'B'],
   chordProgression: ['Cmaj7', 'Am7', 'Fmaj7', 'G7'],
