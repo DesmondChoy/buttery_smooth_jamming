@@ -5,11 +5,12 @@ import type {
   ChatMessage,
   WSMessage,
   ExecutePayload,
-  MessagePayload,
-  AgentThoughtPayload,
-  AgentStatusPayload,
-  MusicalContextPayload,
-  JamStatePayload,
+    MessagePayload,
+    AgentThoughtPayload,
+    AgentCommentaryPayload,
+    AgentStatusPayload,
+    MusicalContextPayload,
+    JamStatePayload,
 } from '@/lib/types';
 
 export interface UseWebSocketOptions {
@@ -19,6 +20,7 @@ export interface UseWebSocketOptions {
   onMessage?: (message: ChatMessage) => void;
   // Jam session callbacks
   onAgentThought?: (payload: AgentThoughtPayload) => void;
+  onAgentCommentary?: (payload: AgentCommentaryPayload) => void;
   onAgentStatus?: (payload: AgentStatusPayload) => void;
   onMusicalContextUpdate?: (payload: MusicalContextPayload) => void;
   onJamStateUpdate?: (payload: JamStatePayload) => void;
@@ -42,7 +44,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
   const {
     url = getDefaultWsUrl(),
     onExecute, onStop, onMessage,
-    onAgentThought, onAgentStatus, onMusicalContextUpdate, onJamStateUpdate,
+    onAgentThought, onAgentCommentary, onAgentStatus, onMusicalContextUpdate, onJamStateUpdate,
   } = options;
 
   const [isConnected, setIsConnected] = useState(false);
@@ -59,6 +61,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
   const onStopRef = useRef(onStop);
   const onMessageRef = useRef(onMessage);
   const onAgentThoughtRef = useRef(onAgentThought);
+  const onAgentCommentaryRef = useRef(onAgentCommentary);
   const onAgentStatusRef = useRef(onAgentStatus);
   const onMusicalContextUpdateRef = useRef(onMusicalContextUpdate);
   const onJamStateUpdateRef = useRef(onJamStateUpdate);
@@ -68,10 +71,11 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     onStopRef.current = onStop;
     onMessageRef.current = onMessage;
     onAgentThoughtRef.current = onAgentThought;
+    onAgentCommentaryRef.current = onAgentCommentary;
     onAgentStatusRef.current = onAgentStatus;
     onMusicalContextUpdateRef.current = onMusicalContextUpdate;
     onJamStateUpdateRef.current = onJamStateUpdate;
-  }, [onExecute, onStop, onMessage, onAgentThought, onAgentStatus, onMusicalContextUpdate, onJamStateUpdate]);
+  }, [onExecute, onStop, onMessage, onAgentThought, onAgentCommentary, onAgentStatus, onMusicalContextUpdate, onJamStateUpdate]);
 
   const handleMessage = useCallback((event: MessageEvent) => {
     try {
@@ -101,6 +105,11 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
         case 'agent_thought': {
           const payload = message.payload as AgentThoughtPayload;
           onAgentThoughtRef.current?.(payload);
+          break;
+        }
+        case 'agent_commentary': {
+          const payload = message.payload as AgentCommentaryPayload;
+          onAgentCommentaryRef.current?.(payload);
           break;
         }
         case 'agent_status': {

@@ -6,6 +6,7 @@ import type {
   MusicalContext,
   JamChatMessage,
   AgentThoughtPayload,
+  AgentCommentaryPayload,
   AgentStatusPayload,
   MusicalContextPayload,
   JamStatePayload,
@@ -47,6 +48,7 @@ export interface UseJamSessionReturn {
 
   // Callbacks (wire into useWebSocket in page.tsx)
   handleAgentThought: (payload: AgentThoughtPayload) => void;
+  handleAgentCommentary: (payload: AgentCommentaryPayload) => void;
   handleAgentStatus: (payload: AgentStatusPayload) => void;
   handleMusicalContextUpdate: (payload: MusicalContextPayload) => void;
   handleJamStateUpdate: (payload: JamStatePayload) => void;
@@ -55,7 +57,7 @@ export interface UseJamSessionReturn {
 const DEFAULT_AGENTS: Record<string, AgentState> = Object.fromEntries(
   Object.entries(AGENT_META).map(([key, meta]) => [
     key,
-    { name: meta.name, emoji: meta.emoji, pattern: '', fallbackPattern: '', thoughts: '', reaction: '', status: 'idle' as const, lastUpdated: '' },
+    { name: meta.name, emoji: meta.emoji, pattern: '', fallbackPattern: '', thoughts: '', status: 'idle' as const, lastUpdated: '' },
   ])
 );
 
@@ -176,37 +178,25 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
         [payload.agent]: {
           ...agent,
           thoughts: payload.thought,
-          reaction: payload.reaction,
           pattern: payload.pattern,
           status: 'idle' as const,
           lastUpdated: payload.timestamp,
         },
       };
     });
+  }, []);
 
-    // Push chat messages separately (not inside state updater to keep it pure)
+  const handleAgentCommentary = useCallback((payload: AgentCommentaryPayload) => {
     const agentInfo = AGENT_META[payload.agent];
     if (!agentInfo) return;
 
     addChatMessage({
-      type: 'agent_thought',
+      type: 'agent_commentary',
       agent: payload.agent,
       agentName: agentInfo.name,
       emoji: agentInfo.emoji,
-      text: payload.thought,
-      pattern: payload.pattern || undefined,
+      text: payload.text,
     });
-
-    // Push reaction as separate message if non-empty and different from thought
-    if (payload.reaction && payload.reaction !== payload.thought) {
-      addChatMessage({
-        type: 'agent_reaction',
-        agent: payload.agent,
-        agentName: agentInfo.name,
-        emoji: agentInfo.emoji,
-        text: payload.reaction,
-      });
-    }
   }, [addChatMessage]);
 
   const handleAgentStatus = useCallback((payload: AgentStatusPayload) => {
@@ -270,6 +260,7 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
     cancelStartJam,
 
     handleAgentThought,
+    handleAgentCommentary,
     handleAgentStatus,
     handleMusicalContextUpdate,
     handleJamStateUpdate,

@@ -81,18 +81,19 @@ export default function Home() {
     agentStates,
     showAgentSelection,
     handleAgentThought,
+    handleAgentCommentary,
     handleAgentStatus,
     handleMusicalContextUpdate,
     handleJamStateUpdate,
   } = jam;
 
-  // Per-agent message filtering: each agent sees their own thoughts/reactions
+  // Per-agent message filtering: each agent sees their own optional commentary
   // plus boss directives (both broadcast and targeted)
   const agentMessages = useMemo(() => {
     const result: Record<string, typeof chatMessages> = {};
     for (const key of selectedAgents) {
       result[key] = chatMessages.filter((msg) => {
-        if (msg.type === 'agent_thought' || msg.type === 'agent_reaction') {
+        if (msg.type === 'agent_commentary') {
           return msg.agent === key;
         }
         if (msg.type === 'boss_directive') {
@@ -162,6 +163,9 @@ export default function Home() {
         case 'agent_thought':
           handleAgentThought(message.payload as Parameters<typeof handleAgentThought>[0]);
           break;
+        case 'agent_commentary':
+          handleAgentCommentary(message.payload as Parameters<typeof handleAgentCommentary>[0]);
+          break;
         case 'agent_status':
           handleAgentStatus(message.payload as Parameters<typeof handleAgentStatus>[0]);
           break;
@@ -179,10 +183,10 @@ export default function Home() {
           break;
       }
     };
-  }, [handleAgentThought, handleAgentStatus, handleJamStateUpdate, handleExecute, addChatMessage]);
+  }, [handleAgentThought, handleAgentCommentary, handleAgentStatus, handleJamStateUpdate, handleExecute, addChatMessage]);
 
   // Handle incoming chat messages from MCP send_message broadcasts
-  // Agent reactions flow through update_agent_state → agent_thought, not send_message
+  // Agent commentary/thought broadcasts flow through jam websocket events, not send_message
   const handleWsMessage = useCallback((msg: { id: string; text: string; timestamp: Date; sender: string }) => {
     if (!isJamming) return;
     addChatMessage({
@@ -197,6 +201,7 @@ export default function Home() {
     onStop: handleStop,
     onMessage: handleWsMessage,
     onAgentThought: handleAgentThought,
+    onAgentCommentary: handleAgentCommentary,
     onAgentStatus: handleAgentStatus,
     onMusicalContextUpdate: handleMusicalContextUpdate,
     onJamStateUpdate: handleJamStateUpdate,

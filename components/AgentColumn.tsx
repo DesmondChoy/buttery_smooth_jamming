@@ -65,16 +65,16 @@ function ColumnMessage({ message, agentKey }: { message: JamChatMessage; agentKe
     );
   }
 
-  const isReaction = message.type === 'agent_reaction';
+  const isCommentary = message.type === 'agent_commentary';
 
   return (
     <div className="px-2 py-1">
-      {isReaction && (
+      {isCommentary && (
         <div className="flex items-baseline gap-1">
-          <span className="text-xs text-gray-600">(reacting)</span>
+          <span className="text-xs text-gray-600">(commentary)</span>
         </div>
       )}
-      <p className={`text-xs ${isReaction ? 'text-gray-400 italic' : 'text-gray-300'}`}>
+      <p className={`text-xs ${isCommentary ? 'text-gray-400 italic' : 'text-gray-300'}`}>
         {message.text}
       </p>
       {message.pattern && (

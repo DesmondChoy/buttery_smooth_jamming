@@ -145,7 +145,8 @@ function sendAgentResponse(
   response: {
     pattern: string;
     thoughts: string;
-    reaction: string;
+    commentary?: string;
+    reaction?: string;
     decision?: {
       tempo_delta_pct?: unknown;
       energy_delta?: unknown;
@@ -428,8 +429,9 @@ describe('AgentProcessManager turn serialization', () => {
     expect(managerTurnSection).toContain('JAM START — CONTEXT');
     expect(managerTurnSection).toContain('BOSS SAYS: No directives — free jam. Create your opening pattern.');
 
-    expect(writtenPrompt).toContain('Required keys: pattern, thoughts, reaction.');
-    expect(writtenPrompt).toContain('Optional key: decision (tempo_delta_pct');
+    expect(writtenPrompt).toContain('Required keys: pattern, thoughts.');
+    expect(writtenPrompt).toContain('Optional keys: commentary, decision (tempo_delta_pct');
+    expect(writtenPrompt).toContain('commentary is an optional short band-chat line about feel/interplay/boss cues. Omit commentary instead of filler.');
     expect(writtenPrompt).toContain('Use decision only when relevant; omit decision or any field when not relevant or not confident.');
 
     sendAgentResponse(drumsProc, {
@@ -518,12 +520,11 @@ describe('AgentProcessManager turn serialization', () => {
     await vi.advanceTimersByTimeAsync(0);
 
     const drumsProc = getNthProcess(processes, 0);
-    sendRawAgentText(drumsProc, '{"pattern":"s(\\"bd sd\\")","thoughts":"Missing reaction"}');
+    sendRawAgentText(drumsProc, '{"pattern":"s(\\"bd sd\\")","commentary":"Missing thoughts"}');
     await startPromise;
 
     const snapshot = manager.getJamStateSnapshot();
     expect(snapshot.agents.drums?.status).toBe('timeout');
-    expect(snapshot.agents.drums?.reaction).toContain('timed out');
 
     await manager.stop();
   });
@@ -712,7 +713,7 @@ describe('AgentProcessManager turn serialization', () => {
 
     const snapshot = manager.getJamStateSnapshot();
     expect(snapshot.agents.drums?.status).toBe('playing');
-    expect(snapshot.agents.drums?.reaction).toBe('Locked');
+    expect(snapshot.agents.drums?.thoughts).toBe('Holding pocket');
     expect(rawManager.agentDecisions.drums).toBeUndefined();
 
     await manager.stop();
@@ -732,7 +733,7 @@ describe('AgentProcessManager turn serialization', () => {
       drumsProc,
       JSON.stringify({
         pattern: 's("bd sd")',
-        thoughts: 'Missing reaction should fail',
+        commentary: 'Missing thoughts should fail',
         decision: {
           tempo_delta_pct: 10,
           energy_delta: 1,
@@ -745,7 +746,6 @@ describe('AgentProcessManager turn serialization', () => {
 
     const snapshot = manager.getJamStateSnapshot();
     expect(snapshot.agents.drums?.status).toBe('timeout');
-    expect(snapshot.agents.drums?.reaction).toContain('timed out');
     expect(rawManager.agentDecisions.drums).toBeUndefined();
 
     await manager.stop();
@@ -958,7 +958,12 @@ describe('AgentProcessManager turn serialization', () => {
     });
     await startPromise;
 
-    type TestAgentResponse = { pattern: string; thoughts: string; reaction: string } | null;
+    type TestAgentResponse = {
+      pattern: string;
+      thoughts: string;
+      commentary?: string;
+      reaction?: string;
+    } | null;
     let resolveBlockedTick: ((value: TestAgentResponse) => void) | undefined;
     const blockedTick = new Promise<TestAgentResponse>((resolve) => {
       resolveBlockedTick = resolve;

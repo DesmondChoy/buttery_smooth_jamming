@@ -7,6 +7,7 @@ import type {
   MusicalContext,
   JamState,
   AgentThoughtPayload,
+  AgentCommentaryPayload,
   AgentStatusPayload,
   JamStatePayload,
   StructuredMusicalDecision,
@@ -63,8 +64,15 @@ const AGENT_PROMPT_DIR_CANDIDATES = [
 interface AgentResponse {
   pattern: string;
   thoughts: string;
-  reaction: string;
+  commentary?: string;
   decision?: StructuredMusicalDecision;
+}
+
+type AgentTurnSource = 'jam-start' | 'directive' | 'auto-tick';
+
+interface AgentCommentaryRuntimeState {
+  lastRound: number | null;
+  recentSignatures: string[];
 }
 
 // Per-agent Codex-backed session handle
@@ -123,6 +131,7 @@ export class AgentProcessManager {
   private agentPatterns: Record<string, string> = {};
   private agentStates: Record<string, AgentState> = {};
   private agentDecisions: Record<string, StructuredMusicalDecision | undefined> = {};
+  private agentCommentaryState: Record<string, AgentCommentaryRuntimeState> = {};
   private musicalContext: MusicalContext = randomMusicalContext();
   private activeAgents: string[] = [];
   private activatedAgents: string[] = [];
@@ -213,6 +222,7 @@ export class AgentProcessManager {
         }
       : randomMusicalContext();
     this.agentDecisions = {};
+    this.agentCommentaryState = {};
 
     // Initialize state for each agent
     for (const key of activeAgents) {
@@ -225,11 +235,14 @@ export class AgentProcessManager {
         pattern: '',
         fallbackPattern: '',
         thoughts: '',
-        reaction: '',
         status: 'idle',
         lastUpdated: new Date().toISOString(),
       };
       this.agentDecisions[key] = undefined;
+      this.agentCommentaryState[key] = {
+        lastRound: null,
+        recentSignatures: [],
+      };
     }
 
     // Prepare one Codex-backed session per agent
@@ -400,7 +413,7 @@ export class AgentProcessManager {
         }
 
         responses[i] = response;
-        this.applyAgentResponse(key, response);
+        this.applyAgentResponse(key, response, 'directive');
       }
 
       const modelRelativeContextDelta = this.applyModelRelativeContextDeltaForDirectiveTurn({
@@ -452,6 +465,7 @@ export class AgentProcessManager {
     this.agentPatterns = {};
     this.agentStates = {};
     this.agentDecisions = {};
+    this.agentCommentaryState = {};
     this.activeAgents = [];
     this.activatedAgents = [];
     this.mutedAgents.clear();
@@ -639,8 +653,9 @@ export class AgentProcessManager {
       '</manager_turn>',
       '',
       'Output only one JSON object.',
-      'Required keys: pattern, thoughts, reaction.',
-      'Optional key: decision (tempo_delta_pct, energy_delta, arrangement_intent, confidence, suggested_key, suggested_chords).',
+      'Required keys: pattern, thoughts.',
+      'Optional keys: commentary, decision (tempo_delta_pct, energy_delta, arrangement_intent, confidence, suggested_key, suggested_chords).',
+      'commentary is an optional short band-chat line about feel/interplay/boss cues. Omit commentary instead of filler.',
       'Use decision only when relevant; omit decision or any field when not relevant or not confident.',
       'tempo_delta_pct is relative percent vs current BPM (positive=faster, negative=slower).',
       'energy_delta is relative energy steps (positive=more energy, negative=less energy).',
@@ -804,16 +819,23 @@ export class AgentProcessManager {
     if (
       typeof parsed.pattern !== 'string'
       || typeof parsed.thoughts !== 'string'
-      || typeof parsed.reaction !== 'string'
     ) {
-      console.warn(`[Agent:${key}] Invalid response schema (missing pattern/thoughts/reaction strings)`);
+      console.warn(`[Agent:${key}] Invalid response schema (missing pattern/thoughts strings)`);
       return null;
+    }
+
+    let commentary: string | undefined;
+    if (typeof parsed.commentary === 'string') {
+      commentary = parsed.commentary;
+    } else if (typeof parsed.reaction === 'string') {
+      // Backward-compatible alias while prompts/personas/tests transition.
+      commentary = parsed.reaction;
     }
 
     return {
       pattern: parsed.pattern,
       thoughts: parsed.thoughts,
-      reaction: parsed.reaction,
+      commentary,
       decision: this.normalizeDecisionBlock(parsed.decision),
     };
   }
@@ -1233,7 +1255,7 @@ export class AgentProcessManager {
       for (let i = 0; i < this.activeAgents.length; i++) {
         const key = this.activeAgents[i];
         const response = responses[i];
-        this.applyAgentResponse(key, response);
+        this.applyAgentResponse(key, response, 'jam-start');
       }
 
       this.composeAndBroadcast();
@@ -1332,7 +1354,7 @@ export class AgentProcessManager {
       for (let i = 0; i < activeTargets.length; i++) {
         const key = activeTargets[i];
         const response = responses[i];
-        this.applyAgentResponse(key, response);
+        this.applyAgentResponse(key, response, 'auto-tick');
       }
 
       // Aggregate autonomous context drift from agent decisions
@@ -1351,7 +1373,11 @@ export class AgentProcessManager {
 
   // ─── Private: State Management ───────────────────────────────────
 
-  private applyAgentResponse(key: string, response: AgentResponse | null): void {
+  private applyAgentResponse(
+    key: string,
+    response: AgentResponse | null,
+    turnSource: AgentTurnSource
+  ): void {
     const state = this.agentStates[key];
     if (!state) return;
 
@@ -1360,7 +1386,7 @@ export class AgentProcessManager {
       const pattern = response.pattern || 'silence';
 
       // APM-14 contract: 'no_change' is a sentinel value meaning "keep my current
-      // pattern playing". The agent's thoughts/reaction still update, but
+      // pattern playing". The agent's thoughts/commentary may still update, but
       // agentPatterns[key] is intentionally NOT overwritten. If no prior pattern
       // exists (first round edge case), falls back to 'silence'.
       if (pattern === 'no_change') {
@@ -1372,11 +1398,11 @@ export class AgentProcessManager {
         this.agentStates[key] = {
           ...state,
           thoughts: response.thoughts || '',
-          reaction: response.reaction || '',
           status: this.agentPatterns[key] !== 'silence' ? 'playing' : state.status,
           lastUpdated: new Date().toISOString(),
         };
         this.broadcastAgentThought(key, response);
+        this.maybeBroadcastAgentCommentary(key, response, turnSource);
         this.setAgentStatus(key, this.agentStates[key].status);
         return;
       }
@@ -1387,13 +1413,13 @@ export class AgentProcessManager {
         pattern,
         fallbackPattern: pattern !== 'silence' ? pattern : state.fallbackPattern,
         thoughts: response.thoughts || '',
-        reaction: response.reaction || '',
         status: pattern !== 'silence' ? 'playing' : 'idle',
         lastUpdated: new Date().toISOString(),
       };
 
       // Broadcast agent thought
       this.broadcastAgentThought(key, response);
+      this.maybeBroadcastAgentCommentary(key, response, turnSource);
     } else {
       // APM-14 contract: when an agent times out (null response), the runtime
       // falls back to its last known good pattern (fallbackPattern) to maintain
@@ -1402,12 +1428,72 @@ export class AgentProcessManager {
       this.agentStates[key] = {
         ...state,
         status: (state.fallbackPattern && state.fallbackPattern !== 'silence') ? 'playing' : 'timeout',
-        reaction: '[timed out — playing last known pattern]',
         lastUpdated: new Date().toISOString(),
       };
     }
 
     this.setAgentStatus(key, this.agentStates[key].status);
+  }
+
+  private getAgentCommentaryRuntimeState(key: string): AgentCommentaryRuntimeState {
+    if (!this.agentCommentaryState[key]) {
+      this.agentCommentaryState[key] = {
+        lastRound: null,
+        recentSignatures: [],
+      };
+    }
+    return this.agentCommentaryState[key];
+  }
+
+  private sanitizeOptionalCommentary(text: string | undefined): string | undefined {
+    if (typeof text !== 'string') return undefined;
+    const collapsed = text.replace(/\s+/g, ' ').trim();
+    if (!collapsed) return undefined;
+    if (collapsed.length <= JAM_GOVERNANCE.COMMENTARY_MAX_CHARS) return collapsed;
+    return collapsed.slice(0, JAM_GOVERNANCE.COMMENTARY_MAX_CHARS).trimEnd();
+  }
+
+  private buildCommentarySignature(text: string): string {
+    return text
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  private maybeBroadcastAgentCommentary(
+    key: string,
+    response: AgentResponse,
+    turnSource: AgentTurnSource
+  ): void {
+    const commentary = this.sanitizeOptionalCommentary(response.commentary);
+    if (!commentary) return;
+
+    const commentarySignature = this.buildCommentarySignature(commentary);
+    if (!commentarySignature) return;
+
+    const thoughtSignature = this.buildCommentarySignature(
+      this.sanitizeOptionalCommentary(response.thoughts) ?? ''
+    );
+    if (thoughtSignature && commentarySignature === thoughtSignature) return;
+
+    const runtimeState = this.getAgentCommentaryRuntimeState(key);
+    if (runtimeState.recentSignatures.includes(commentarySignature)) return;
+
+    if (
+      turnSource === 'auto-tick'
+      && runtimeState.lastRound !== null
+      && (this.roundNumber - runtimeState.lastRound) < JAM_GOVERNANCE.COMMENTARY_AUTO_TICK_MIN_ROUNDS
+    ) {
+      return;
+    }
+
+    this.broadcastAgentCommentary(key, commentary);
+    runtimeState.lastRound = this.roundNumber;
+    runtimeState.recentSignatures = [
+      ...runtimeState.recentSignatures,
+      commentarySignature,
+    ].slice(-JAM_GOVERNANCE.COMMENTARY_RECENT_SIGNATURE_WINDOW);
   }
 
   private setAgentStatus(key: string, status: AgentState['status']): void {
@@ -1476,8 +1562,19 @@ export class AgentProcessManager {
       agent: key,
       emoji: meta.emoji,
       thought: response.thoughts,
-      reaction: response.reaction,
       pattern: response.pattern,
+      timestamp: new Date().toISOString(),
+    });
+  }
+
+  private broadcastAgentCommentary(key: string, text: string): void {
+    const meta = AGENT_META[key];
+    if (!meta) return;
+
+    this.broadcastWs<AgentCommentaryPayload>('agent_commentary', {
+      agent: key,
+      emoji: meta.emoji,
+      text,
       timestamp: new Date().toISOString(),
     });
   }
@@ -1504,7 +1601,6 @@ export class AgentProcessManager {
       return {
         pattern: 'silence',
         thoughts: 'Muting for the boss.',
-        reaction: 'Staying out until called back in.',
       };
     }
 

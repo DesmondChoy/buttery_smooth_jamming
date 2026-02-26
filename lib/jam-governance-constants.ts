@@ -106,6 +106,26 @@ export const JAM_GOVERNANCE = {
    */
   AUTO_TICK_INTERVAL_MS: 30_000,
 
+  // ─── Commentary (Display-Only) ─────────────────────────────────────
+  /**
+   * Maximum number of characters to broadcast in optional agent commentary.
+   * Commentary is UX-only; truncation protects the jam columns from verbose
+   * or runaway prose while keeping musical turns unaffected.
+   */
+  COMMENTARY_MAX_CHARS: 180,
+
+  /**
+   * Minimum round spacing between auto-tick commentary emissions per agent.
+   * Jam-start and boss directives bypass this cooldown.
+   */
+  COMMENTARY_AUTO_TICK_MIN_ROUNDS: 2,
+
+  /**
+   * Number of recent normalized commentary signatures kept per agent for
+   * duplicate suppression.
+   */
+  COMMENTARY_RECENT_SIGNATURE_WINDOW: 3,
+
   // ─── Consensus ────────────────────────────────────────────────────
   /**
    * Minimum number of agents (with `high` confidence) that must agree

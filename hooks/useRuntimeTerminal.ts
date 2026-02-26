@@ -151,6 +151,7 @@ export function useRuntimeTerminal(
 
           // Jam session messages from AgentProcessManager
           case 'agent_thought':
+          case 'agent_commentary':
           case 'agent_status':
           case 'execute':
           case 'jam_state_update':

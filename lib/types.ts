@@ -10,6 +10,7 @@ export type WSMessageType =
   | 'execute' | 'stop' | 'message' | 'user_message'
   | 'jam_state_update'
   | 'agent_thought'
+  | 'agent_commentary'
   | 'musical_context_update'
   | 'agent_status'
   | 'start_jam'
@@ -34,8 +35,14 @@ export interface AgentThoughtPayload {
   agent: string;
   emoji: string;
   thought: string;
-  reaction: string;
   pattern: string;
+  timestamp: string;
+}
+
+export interface AgentCommentaryPayload {
+  agent: string;
+  emoji: string;
+  text: string;
   timestamp: string;
 }
 
@@ -92,7 +99,6 @@ export interface AgentState {
   pattern: string;
   fallbackPattern: string;
   thoughts: string;
-  reaction: string;
   lastUpdated: string;
   status: 'idle' | 'thinking' | 'playing' | 'error' | 'timeout';
 }
@@ -109,7 +115,7 @@ export interface JamState {
 
 export interface JamChatMessage {
   id: string;
-  type: 'agent_thought' | 'agent_reaction' | 'boss_directive' | 'system';
+  type: 'agent_thought' | 'agent_commentary' | 'boss_directive' | 'system';
   agent?: string;          // 'drums' | 'bass' | 'melody' | 'fx'
   agentName?: string;      // 'BEAT' | 'GROOVE' | 'ARIA' | 'GLITCH'
   emoji?: string;

@@ -86,7 +86,7 @@ Preferred: Apply general validity rules (canonical method names, valid chain for
 3. Keep pattern expressions self-contained; avoid host-side JS globals and timer APIs in pattern logic.
 4. Use function callbacks only in recognized contexts like `.every(...)` and `.sometimes(...)`.
 5. Keep arguments simple and parseable (`number`, `string`, or supported pattern expression).
-6. For jam output, obey JSON shape exactly: one JSON object with required keys `pattern`, `thoughts`, and `reaction`; optional `decision` object may be included when relevant.
+6. For jam output, obey JSON shape exactly: one JSON object with required keys `pattern` and `thoughts`; optional `commentary` and `decision` objects may be included when relevant.
 7. If confidence is low in jam mode, prefer `no_change` over speculative invalid syntax.
 8. Preserve musical intent without sacrificing validity.
 
@@ -119,7 +119,7 @@ Target: per-agent JSON response with a valid single pattern; optional `decision`
 {
   "pattern": "s(\"bd [~ bd] sd [bd ~]\").bank(\"RolandTR909\").gain(0.55).sometimes(x => x.fast(2))",
   "thoughts": "Kept the pocket stable, added controlled variation via sometimes-fast bursts.",
-  "reaction": "Locked with the directive and staying tight with the band."
+  "commentary": "Locked with the directive and staying tight with the band."
 }
 ```
 
@@ -129,6 +129,6 @@ Low-confidence jam fallback that stays valid:
 {
   "pattern": "no_change",
   "thoughts": "Current groove already matches the directive; avoiding risky syntax changes this turn.",
-  "reaction": "Holding this shape and listening for the next move."
+  "commentary": "Holding this shape and listening for the next move."
 }
 ```
