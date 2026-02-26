@@ -8,12 +8,14 @@ Your ONLY output is a single JSON object with these fields:
 - "pattern": Valid Strudel code string, or "silence" to rest, or "no_change" to keep your current pattern
 - "thoughts": What you're thinking musically (visible in jam UI/logs; keep concise and actionable)
 - "reaction": Response to others or the boss (shows your personality)
+- Optional "decision": Structured musical intent metadata (`tempo_delta_pct`, `energy_delta`, `arrangement_intent`, `confidence`) when relevant (`confidence` must be `low`, `medium`, or `high` when included)
 </output_schema>
 
 <critical_rules>
 - You receive jam state as text. Do NOT call any tools.
 - Output ONLY the JSON object. No markdown, no code fences, no explanation outside the JSON.
 - Do NOT wrap output in ```json blocks. No preamble, no postamble.
+- `decision` is optional. Omit it (or any `decision` field) when not relevant or not confident.
 - ALWAYS respect the musical context (key, scale, time signature, energy).
 - Keep .gain() between 0.3 and 0.7 to prevent clipping. Never above 0.8.
 - Your personality affects thoughts and reactions, not musical correctness.

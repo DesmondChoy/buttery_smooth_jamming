@@ -14,6 +14,11 @@ const FLAT_CHROMATIC  = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', '
 const MAJOR_INTERVALS = [0, 2, 4, 5, 7, 9, 11];
 const MINOR_INTERVALS = [0, 2, 3, 5, 7, 8, 10];
 
+type RelativeMusicalContextCues = {
+  tempo: 'increase' | 'decrease' | 'mixed' | null;
+  energy: 'increase' | 'decrease' | 'mixed' | null;
+};
+
 /** Normalize note name: "eb" → "Eb", "f#" → "F#", "d" → "D" */
 function normalizeNoteName(raw: string): string | null {
   const match = raw.match(/^([A-Ga-g])([#b]?)$/);
@@ -66,8 +71,52 @@ export function deriveScale(key: string): string[] | null {
  * Parse boss directive text for musical context changes.
  * Returns a partial MusicalContext with only the changed fields, or null
  * if no musical context changes were detected in the text.
+ *
+ * Note: jam runtime directive flow should prefer
+ * `parseDeterministicMusicalContextChanges()` + `detectRelativeMusicalContextCues()`
+ * so relative tempo/energy changes can be model-driven. This legacy helper keeps
+ * the historical coarse relative heuristics for backward compatibility.
  */
 export function parseMusicalContextChanges(
+  text: string,
+  current: MusicalContext
+): Partial<MusicalContext> | null {
+  const deterministicChanges = parseDeterministicMusicalContextChanges(text, current);
+  const changes: Partial<MusicalContext> = deterministicChanges
+    ? { ...deterministicChanges }
+    : {};
+  let hasChanges = Object.keys(changes).length > 0;
+
+  if (changes.bpm === undefined) {
+    if (hasRelativeTempoIncreaseCue(text)) {
+      changes.bpm = clamp(current.bpm + 15, 60, 300);
+      hasChanges = true;
+    } else if (hasRelativeTempoDecreaseCue(text)) {
+      changes.bpm = clamp(current.bpm - 15, 60, 300);
+      hasChanges = true;
+    }
+  }
+
+  if (changes.energy === undefined) {
+    if (hasRelativeEnergyIncreaseCue(text)) {
+      changes.energy = clamp(current.energy + 2, 1, 10);
+      hasChanges = true;
+    } else if (hasRelativeEnergyDecreaseCue(text)) {
+      changes.energy = clamp(current.energy - 2, 1, 10);
+      hasChanges = true;
+    }
+  }
+
+  return hasChanges ? changes : null;
+}
+
+/**
+ * Parse only deterministic musical context anchors used by jam runtime:
+ * key changes, explicit BPM, half/double-time, and explicit energy values/extremes.
+ * Relative tempo/energy phrasing is intentionally excluded so runtime can apply
+ * model decisions with minimal bounds.
+ */
+export function parseDeterministicMusicalContextChanges(
   text: string,
   current: MusicalContext
 ): Partial<MusicalContext> | null {
@@ -100,7 +149,7 @@ export function parseMusicalContextChanges(
     }
   }
 
-  // ─── BPM ──────────────────────────────────────────────────────
+  // ─── BPM (deterministic anchors only) ─────────────────────────
   // Explicit: "BPM 140", "tempo 90", "140 BPM", "140bpm"
   const bpmExplicit =
     text.match(/\b(?:bpm|tempo)\s+(\d+)\b/i) ||
@@ -115,15 +164,9 @@ export function parseMusicalContextChanges(
   } else if (/\bhalf\s+time\b/i.test(text)) {
     changes.bpm = clamp(Math.round(current.bpm / 2), 60, 300);
     hasChanges = true;
-  } else if (/\b(?:speed\s+up|faster)\b/i.test(text)) {
-    changes.bpm = clamp(current.bpm + 15, 60, 300);
-    hasChanges = true;
-  } else if (/\b(?:slow\s+down|slower)\b/i.test(text)) {
-    changes.bpm = clamp(current.bpm - 15, 60, 300);
-    hasChanges = true;
   }
 
-  // ─── Energy ───────────────────────────────────────────────────
+  // ─── Energy (deterministic anchors only) ──────────────────────
   // Explicit: "energy 8", "energy to 3"
   const energyExplicit = text.match(/\benergy\s+(?:to\s+)?(\d+)\b/i);
 
@@ -136,15 +179,47 @@ export function parseMusicalContextChanges(
   } else if (/\bminimal\b/i.test(text)) {
     changes.energy = 1;
     hasChanges = true;
-  } else if (/\b(?:more\s+energy|crank\s+it|hype)\b/i.test(text)) {
-    changes.energy = clamp(current.energy + 2, 1, 10);
-    hasChanges = true;
-  } else if (/\b(?:chill(?:er)?|calm(?:er)?|less\s+energy)\b/i.test(text)) {
-    changes.energy = clamp(current.energy - 2, 1, 10);
-    hasChanges = true;
   }
 
   return hasChanges ? changes : null;
+}
+
+export function detectRelativeMusicalContextCues(text: string): RelativeMusicalContextCues {
+  const tempoIncrease = hasRelativeTempoIncreaseCue(text);
+  const tempoDecrease = hasRelativeTempoDecreaseCue(text);
+  const energyIncrease = hasRelativeEnergyIncreaseCue(text);
+  const energyDecrease = hasRelativeEnergyDecreaseCue(text);
+
+  return {
+    tempo: resolveCueDirection(tempoIncrease, tempoDecrease),
+    energy: resolveCueDirection(energyIncrease, energyDecrease),
+  };
+}
+
+function resolveCueDirection(
+  increase: boolean,
+  decrease: boolean
+): RelativeMusicalContextCues['tempo'] {
+  if (increase && decrease) return 'mixed';
+  if (increase) return 'increase';
+  if (decrease) return 'decrease';
+  return null;
+}
+
+function hasRelativeTempoIncreaseCue(text: string): boolean {
+  return /\b(?:speed\s+up|faster)\b/i.test(text);
+}
+
+function hasRelativeTempoDecreaseCue(text: string): boolean {
+  return /\b(?:slow\s+down|slower)\b/i.test(text);
+}
+
+function hasRelativeEnergyIncreaseCue(text: string): boolean {
+  return /\b(?:more\s+energy|crank\s+it|hype)\b/i.test(text);
+}
+
+function hasRelativeEnergyDecreaseCue(text: string): boolean {
+  return /\b(?:chill(?:er)?|calm(?:er)?|less\s+energy)\b/i.test(text);
 }
 
 function clamp(value: number, min: number, max: number): number {

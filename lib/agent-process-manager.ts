@@ -15,7 +15,10 @@ import type {
 } from './types';
 import { AGENT_META } from './types';
 import { formatBandStateLine } from './pattern-parser';
-import { parseMusicalContextChanges } from './musical-context-parser';
+import {
+  detectRelativeMusicalContextCues,
+  parseDeterministicMusicalContextChanges,
+} from './musical-context-parser';
 import { randomMusicalContext } from './musical-context-presets';
 import { map_codex_event_to_runtime_events } from './codex-process';
 import {
@@ -85,6 +88,12 @@ const ARRANGEMENT_INTENT_MAP: Record<string, ArrangementIntent> = {
   transition: 'transition',
 };
 const DECISION_CONFIDENCE_SET = new Set<DecisionConfidence>(['low', 'medium', 'high']);
+const DECISION_CONFIDENCE_MULTIPLIER: Record<DecisionConfidence, number> = {
+  low: 0,
+  medium: 0.5,
+  high: 1,
+};
+type RelativeCueDirection = ReturnType<typeof detectRelativeMusicalContextCues>['tempo'];
 
 /**
  * Manages per-agent Codex-backed sessions for jam mode.
@@ -228,11 +237,16 @@ export class AgentProcessManager {
         return;
       }
 
-      // Parse and apply any musical context changes from the directive
-      const contextDelta = parseMusicalContextChanges(text, this.musicalContext);
-      if (contextDelta) {
-        this.musicalContext = { ...this.musicalContext, ...contextDelta };
-        console.log('[AgentManager] Musical context updated:', contextDelta);
+      // Apply deterministic anchors first (explicit BPM / half/double-time / explicit energy / key).
+      // Relative tempo/energy cues are handled after agent responses using model decisions.
+      const deterministicContextDelta = parseDeterministicMusicalContextChanges(
+        text,
+        this.musicalContext
+      );
+      const relativeContextCues = detectRelativeMusicalContextCues(text);
+      if (deterministicContextDelta) {
+        this.musicalContext = { ...this.musicalContext, ...deterministicContextDelta };
+        console.log('[AgentManager] Deterministic musical context updated:', deterministicContextDelta);
       }
 
       // Determine which agents to target
@@ -261,6 +275,15 @@ export class AgentProcessManager {
         const key = targets[i];
         const response = responses[i];
         this.applyAgentResponse(key, response);
+      }
+
+      const modelRelativeContextDelta = this.applyModelRelativeContextDeltaForDirectiveTurn({
+        responses,
+        deterministicContextDelta,
+        relativeContextCues,
+      });
+      if (modelRelativeContextDelta) {
+        console.log('[AgentManager] Model-relative musical context updated:', modelRelativeContextDelta);
       }
 
       // Compose all patterns and broadcast
@@ -483,7 +506,12 @@ export class AgentProcessManager {
       text,
       '</manager_turn>',
       '',
-      'Output only one JSON object with keys pattern, thoughts, reaction.',
+      'Output only one JSON object.',
+      'Required keys: pattern, thoughts, reaction.',
+      'Optional key: decision (tempo_delta_pct, energy_delta, arrangement_intent, confidence).',
+      'Use decision only when relevant; omit decision or any field when not relevant or not confident.',
+      'tempo_delta_pct is relative percent vs current BPM (positive=faster, negative=slower).',
+      'energy_delta is relative energy steps (positive=more energy, negative=less energy).',
     ].join('\n');
   }
 
@@ -664,7 +692,7 @@ export class AgentProcessManager {
     if (typeof value !== 'number' || !Number.isFinite(value)) {
       return undefined;
     }
-    const rounded = Math.round(value);
+    const rounded = this.roundHalfAwayFromZero(value);
     return Math.min(max, Math.max(min, rounded));
   }
 
@@ -709,6 +737,109 @@ export class AgentProcessManager {
     }
 
     return Object.keys(normalized).length > 0 ? normalized : undefined;
+  }
+
+  private clampNumeric(value: number, min: number, max: number): number {
+    return Math.max(min, Math.min(max, value));
+  }
+
+  private roundHalfAwayFromZero(value: number): number {
+    if (!Number.isFinite(value) || value === 0) return 0;
+    const roundedMagnitude = Math.round(Math.abs(value));
+    if (roundedMagnitude === 0) return 0;
+    return value < 0 ? -roundedMagnitude : roundedMagnitude;
+  }
+
+  private getDecisionConfidenceMultiplier(confidence: DecisionConfidence | undefined): number {
+    if (!confidence) return 1;
+    return DECISION_CONFIDENCE_MULTIPLIER[confidence];
+  }
+
+  private isDeltaDirectionCompatible(value: number, cueDirection: RelativeCueDirection): boolean {
+    if (cueDirection === 'increase') return value > 0;
+    if (cueDirection === 'decrease') return value < 0;
+    return false;
+  }
+
+  private aggregateRelativeDecisionFieldForCurrentTurn(
+    responses: Array<AgentResponse | null>,
+    field: 'tempo_delta_pct' | 'energy_delta',
+    cueDirection: RelativeCueDirection
+  ): number | undefined {
+    if (cueDirection === null || cueDirection === 'mixed') {
+      return undefined;
+    }
+
+    const scaledValues: number[] = [];
+
+    for (const response of responses) {
+      const decision = response?.decision;
+      if (!decision) continue;
+      const rawValue = decision[field];
+      if (typeof rawValue !== 'number' || !Number.isFinite(rawValue)) continue;
+      if (!this.isDeltaDirectionCompatible(rawValue, cueDirection)) continue;
+
+      const effectiveValue = rawValue * this.getDecisionConfidenceMultiplier(decision.confidence);
+      if (effectiveValue === 0) continue;
+      scaledValues.push(effectiveValue);
+    }
+
+    if (scaledValues.length === 0) return undefined;
+
+    const average = scaledValues.reduce((sum, value) => sum + value, 0) / scaledValues.length;
+    const rounded = this.roundHalfAwayFromZero(average);
+    return rounded === 0 ? undefined : rounded;
+  }
+
+  private applyModelRelativeContextDeltaForDirectiveTurn(params: {
+    responses: Array<AgentResponse | null>;
+    deterministicContextDelta: Partial<MusicalContext> | null;
+    relativeContextCues: ReturnType<typeof detectRelativeMusicalContextCues>;
+  }): Partial<MusicalContext> | null {
+    const { responses, deterministicContextDelta, relativeContextCues } = params;
+    const changes: Partial<MusicalContext> = {};
+    const current = this.musicalContext;
+
+    const deterministicTempoApplied = deterministicContextDelta?.bpm !== undefined;
+    if (relativeContextCues.tempo && !deterministicTempoApplied) {
+      const tempoDeltaPct = this.aggregateRelativeDecisionFieldForCurrentTurn(
+        responses,
+        'tempo_delta_pct',
+        relativeContextCues.tempo
+      );
+      if (tempoDeltaPct !== undefined) {
+        const bpmDelta = this.roundHalfAwayFromZero((current.bpm * tempoDeltaPct) / 100);
+        if (bpmDelta !== 0) {
+          const nextBpm = this.clampNumeric(current.bpm + bpmDelta, 60, 300);
+          if (nextBpm !== current.bpm) {
+            changes.bpm = nextBpm;
+          }
+        }
+      }
+    }
+
+    const deterministicEnergyApplied = deterministicContextDelta?.energy !== undefined;
+    if (relativeContextCues.energy && !deterministicEnergyApplied) {
+      const energyDelta = this.aggregateRelativeDecisionFieldForCurrentTurn(
+        responses,
+        'energy_delta',
+        relativeContextCues.energy
+      );
+      if (energyDelta !== undefined) {
+        const nextEnergy = this.clampNumeric(current.energy + energyDelta, 1, 10);
+        if (nextEnergy !== current.energy) {
+          changes.energy = nextEnergy;
+        }
+      }
+    }
+
+    if (Object.keys(changes).length === 0) {
+      return null;
+    }
+
+    // Minimal code-owned guardrails: normalized decision ranges + final context clamps.
+    this.musicalContext = { ...this.musicalContext, ...changes };
+    return changes;
   }
 
   private formatCodexErrorForLog(raw: string): string {

@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { parseMusicalContextChanges, deriveScale } from '../musical-context-parser';
+import {
+  detectRelativeMusicalContextCues,
+  deriveScale,
+  parseDeterministicMusicalContextChanges,
+  parseMusicalContextChanges,
+} from '../musical-context-parser';
 import type { MusicalContext } from '../types';
 
 const DEFAULT_CTX: MusicalContext = {
@@ -291,6 +296,16 @@ describe('parseMusicalContextChanges — combined', () => {
     expect(result?.key).toBeUndefined();
   });
 
+  it('"BPM 140 and faster" prefers explicit BPM over relative tempo', () => {
+    const result = parseMusicalContextChanges('BPM 140 and faster', DEFAULT_CTX);
+    expect(result?.bpm).toBe(140);
+  });
+
+  it('"energy 8 and more energy" prefers explicit energy over relative energy', () => {
+    const result = parseMusicalContextChanges('energy 8 and more energy', DEFAULT_CTX);
+    expect(result?.energy).toBe(8);
+  });
+
   it('"Chill at 80 BPM in A minor"', () => {
     const result = parseMusicalContextChanges('Chill at 80 BPM in A minor', DEFAULT_CTX);
     expect(result?.energy).toBe(3); // chill → -2
@@ -316,5 +331,87 @@ describe('parseMusicalContextChanges — no match', () => {
 
   it('empty string returns null', () => {
     expect(parseMusicalContextChanges('', DEFAULT_CTX)).toBeNull();
+  });
+});
+
+// ─── Jam Runtime Helper Parsing ──────────────────────────────────
+
+describe('parseDeterministicMusicalContextChanges', () => {
+  it('keeps deterministic anchors and excludes relative tempo/energy heuristics', () => {
+    const result = parseDeterministicMusicalContextChanges(
+      'Switch to D major, BPM 140, more energy, faster',
+      DEFAULT_CTX
+    );
+
+    expect(result).toEqual({
+      key: 'D major',
+      scale: ['D', 'E', 'F#', 'G', 'A', 'B', 'C#'],
+      bpm: 140,
+    });
+  });
+
+  it('returns null for relative-only cues', () => {
+    expect(parseDeterministicMusicalContextChanges('faster and more energy', DEFAULT_CTX)).toBeNull();
+  });
+
+  it('keeps half-time and double-time as deterministic tempo anchors', () => {
+    expect(parseDeterministicMusicalContextChanges('half time feel', DEFAULT_CTX)).toEqual({ bpm: 60 });
+    expect(parseDeterministicMusicalContextChanges('double time', DEFAULT_CTX)).toEqual({ bpm: 240 });
+  });
+
+  it('keeps explicit energy extremes while ignoring relative cues', () => {
+    const result = parseDeterministicMusicalContextChanges(
+      'max energy but slower',
+      DEFAULT_CTX
+    );
+    expect(result).toEqual({ energy: 10 });
+  });
+});
+
+describe('detectRelativeMusicalContextCues', () => {
+  it('detects tempo-only cues', () => {
+    expect(detectRelativeMusicalContextCues('a bit faster please')).toEqual({
+      tempo: 'increase',
+      energy: null,
+    });
+  });
+
+  it('detects energy-only cues', () => {
+    expect(detectRelativeMusicalContextCues('make it calmer')).toEqual({
+      tempo: null,
+      energy: 'decrease',
+    });
+  });
+
+  it('detects both tempo and energy cues', () => {
+    expect(detectRelativeMusicalContextCues('faster and more energy')).toEqual({
+      tempo: 'increase',
+      energy: 'increase',
+    });
+  });
+
+  it('detects no relative cues', () => {
+    expect(detectRelativeMusicalContextCues('BPM 140 in D major')).toEqual({
+      tempo: null,
+      energy: null,
+    });
+  });
+
+  it('detects mixed/contradictory cue directions', () => {
+    expect(detectRelativeMusicalContextCues('faster but slower, more energy then chill')).toEqual({
+      tempo: 'mixed',
+      energy: 'mixed',
+    });
+  });
+
+  it('does not treat half/double-time as relative tempo cues', () => {
+    expect(detectRelativeMusicalContextCues('half time now')).toEqual({
+      tempo: null,
+      energy: null,
+    });
+    expect(detectRelativeMusicalContextCues('double time!')).toEqual({
+      tempo: null,
+      energy: null,
+    });
   });
 });

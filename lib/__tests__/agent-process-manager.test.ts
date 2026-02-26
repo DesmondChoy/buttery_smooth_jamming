@@ -213,6 +213,17 @@ function getNthProcess(
   return Array.from(processes.values())[n];
 }
 
+function getProcessByKey(
+  processes: Map<string, ReturnType<typeof createFakeProcess>>,
+  key: string
+) {
+  const proc = processes.get(key);
+  if (!proc) {
+    throw new Error(`Missing fake process for key: ${key}`);
+  }
+  return proc;
+}
+
 interface BroadcastJamState {
   currentRound: number;
   musicalContext: MusicalContext;
@@ -676,7 +687,7 @@ describe('AgentProcessManager turn serialization', () => {
   });
 
   it('no duplicate readline listeners per agent', async () => {
-    const { manager, processes } = createTestManager();
+    const { manager, broadcast, processes } = createTestManager();
 
     const startPromise = manager.start(['drums']);
     await vi.advanceTimersByTimeAsync(0);
@@ -716,10 +727,17 @@ describe('AgentProcessManager turn serialization', () => {
     });
     await directivePromise;
 
-    // The test verifies the turns serialized (no overlapping listeners)
-    // by confirming both completed without errors or garbled responses
-    // If listeners overlapped, one response would be consumed by the wrong
-    // handler, causing a timeout or incorrect pattern.
+    const jamStateUpdates = broadcast.mock.calls
+      .filter(([msg]: unknown[]) => (msg as { type: string }).type === 'jam_state_update')
+      .map(([msg]: unknown[]) => (msg as { payload: { jamState: { currentRound: number } } }).payload.jamState.currentRound);
+    expect(jamStateUpdates).toEqual([1, 2, 3]);
+
+    const snapshot = manager.getJamStateSnapshot();
+    expect(snapshot.currentRound).toBe(3);
+    expect(snapshot.agents.drums?.pattern).toBe('s("bd cp")');
+    expect(snapshot.agents.drums?.status).toBe('playing');
+
+    await manager.stop();
   });
 
   it('stop during queued turn prevents stale execution', async () => {
@@ -740,6 +758,7 @@ describe('AgentProcessManager turn serialization', () => {
 
     // Trigger a tick
     vi.advanceTimersByTime(30000);
+    await vi.advanceTimersByTimeAsync(0);
 
     // Queue a directive behind the tick
     const directivePromise = manager.handleDirective('Test', 'drums', ['drums']);
@@ -922,7 +941,7 @@ describe('AgentProcessManager musical context updates', () => {
     await manager.stop();
   });
 
-  it('relative energy change propagates through broadcast', async () => {
+  it('relative energy change uses model decision delta', async () => {
     const { manager, broadcast, processes } = createTestManager();
 
     const startPromise = manager.start(['drums']);
@@ -936,7 +955,7 @@ describe('AgentProcessManager musical context updates', () => {
     });
     await startPromise;
 
-    // "more energy" should bump default 5 → 7
+    // Relative energy comes from model decision (not hardcoded +2)
     const directivePromise = manager.handleDirective(
       'more energy!',
       'drums',
@@ -948,12 +967,361 @@ describe('AgentProcessManager musical context updates', () => {
       pattern: 's("bd sd bd sd").gain(1.2)',
       thoughts: 'Pumping it up',
       reaction: 'Energy!',
+      decision: {
+        energy_delta: 1,
+        confidence: 'high',
+      },
     });
     await directivePromise;
 
     const directiveJamState = getJamStateForRound(broadcast, 2);
 
+    expect(directiveJamState!.musicalContext.energy).toBe(6);
+
+    await manager.stop();
+  });
+
+  it('relative tempo cue without model decision keeps BPM unchanged', async () => {
+    const { manager, broadcast, processes } = createTestManager();
+
+    const startPromise = manager.start(['drums']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const drumsProc = getNthProcess(processes, 0);
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd sd")',
+      thoughts: 'Opening',
+      reaction: 'Go!',
+    });
+    await startPromise;
+
+    const directivePromise = manager.handleDirective(
+      'a bit faster',
+      'drums',
+      ['drums']
+    );
+    await vi.advanceTimersByTimeAsync(0);
+
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd sd bd sd")',
+      thoughts: 'I can push the feel without changing global BPM',
+      reaction: 'Leaning in',
+    });
+    await directivePromise;
+
+    const directiveJamState = getJamStateForRound(broadcast, 2);
+    expect(directiveJamState!.musicalContext.bpm).toBe(120);
+
+    await manager.stop();
+  });
+
+  it('explicit BPM stays deterministic even when model returns tempo delta', async () => {
+    const { manager, broadcast, processes } = createTestManager();
+
+    const startPromise = manager.start(['drums']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const drumsProc = getNthProcess(processes, 0);
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd sd")',
+      thoughts: 'Opening',
+      reaction: 'Go!',
+    });
+    await startPromise;
+
+    const directivePromise = manager.handleDirective(
+      'BPM 140 and faster',
+      'drums',
+      ['drums']
+    );
+    await vi.advanceTimersByTimeAsync(0);
+
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd sd bd sd").fast(2)',
+      thoughts: 'Locking to the requested BPM anchor',
+      reaction: '140 exactly',
+      decision: {
+        tempo_delta_pct: 25,
+        confidence: 'high',
+      },
+    });
+    await directivePromise;
+
+    const directiveJamState = getJamStateForRound(broadcast, 2);
+    expect(directiveJamState!.musicalContext.bpm).toBe(140);
+
+    await manager.stop();
+  });
+
+  it('half-time stays deterministic even when model returns tempo delta', async () => {
+    const { manager, broadcast, processes } = createTestManager();
+
+    const startPromise = manager.start(['drums']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const drumsProc = getNthProcess(processes, 0);
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd sd")',
+      thoughts: 'Opening',
+      reaction: 'Go!',
+    });
+    await startPromise;
+
+    const directivePromise = manager.handleDirective(
+      'half time feel, but keep it moving',
+      'drums',
+      ['drums']
+    );
+    await vi.advanceTimersByTimeAsync(0);
+
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd ~ sd ~")',
+      thoughts: 'Half-time pocket',
+      reaction: 'Slower feel, same focus',
+      decision: {
+        tempo_delta_pct: 40,
+        confidence: 'high',
+      },
+    });
+    await directivePromise;
+
+    const directiveJamState = getJamStateForRound(broadcast, 2);
+    expect(directiveJamState!.musicalContext.bpm).toBe(60);
+
+    await manager.stop();
+  });
+
+  it('subtle vs strong tempo directives can apply different model delta magnitudes', async () => {
+    const { manager, broadcast, processes } = createTestManager();
+
+    const startPromise = manager.start(['drums']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const drumsProc = getNthProcess(processes, 0);
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd sd")',
+      thoughts: 'Opening',
+      reaction: 'Go!',
+    });
+    await startPromise;
+
+    const subtleDirective = manager.handleDirective(
+      'a bit faster',
+      'drums',
+      ['drums']
+    );
+    await vi.advanceTimersByTimeAsync(0);
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd sd bd sd")',
+      thoughts: 'Small push',
+      reaction: 'Just a nudge',
+      decision: {
+        tempo_delta_pct: 5,
+        confidence: 'high',
+      },
+    });
+    await subtleDirective;
+
+    const strongDirective = manager.handleDirective(
+      'way faster',
+      'drums',
+      ['drums']
+    );
+    await vi.advanceTimersByTimeAsync(0);
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd*2 sd*2")',
+      thoughts: 'Bigger lift',
+      reaction: 'Pushing harder',
+      decision: {
+        tempo_delta_pct: 25,
+        confidence: 'high',
+      },
+    });
+    await strongDirective;
+
+    const subtleJamState = getJamStateForRound(broadcast, 2);
+    const strongJamState = getJamStateForRound(broadcast, 3);
+
+    expect(subtleJamState!.musicalContext.bpm).toBe(126); // 120 + round(120*0.05)
+    expect(strongJamState!.musicalContext.bpm).toBe(158); // 126 + round(126*0.25)
+    expect(strongJamState!.musicalContext.bpm).toBeGreaterThan(subtleJamState!.musicalContext.bpm);
+
+    await manager.stop();
+  });
+
+  it('broadcast relative decisions use confidence-weighted averaging', async () => {
+    const { manager, broadcast, processes } = createTestManager();
+
+    const startPromise = manager.start(['drums', 'bass']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const drumsProc = getProcessByKey(processes, 'drums');
+    const bassProc = getProcessByKey(processes, 'bass');
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd sd")',
+      thoughts: 'Opening drums',
+      reaction: 'Go!',
+    });
+    sendAgentResponse(bassProc, {
+      pattern: 'note("c2 g2")',
+      thoughts: 'Opening bass',
+      reaction: 'Locked!',
+    });
+    await startPromise;
+
+    const directivePromise = manager.handleDirective(
+      'faster and more energy',
+      undefined,
+      ['drums', 'bass']
+    );
+    await vi.advanceTimersByTimeAsync(0);
+
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd sd bd sd").gain(1.1)',
+      thoughts: 'Drive the pulse',
+      reaction: 'Building',
+      decision: {
+        tempo_delta_pct: 20,
+        energy_delta: 2,
+        confidence: 'high',
+      },
+    });
+    sendAgentResponse(bassProc, {
+      pattern: 'note("c2 c2 g2 c3").gain(1.1)',
+      thoughts: 'Push with restraint',
+      reaction: 'Leaning forward',
+      decision: {
+        tempo_delta_pct: 20,
+        energy_delta: 2,
+        confidence: 'medium',
+      },
+    });
+    await directivePromise;
+
+    const directiveJamState = getJamStateForRound(broadcast, 2);
+
+    // tempo avg = round((20 + 10) / 2) = 15% => 120 + round(18) = 138
+    // energy avg = round((2 + 1) / 2) = 2 => 5 + 2 = 7
+    expect(directiveJamState!.musicalContext.bpm).toBe(138);
     expect(directiveJamState!.musicalContext.energy).toBe(7);
+
+    await manager.stop();
+  });
+
+  it('low-confidence relative decisions do not mutate context', async () => {
+    const { manager, broadcast, processes } = createTestManager();
+
+    const startPromise = manager.start(['drums']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const drumsProc = getNthProcess(processes, 0);
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd sd")',
+      thoughts: 'Opening',
+      reaction: 'Go!',
+    });
+    await startPromise;
+
+    const directivePromise = manager.handleDirective(
+      'slower and chill',
+      'drums',
+      ['drums']
+    );
+    await vi.advanceTimersByTimeAsync(0);
+
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd ~ sd ~")',
+      thoughts: 'Maybe hold for now',
+      reaction: 'Not confident in a big shift',
+      decision: {
+        tempo_delta_pct: -20,
+        energy_delta: -2,
+        confidence: 'low',
+      },
+    });
+    await directivePromise;
+
+    const directiveJamState = getJamStateForRound(broadcast, 2);
+    expect(directiveJamState!.musicalContext.bpm).toBe(120);
+    expect(directiveJamState!.musicalContext.energy).toBe(5);
+
+    await manager.stop();
+  });
+
+  it('direction-mismatched relative decisions are ignored', async () => {
+    const { manager, broadcast, processes } = createTestManager();
+
+    const startPromise = manager.start(['drums']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const drumsProc = getNthProcess(processes, 0);
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd sd")',
+      thoughts: 'Opening',
+      reaction: 'Go!',
+    });
+    await startPromise;
+
+    const directivePromise = manager.handleDirective(
+      'slower and less energy',
+      'drums',
+      ['drums']
+    );
+    await vi.advanceTimersByTimeAsync(0);
+
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd sd")',
+      thoughts: 'I misread the boss on purpose for this test',
+      reaction: 'Oops',
+      decision: {
+        tempo_delta_pct: 15,
+        energy_delta: 2,
+        confidence: 'high',
+      },
+    });
+    await directivePromise;
+
+    const directiveJamState = getJamStateForRound(broadcast, 2);
+    expect(directiveJamState!.musicalContext.bpm).toBe(120);
+    expect(directiveJamState!.musicalContext.energy).toBe(5);
+
+    await manager.stop();
+  });
+
+  it('medium-confidence negative one-step energy change applies symmetrically', async () => {
+    const { manager, broadcast, processes } = createTestManager();
+
+    const startPromise = manager.start(['drums']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const drumsProc = getNthProcess(processes, 0);
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd sd")',
+      thoughts: 'Opening',
+      reaction: 'Go!',
+    });
+    await startPromise;
+
+    const directivePromise = manager.handleDirective(
+      'chill a bit',
+      'drums',
+      ['drums']
+    );
+    await vi.advanceTimersByTimeAsync(0);
+
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd ~ sd ~")',
+      thoughts: 'Conservative pullback',
+      reaction: 'Cooling down',
+      decision: {
+        energy_delta: -1,
+        confidence: 'medium',
+      },
+    });
+    await directivePromise;
+
+    const directiveJamState = getJamStateForRound(broadcast, 2);
+    expect(directiveJamState!.musicalContext.energy).toBe(4);
 
     await manager.stop();
   });
@@ -1063,8 +1431,8 @@ describe('AgentProcessManager directive targeting', () => {
     const startPromise = manager.start(['drums', 'bass']);
     await vi.advanceTimersByTimeAsync(0);
 
-    const drumsProc = getNthProcess(processes, 0);
-    const bassProc = getNthProcess(processes, 1);
+    const drumsProc = getProcessByKey(processes, 'drums');
+    const bassProc = getProcessByKey(processes, 'bass');
     sendAgentResponse(drumsProc, {
       pattern: 's("bd sd")',
       thoughts: 'Opening drums',
@@ -1107,8 +1475,8 @@ describe('AgentProcessManager directive targeting', () => {
     const startPromise = manager.start(['drums', 'bass']);
     await vi.advanceTimersByTimeAsync(0);
 
-    const drumsProc = getNthProcess(processes, 0);
-    const bassProc = getNthProcess(processes, 1);
+    const drumsProc = getProcessByKey(processes, 'drums');
+    const bassProc = getProcessByKey(processes, 'bass');
     sendAgentResponse(drumsProc, {
       pattern: 's("bd sd")',
       thoughts: 'Opening drums',
@@ -1149,8 +1517,8 @@ describe('AgentProcessManager directive targeting', () => {
     const startPromise = manager.start(['drums', 'bass']);
     await vi.advanceTimersByTimeAsync(0);
 
-    const drumsProc = getNthProcess(processes, 0);
-    const bassProc = getNthProcess(processes, 1);
+    const drumsProc = getProcessByKey(processes, 'drums');
+    const bassProc = getProcessByKey(processes, 'bass');
     sendAgentResponse(drumsProc, {
       pattern: 's("bd sd")',
       thoughts: 'Opening drums',
@@ -1263,8 +1631,8 @@ describe('AgentProcessManager jam state snapshots', () => {
     const startPromise = manager.start(['drums', 'bass']);
     await vi.advanceTimersByTimeAsync(0);
 
-    const drumsProc = getNthProcess(processes, 0);
-    const bassProc = getNthProcess(processes, 1);
+    const drumsProc = getProcessByKey(processes, 'drums');
+    const bassProc = getProcessByKey(processes, 'bass');
 
     sendAgentResponse(drumsProc, {
       pattern: 's("bd sd")',

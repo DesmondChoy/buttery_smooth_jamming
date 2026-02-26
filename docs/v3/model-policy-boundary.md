@@ -33,8 +33,8 @@ is routable, bounded, schema-valid, and safely composable.
 | Decision Area | Model-Owned (Creative) | Code-Owned (Deterministic Guarantees) |
 |---|---|---|
 | Nuanced directive interpretation | Interprets ambiguous terms like "darker", "edgier", "floaty", "tenser" into instrument-appropriate musical moves. | Deterministic routing to targeted agents (`@mention`) and deterministic broadcast when no mention is present. |
-| Tempo feel realization | Decides how tempo intent is expressed musically (subdivision density, articulation, syncopation). | Extracts and applies explicit/relative BPM context from boss directives with fixed precedence and bounds (`60..300`). |
-| Energy realization | Chooses how "more/less energy" manifests per agent role (note density, accents, dynamics, register). | Extracts numeric/semantic energy directives with deterministic clamps (`1..10`). |
+| Tempo feel realization | Decides how tempo intent is expressed musically (subdivision density, articulation, syncopation). | Applies explicit tempo anchors (explicit BPM, half/double-time) with fixed precedence and bounds (`60..300`), and applies model-provided relative tempo deltas within minimal bounds. |
+| Energy realization | Chooses how "more/less energy" manifests per agent role (note density, accents, dynamics, register). | Applies explicit numeric/semantic energy anchors with deterministic clamps (`1..10`), and applies model-provided relative energy deltas within minimal bounds. |
 | Texture/timbre | Chooses synthesis/FX choices, effect movement, and texture transitions. | Enforces output schema validity and safe fallback behavior when output is invalid or missing. |
 | Arrangement evolution | Decides when to hold, vary, build, or simplify over rounds. | Owns turn serialization, session lifecycle, timeout handling, and no-overlap guarantees. |
 | Inter-agent musical adaptation | Reacts to band state and evolves in context. | Preserves canonical jam state server-side and broadcasts authoritative updates. |
@@ -51,8 +51,8 @@ These rules define how conflicting intent is resolved.
 
 1. Explicit targeted boss directive (for the addressed agent).
 2. Explicit broadcast boss directive (for all active agents).
-3. Deterministic parser-derived relative context updates.
-4. Model-inferred relative intent.
+3. Deterministic parser/context anchors (key, explicit BPM, half/double-time, explicit energy anchors).
+4. Model-provided relative tempo/energy intent (structured decisions).
 5. Hold current context and let agents evolve autonomously.
 
 ### Tempo Priority (Required Order)
@@ -66,16 +66,16 @@ Notes:
 
 - If a directive contains both explicit BPM and half/double-time language, the
   explicit BPM value wins.
-- Relative parser phrases like `faster`/`slower` are deterministic context
-  updates and apply only when neither explicit BPM nor half/double-time matched.
+- Relative tempo phrases like `faster`/`slower` are cues for model-provided
+  tempo deltas and apply only when neither explicit BPM nor half/double-time
+  matched.
 
 ### Energy Priority
 
 1. Explicit numeric energy (`energy 8`, `energy to 3`).
 2. Explicit semantic extremes (`full energy`, `max energy`, `minimal`).
-3. Relative energy directives (`more energy`, `chill`, `less energy`).
-4. Model-relative energy intent.
-5. No confident decision: keep current energy.
+3. Model-relative energy intent (triggered by relative energy cues).
+4. No confident decision: keep current energy.
 
 ### Texture Priority
 
@@ -111,8 +111,16 @@ When a structured decision contract is available, apply:
 2. `medium` confidence: apply with continuity bias (smaller deltas).
 3. `low` confidence: prefer `no_change` or fallback pattern, not hard reset.
 
-Until that contract lands, ambiguity defaults to continuity-first behavior:
-preserve current context/pattern when deterministic signals are weak.
+### Minimal Guardrails for Model-Relative Context Deltas
+
+When structured decisions are present, code applies only minimal bounds:
+
+1. `tempo_delta_pct` normalized to `-50..50`.
+2. `energy_delta` normalized to `-3..3`.
+3. Final BPM clamped to `60..300`.
+4. Final energy clamped to `1..10`.
+5. If a relative cue is present but no usable decision is returned, preserve
+   current tempo/energy (no synthetic fallback delta).
 
 ## Examples of Allowed Model Latitude
 
