@@ -68,49 +68,6 @@ export function deriveScale(key: string): string[] | null {
 }
 
 /**
- * Parse boss directive text for musical context changes.
- * Returns a partial MusicalContext with only the changed fields, or null
- * if no musical context changes were detected in the text.
- *
- * Note: jam runtime directive flow should prefer
- * `parseDeterministicMusicalContextChanges()` + `detectRelativeMusicalContextCues()`
- * so relative tempo/energy changes can be model-driven. This legacy helper keeps
- * the historical coarse relative heuristics for backward compatibility.
- */
-export function parseMusicalContextChanges(
-  text: string,
-  current: MusicalContext
-): Partial<MusicalContext> | null {
-  const deterministicChanges = parseDeterministicMusicalContextChanges(text, current);
-  const changes: Partial<MusicalContext> = deterministicChanges
-    ? { ...deterministicChanges }
-    : {};
-  let hasChanges = Object.keys(changes).length > 0;
-
-  if (changes.bpm === undefined) {
-    if (hasRelativeTempoIncreaseCue(text)) {
-      changes.bpm = clamp(current.bpm + 15, 60, 300);
-      hasChanges = true;
-    } else if (hasRelativeTempoDecreaseCue(text)) {
-      changes.bpm = clamp(current.bpm - 15, 60, 300);
-      hasChanges = true;
-    }
-  }
-
-  if (changes.energy === undefined) {
-    if (hasRelativeEnergyIncreaseCue(text)) {
-      changes.energy = clamp(current.energy + 2, 1, 10);
-      hasChanges = true;
-    } else if (hasRelativeEnergyDecreaseCue(text)) {
-      changes.energy = clamp(current.energy - 2, 1, 10);
-      hasChanges = true;
-    }
-  }
-
-  return hasChanges ? changes : null;
-}
-
-/**
  * Parse only deterministic musical context anchors used by jam runtime:
  * key changes, explicit BPM, half/double-time, and explicit energy values/extremes.
  * Relative tempo/energy phrasing is intentionally excluded so runtime can apply

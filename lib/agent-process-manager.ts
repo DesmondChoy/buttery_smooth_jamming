@@ -243,6 +243,8 @@ export class AgentProcessManager {
 
       // Apply deterministic anchors first (explicit BPM / half/double-time / explicit energy / key).
       // Relative tempo/energy cues are handled after agent responses using model decisions.
+      // Intentionally avoids `parseLegacyMusicalContextChanges()` to prevent
+      // coarse synthetic fallback deltas from re-entering jam runtime paths.
       const deterministicContextDelta = parseDeterministicMusicalContextChanges(
         text,
         this.musicalContext

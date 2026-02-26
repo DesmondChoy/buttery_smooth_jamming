@@ -133,6 +133,20 @@ When structured decisions are present, code applies only minimal bounds:
    produce a valid scale via `deriveScale()` to be accepted.
 7. `suggested_chords` must be a non-empty array of strings.
 
+### Parser Implementation Boundary (Jam Runtime)
+
+Jam runtime directive parsing must use:
+
+1. `parseDeterministicMusicalContextChanges()` for explicit anchors (key, BPM, half/double-time, explicit energy)
+2. `detectRelativeMusicalContextCues()` to detect relative phrasing that gates model-provided deltas
+
+Jam runtime must not use `parseLegacyMusicalContextChanges()`, which exists only as
+a legacy compatibility helper and retains coarse synthetic relative heuristics
+(`+15/-15 BPM`, `+2/-2 energy`).
+
+If relative cues are present but no usable model decision delta is returned, jam mode
+preserves current tempo/energy (no synthetic fallback delta).
+
 ## Examples of Allowed Model Latitude
 
 These examples are intentionally model-owned and should not be hardcoded:

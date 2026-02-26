@@ -1025,6 +1025,41 @@ describe('AgentProcessManager musical context updates', () => {
     await manager.stop();
   });
 
+  it('relative tempo+energy cues without model decisions do not apply legacy synthetic fallback deltas', async () => {
+    const { manager, broadcast, processes } = createTestManager();
+
+    const startPromise = manager.start(['drums']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const drumsProc = getNthProcess(processes, 0);
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd sd")',
+      thoughts: 'Opening',
+      reaction: 'Go!',
+    });
+    await startPromise;
+
+    const directivePromise = manager.handleDirective(
+      'faster and more energy',
+      'drums',
+      ['drums']
+    );
+    await vi.advanceTimersByTimeAsync(0);
+
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd sd bd sd").gain(1.05)',
+      thoughts: 'I can push intensity locally without a global context change',
+      reaction: 'Leaning in',
+    });
+    await directivePromise;
+
+    const directiveJamState = getJamStateForRound(broadcast, 2);
+    expect(directiveJamState!.musicalContext.bpm).toBe(120);
+    expect(directiveJamState!.musicalContext.energy).toBe(5);
+
+    await manager.stop();
+  });
+
   it('explicit BPM stays deterministic even when model returns tempo delta', async () => {
     const { manager, broadcast, processes } = createTestManager();
 
