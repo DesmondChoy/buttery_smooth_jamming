@@ -355,6 +355,28 @@ describe('detectRelativeMusicalContextCues', () => {
     });
   });
 
+  it('detects documented phrase-family tempo and energy cues', () => {
+    expect(detectRelativeMusicalContextCues('push it and lift it')).toEqual({
+      tempo: 'increase',
+      energy: 'increase',
+    });
+
+    expect(detectRelativeMusicalContextCues('lay back and cool it down')).toEqual({
+      tempo: 'decrease',
+      energy: 'decrease',
+    });
+
+    expect(detectRelativeMusicalContextCues('bring it down a touch')).toEqual({
+      tempo: 'decrease',
+      energy: null,
+    });
+
+    expect(detectRelativeMusicalContextCues('nudge up but settle')).toEqual({
+      tempo: 'increase',
+      energy: 'decrease',
+    });
+  });
+
   it('detects no relative cues', () => {
     expect(detectRelativeMusicalContextCues('BPM 140 in D major')).toEqual({
       tempo: null,
@@ -366,6 +388,13 @@ describe('detectRelativeMusicalContextCues', () => {
     expect(detectRelativeMusicalContextCues('faster but slower, more energy then chill')).toEqual({
       tempo: 'mixed',
       energy: 'mixed',
+    });
+  });
+
+  it('detects mixed tempo cues across phrase families', () => {
+    expect(detectRelativeMusicalContextCues('push it, then ease back')).toEqual({
+      tempo: 'mixed',
+      energy: null,
     });
   });
 

@@ -168,19 +168,21 @@ function resolveCueDirection(
 }
 
 function hasRelativeTempoIncreaseCue(text: string): boolean {
-  return /\b(?:speed\s+up|faster)\b/i.test(text);
+  return /\b(?:speed\s+up|faster|push(?:\s+it)?|pick\s+up|nudge\s+up)\b/i.test(text);
 }
 
 function hasRelativeTempoDecreaseCue(text: string): boolean {
-  return /\b(?:slow\s+down|slower)\b/i.test(text);
+  return /\b(?:slow\s+down|slower|lay\s+back|ease\s+back|bring\s+it\s+down)\b/i.test(text);
 }
 
 function hasRelativeEnergyIncreaseCue(text: string): boolean {
-  return /\b(?:more\s+energy|crank\s+it|hype)\b/i.test(text);
+  return /\b(?:more\s+energy|crank\s+it|hype|lift\s+it|hit\s+harder)\b/i.test(text);
 }
 
 function hasRelativeEnergyDecreaseCue(text: string): boolean {
-  return /\b(?:chill(?:er)?|calm(?:er)?|less\s+energy)\b/i.test(text);
+  return /\b(?:chill(?:er)?|calm(?:er)?|less\s+energy|cool\s+it\s+down|settle|less\s+intense)\b/i.test(
+    text
+  );
 }
 
 /**
