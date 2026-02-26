@@ -106,4 +106,19 @@ describe('map_codex_event_to_runtime_events', () => {
       { type: 'status', status: 'done' },
     ]);
   });
+
+  it('maps top-level error events to runtime error messages', () => {
+    const errored = map_codex_event_to_runtime_events(
+      {
+        type: 'error',
+        message: 'profile not found',
+      },
+      { saw_assistant_delta: false }
+    );
+
+    expect(errored.turn_completed).toBe(false);
+    expect(errored.events).toEqual([
+      { type: 'error', error: 'profile not found' },
+    ]);
+  });
 });

@@ -71,6 +71,8 @@ interface AgentProcessManagerOptions {
 
 const AGENT_TIMEOUT_MS = 15000;
 const JAM_TOOLLESS_ARGS = ['--tools', '', '--strict-mcp-config'] as const;
+// Deterministic schema canonicalization only: normalize common phrasing/spelling
+// variants into the fixed arrangement enum without prescribing musical content.
 const ARRANGEMENT_INTENT_MAP: Record<string, ArrangementIntent> = {
   build: 'build',
   breakdown: 'breakdown',
@@ -714,6 +716,8 @@ export class AgentProcessManager {
     }
 
     const raw = value as Record<string, unknown>;
+    // Code-owned safety step: accept only the structured decision fields we know,
+    // normalize their shapes, and clamp to model-agnostic bounds.
     const normalized: StructuredMusicalDecision = {};
 
     const tempoDelta = this.normalizeNumericDecisionValue(raw.tempo_delta_pct, -50, 50);
@@ -847,6 +851,8 @@ export class AgentProcessManager {
     if (!trimmed) return 'unknown error';
 
     try {
+      // Log-only formatting for operator diagnostics; websocket/user error surfacing
+      // still uses the runtime event payloads and does not depend on this rewrite.
       const parsed = JSON.parse(trimmed) as {
         message?: unknown;
         error?: { message?: unknown; param?: unknown; code?: unknown };
@@ -872,6 +878,8 @@ export class AgentProcessManager {
   /**
    * Parse raw text response into AgentResponse JSON.
    * Handles markdown code fences and extracts JSON.
+   * This is a parsing-resilience fallback only; we still validate the schema and
+   * do not rewrite pattern content.
    */
   private parseAgentResponse(text: string, key: string): AgentResponse | null {
     const trimmed = text.trim();

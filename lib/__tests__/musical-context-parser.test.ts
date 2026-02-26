@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
   detectRelativeMusicalContextCues,
-  deriveChordProgression,
   deriveScale,
   parseDeterministicMusicalContextChanges,
   parseMusicalContextChanges,
@@ -69,56 +68,6 @@ describe('deriveScale', () => {
     expect(deriveScale('X major')).toBeNull();
     expect(deriveScale('C')).toBeNull();
     expect(deriveScale('')).toBeNull();
-  });
-});
-
-// ─── deriveChordProgression ─────────────────────────────────────
-
-describe('deriveChordProgression', () => {
-  it('C major → I IV V I', () => {
-    expect(deriveChordProgression('C major')).toEqual(['C', 'F', 'G', 'C']);
-  });
-
-  it('C minor → i VI III VII', () => {
-    expect(deriveChordProgression('C minor')).toEqual(['Cm', 'Ab', 'Eb', 'Bb']);
-  });
-
-  it('D major → D G A D', () => {
-    expect(deriveChordProgression('D major')).toEqual(['D', 'G', 'A', 'D']);
-  });
-
-  it('A minor → Am F C G', () => {
-    expect(deriveChordProgression('A minor')).toEqual(['Am', 'F', 'C', 'G']);
-  });
-
-  it('Eb minor → uses flats correctly', () => {
-    const result = deriveChordProgression('Eb minor');
-    expect(result).not.toBeNull();
-    expect(result![0]).toBe('Ebm');
-  });
-
-  it('G major → G C D G', () => {
-    expect(deriveChordProgression('G major')).toEqual(['G', 'C', 'D', 'G']);
-  });
-
-  it('F major → F Bb C F', () => {
-    expect(deriveChordProgression('F major')).toEqual(['F', 'Bb', 'C', 'F']);
-  });
-
-  it('Bb major → Bb Eb F Bb', () => {
-    expect(deriveChordProgression('Bb major')).toEqual(['Bb', 'Eb', 'F', 'Bb']);
-  });
-
-  it('F# minor → uses sharps', () => {
-    const result = deriveChordProgression('F# minor');
-    expect(result).not.toBeNull();
-    expect(result![0]).toBe('F#m');
-  });
-
-  it('returns null for invalid input', () => {
-    expect(deriveChordProgression('X major')).toBeNull();
-    expect(deriveChordProgression('C')).toBeNull();
-    expect(deriveChordProgression('')).toBeNull();
   });
 });
 
@@ -397,7 +346,6 @@ describe('parseDeterministicMusicalContextChanges', () => {
     expect(result).toEqual({
       key: 'D major',
       scale: ['D', 'E', 'F#', 'G', 'A', 'B', 'C#'],
-      chordProgression: ['D', 'G', 'A', 'D'],
       bpm: 140,
     });
   });
@@ -418,132 +366,34 @@ describe('parseDeterministicMusicalContextChanges', () => {
     );
     expect(result).toEqual({ energy: 10 });
   });
-});
 
-// ─── Chord Progression Parsing (deterministic) ──────────────────
-
-describe('parseDeterministicMusicalContextChanges — chord auto-derive', () => {
-  it('"Switch to D major" auto-derives chords', () => {
+  it('does not auto-derive chord progressions from a key change', () => {
     const result = parseDeterministicMusicalContextChanges('Switch to D major', DEFAULT_CTX);
-    expect(result?.key).toBe('D major');
-    expect(result?.chordProgression).toEqual(['D', 'G', 'A', 'D']);
-  });
-
-  it('"key of Eb minor" auto-derives minor chords', () => {
-    const result = parseDeterministicMusicalContextChanges('key of Eb minor', DEFAULT_CTX);
-    expect(result?.key).toBe('Eb minor');
-    expect(result?.chordProgression).toBeDefined();
-    expect(result?.chordProgression![0]).toBe('Ebm');
-  });
-
-  it('"Switch to G, BPM 140" sets key + bpm + chords', () => {
-    const result = parseDeterministicMusicalContextChanges('Switch to G, BPM 140', DEFAULT_CTX);
-    expect(result?.key).toBe('G major');
-    expect(result?.bpm).toBe(140);
-    expect(result?.chordProgression).toEqual(['G', 'C', 'D', 'G']);
-  });
-
-  it('BPM-only change does not set chords', () => {
-    const result = parseDeterministicMusicalContextChanges('BPM 140', DEFAULT_CTX);
-    expect(result?.bpm).toBe(140);
+    expect(result).toEqual({
+      key: 'D major',
+      scale: ['D', 'E', 'F#', 'G', 'A', 'B', 'C#'],
+    });
     expect(result?.chordProgression).toBeUndefined();
   });
-});
 
-describe('parseDeterministicMusicalContextChanges — named progressions', () => {
-  it('"blues changes" in C minor context', () => {
-    const result = parseDeterministicMusicalContextChanges('blues changes', DEFAULT_CTX);
-    expect(result?.chordProgression).toEqual(['Cm7', 'Fm7', 'Cm7', 'Gm7']);
+  it('ignores named chord progression templates (model/policy-owned)', () => {
+    expect(parseDeterministicMusicalContextChanges('blues changes', DEFAULT_CTX)).toBeNull();
   });
 
-  it('"jazz progression" in C minor context', () => {
-    const result = parseDeterministicMusicalContextChanges('jazz progression', DEFAULT_CTX);
-    expect(result?.chordProgression).toEqual(['Cm7', 'Abmaj7', 'Dm7b5', 'G7']);
+  it('ignores Roman numeral progression templates (model/policy-owned)', () => {
+    expect(parseDeterministicMusicalContextChanges('use I-IV-V-I', DEFAULT_CTX)).toBeNull();
   });
 
-  it('"pop chords" in C minor context', () => {
-    const result = parseDeterministicMusicalContextChanges('pop chords', DEFAULT_CTX);
-    expect(result?.chordProgression).toEqual(['Cm', 'G', 'Ab', 'Eb']);
-  });
-
-  it('"Switch to D major with jazz changes" → jazz in D major', () => {
+  it('keeps explicit key anchor while ignoring attached harmonic template hints', () => {
     const result = parseDeterministicMusicalContextChanges(
       'Switch to D major with jazz changes',
       DEFAULT_CTX
     );
-    expect(result?.key).toBe('D major');
-    expect(result?.chordProgression).toEqual(['Dmaj7', 'Bm7', 'Em7', 'A7']);
-  });
-
-  it('"blues changes" in C major context', () => {
-    const ctx = { ...DEFAULT_CTX, key: 'C major', scale: ['C', 'D', 'E', 'F', 'G', 'A', 'B'] };
-    const result = parseDeterministicMusicalContextChanges('blues changes', ctx);
-    expect(result?.chordProgression).toEqual(['C7', 'F7', 'C7', 'G7']);
-  });
-
-  it('"pop chords" in G major context', () => {
-    const ctx = { ...DEFAULT_CTX, key: 'G major', scale: ['G', 'A', 'B', 'C', 'D', 'E', 'F#'] };
-    const result = parseDeterministicMusicalContextChanges('pop chords', ctx);
-    expect(result?.chordProgression).toEqual(['G', 'D', 'Em', 'C']);
-  });
-});
-
-describe('parseDeterministicMusicalContextChanges — explicit chords', () => {
-  it('"play Dm Am G C"', () => {
-    const result = parseDeterministicMusicalContextChanges('play Dm Am G C', DEFAULT_CTX);
-    expect(result?.chordProgression).toEqual(['Dm', 'Am', 'G', 'C']);
-  });
-
-  it('"chords Cmaj7 Fm7 G7 Cmaj7"', () => {
-    const result = parseDeterministicMusicalContextChanges('chords Cmaj7 Fm7 G7 Cmaj7', DEFAULT_CTX);
-    expect(result?.chordProgression).toEqual(['Cmaj7', 'Fm7', 'G7', 'Cmaj7']);
-  });
-
-  it('"use Am F C G"', () => {
-    const result = parseDeterministicMusicalContextChanges('use Am F C G', DEFAULT_CTX);
-    expect(result?.chordProgression).toEqual(['Am', 'F', 'C', 'G']);
-  });
-
-  it('"progression: Cm Ab Eb Bb"', () => {
-    const result = parseDeterministicMusicalContextChanges('progression: Cm Ab Eb Bb', DEFAULT_CTX);
-    expect(result?.chordProgression).toEqual(['Cm', 'Ab', 'Eb', 'Bb']);
-  });
-
-  it('explicit chords override auto-derived chords from key change', () => {
-    const result = parseDeterministicMusicalContextChanges(
-      'Switch to D major, play Am F C G',
-      DEFAULT_CTX
-    );
-    expect(result?.key).toBe('D major');
-    expect(result?.chordProgression).toEqual(['Am', 'F', 'C', 'G']);
-  });
-});
-
-describe('parseDeterministicMusicalContextChanges — Roman numerals', () => {
-  it('"use I-IV-V-I" resolves from current key', () => {
-    const result = parseDeterministicMusicalContextChanges('use I-IV-V-I', DEFAULT_CTX);
-    expect(result?.chordProgression).toEqual(['C', 'F', 'G', 'C']);
-  });
-
-  it('"use i-iv-v-i" lowercase = minor chords', () => {
-    const result = parseDeterministicMusicalContextChanges('use i-iv-v-i', DEFAULT_CTX);
-    expect(result?.chordProgression).toEqual(['Cm', 'Fm', 'Gm', 'Cm']);
-  });
-
-  it('"I IV V I progression"', () => {
-    const result = parseDeterministicMusicalContextChanges('I IV V I progression', DEFAULT_CTX);
-    expect(result?.chordProgression).toEqual(['C', 'F', 'G', 'C']);
-  });
-});
-
-describe('parseDeterministicMusicalContextChanges — chord no-match', () => {
-  it('"more cowbell" still returns null', () => {
-    expect(parseDeterministicMusicalContextChanges('more cowbell', DEFAULT_CTX)).toBeNull();
-  });
-
-  it('"play something funky" does not false-positive on "play"', () => {
-    // "play something" — "something" is not a chord name
-    expect(parseDeterministicMusicalContextChanges('play something funky', DEFAULT_CTX)).toBeNull();
+    expect(result).toEqual({
+      key: 'D major',
+      scale: ['D', 'E', 'F#', 'G', 'A', 'B', 'C#'],
+    });
+    expect(result?.chordProgression).toBeUndefined();
   });
 });
 

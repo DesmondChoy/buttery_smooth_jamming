@@ -928,6 +928,12 @@ describe('AgentProcessManager musical context updates', () => {
     });
     await directivePromise;
 
+    const executeMessages = broadcast.mock.calls
+      .map(([msg]: unknown[]) => msg as { type: string; payload?: { code?: string } })
+      .filter((msg) => msg.type === 'execute');
+    expect(executeMessages.length).toBeGreaterThanOrEqual(2); // jam-start + directive
+    expect(executeMessages[executeMessages.length - 1].payload?.code).toBe('s("bd sd bd sd")');
+
     // Find the jam_state_update from the directive (round 2)
     const directiveJamState = getJamStateForRound(broadcast, 2);
 

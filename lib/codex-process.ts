@@ -95,6 +95,8 @@ function compact_dots(value: string): string {
 
 export function normalize_codex_event_type(value: unknown): string {
   if (typeof value !== 'string') return '';
+  // Compatibility normalizer for Codex CLI event naming variants
+  // (slash/underscore/camelCase) so runtime mapping stays deterministic.
   const with_dots = value
     .replace(/\//g, '.')
     .replace(/_/g, '.')
@@ -212,6 +214,8 @@ function get_record_field(
 }
 
 function extract_error_text(event: Record<string, unknown>): string | undefined {
+  // Keep this permissive because Codex error payloads vary by event type/version.
+  // We surface the raw message verbatim rather than rewriting semantics.
   if (typeof event.message === 'string' && event.message.trim()) {
     return event.message;
   }
