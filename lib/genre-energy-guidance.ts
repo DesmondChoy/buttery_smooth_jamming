@@ -1,6 +1,6 @@
 /**
  * Runtime bridge for genre-specific energy guidance.
- * Parses .codex/skills/genre-energy-guidance/SKILL.md at startup,
+ * Parses the genre guidance reference data at startup,
  * caches the result, and provides per-genre-per-role prompt sections.
  *
  * Follows the same skill → condensed runtime injection pattern as
@@ -14,7 +14,8 @@ const SKILL_PATH = path.join(
   '.codex',
   'skills',
   'genre-energy-guidance',
-  'SKILL.md'
+  'references',
+  'genres.md'
 );
 
 /** genre (lowercase) → role → bullet lines */
@@ -24,7 +25,7 @@ let cachedGuidance: GuidanceMap | null = null;
 let cachedWorkingDir: string | null = null;
 
 /**
- * Parse the SKILL.md file into a genre → role → lines map.
+ * Parse the reference data file into a genre → role → lines map.
  * Expected format:
  *   ## GenreName
  *   ### role
@@ -82,7 +83,7 @@ function getGuidance(workingDir: string): GuidanceMap {
     cachedGuidance = parseSkillFile(filePath);
     cachedWorkingDir = workingDir;
   } catch (err) {
-    console.error('[GenreGuidance] Failed to load SKILL.md:', err);
+    console.error('[GenreGuidance] Failed to load genre guidance reference:', err);
     cachedGuidance = new Map();
     cachedWorkingDir = workingDir;
   }
@@ -95,7 +96,7 @@ const AGENT_KEY_TO_ROLE: Record<string, string> = {
   drums: 'drums',
   bass: 'bass',
   melody: 'melody',
-  fx: 'fx',
+  chords: 'chords',
 };
 
 /**
