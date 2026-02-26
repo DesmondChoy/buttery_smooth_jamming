@@ -21,18 +21,25 @@ vi.mock('../codex-runtime-checks', () => ({
   build_codex_overrides: runtime_check_mocks.build_codex_overrides,
 }));
 
-// Pin randomMusicalContext to the old C minor defaults so existing assertions stay stable
-vi.mock('../musical-context-presets', () => ({
-  randomMusicalContext: () => ({
-    genre: 'Dark Ambient',
-    key: 'C minor',
-    scale: ['C', 'D', 'Eb', 'F', 'G', 'Ab', 'Bb'],
-    chordProgression: ['Cm', 'Ab', 'Eb', 'Bb'],
-    bpm: 120,
-    timeSignature: '4/4',
-    energy: 5,
-  }),
-}));
+// Pin randomMusicalContext to stable defaults while preserving the rest of the module exports.
+vi.mock('../musical-context-presets', async () => {
+  const actual = await vi.importActual<typeof import('../musical-context-presets')>(
+    '../musical-context-presets'
+  );
+
+  return {
+    ...actual,
+    randomMusicalContext: () => ({
+      genre: 'Dark Ambient',
+      key: 'C minor',
+      scale: ['C', 'D', 'Eb', 'F', 'G', 'Ab', 'Bb'],
+      chordProgression: ['Cm', 'Ab', 'Eb', 'Bb'],
+      bpm: 120,
+      timeSignature: '4/4',
+      energy: 5,
+    }),
+  };
+});
 
 // Mock fs.readFileSync to return fake agent files + strudel reference
 vi.mock('fs', async () => {
@@ -232,6 +239,7 @@ interface BroadcastJamState {
   musicalContext: MusicalContext;
   agents: Record<string, unknown>;
   activeAgents: string[];
+  activatedAgents: string[];
 }
 
 function getJamStateForRound(
@@ -1825,6 +1833,142 @@ describe('AgentProcessManager jam state snapshots', () => {
     expect(snapshot.musicalContext).toEqual(latestJamState.musicalContext);
     expect(snapshot.agents).toEqual(latestJamState.agents);
     expect(snapshot.activeAgents).toEqual(latestJamState.activeAgents);
+
+    await manager.stop();
+  });
+});
+
+describe('AgentProcessManager staged_silent mode', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.clearAllMocks();
+    vi.mocked(fs.existsSync).mockImplementation(default_exists_sync_impl);
+    setupRuntimeCheckMocks();
+  });
+
+  afterEach(async () => {
+    vi.useRealTimers();
+  });
+
+  it('starts silently with no activated agents and no execute broadcast', async () => {
+    const { manager, broadcast, processes } = createTestManager();
+
+    await manager.start(['drums', 'bass'], { mode: 'staged_silent' });
+
+    expect(processes.size).toBe(0);
+
+    const executeMessages = broadcast.mock.calls
+      .map(([msg]: unknown[]) => msg as { type: string })
+      .filter((msg) => msg.type === 'execute');
+    expect(executeMessages).toHaveLength(0);
+
+    const latestJamState = getLatestJamState(broadcast);
+    expect(latestJamState).toBeDefined();
+    expect(latestJamState?.currentRound).toBe(0);
+    expect(latestJamState?.activeAgents).toEqual(['drums', 'bass']);
+    expect(latestJamState?.activatedAgents).toEqual([]);
+    expect(latestJamState?.musicalContext.genre).toBe('');
+
+    await manager.stop();
+  });
+
+  it('rejects directives until a preset is configured', async () => {
+    const { manager, broadcast } = createTestManager();
+
+    await manager.start(['drums'], { mode: 'staged_silent' });
+    await manager.handleDirective('@BEAT start softly', 'drums', ['drums']);
+
+    const directiveErrors = broadcast.mock.calls
+      .map(([msg]: unknown[]) => msg as { type: string; payload?: { message?: string } })
+      .filter((msg) => msg.type === 'directive_error');
+
+    expect(directiveErrors.length).toBeGreaterThan(0);
+    expect(directiveErrors[directiveErrors.length - 1].payload?.message).toContain(
+      'Choose a genre preset and press Play'
+    );
+
+    await manager.stop();
+  });
+
+  it('activates only the targeted agent on first join and locks preset changes afterward', async () => {
+    const { manager, broadcast, processes } = createTestManager();
+
+    await manager.start(['bass', 'melody'], { mode: 'staged_silent' });
+    await manager.setJamPreset('funk');
+
+    const presetSetState = getLatestJamState(broadcast);
+    expect(presetSetState?.musicalContext.genre).toBe('Funk');
+
+    const directivePromise = manager.handleDirective(
+      '@GROOVE start with a slow riff',
+      'bass',
+      ['bass', 'melody']
+    );
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(processes.has('bass')).toBe(true);
+    expect(processes.has('melody')).toBe(false);
+
+    const bassProc = getProcessByKey(processes, 'bass');
+    sendAgentResponse(bassProc, {
+      pattern: 'note("d2 a2").s("sawtooth").slow(2)',
+      thoughts: 'Starting sparse',
+      reaction: 'Holding it down',
+    });
+    await directivePromise;
+
+    const latestJamState = getLatestJamState(broadcast);
+    expect(latestJamState?.activatedAgents).toEqual(['bass']);
+
+    const executeMessages = broadcast.mock.calls
+      .map(([msg]: unknown[]) => msg as { type: string; payload?: { code?: string } })
+      .filter((msg) => msg.type === 'execute');
+    expect(executeMessages.length).toBeGreaterThan(0);
+    expect(executeMessages[executeMessages.length - 1].payload?.code).toContain('note("d2 a2")');
+
+    await expect(manager.setJamPreset('jazz')).rejects.toThrow(
+      'Preset is locked after the first agent joins.'
+    );
+
+    await manager.stop();
+  });
+
+  it('keeps auto-tick running after a rejected preset change post-join', async () => {
+    const { manager, broadcast, processes } = createTestManager();
+
+    await manager.start(['bass'], { mode: 'staged_silent' });
+    await manager.setJamPreset('funk');
+
+    const directivePromise = manager.handleDirective(
+      '@GROOVE start with a slow riff',
+      'bass',
+      ['bass']
+    );
+    await vi.advanceTimersByTimeAsync(0);
+
+    const bassProc = getProcessByKey(processes, 'bass');
+    sendAgentResponse(bassProc, {
+      pattern: 'note("d2 a2").s("sawtooth").slow(2)',
+      thoughts: 'Starting sparse',
+      reaction: 'Holding it down',
+    });
+    await directivePromise;
+
+    await expect(manager.setJamPreset('jazz')).rejects.toThrow(
+      'Preset is locked after the first agent joins.'
+    );
+
+    vi.advanceTimersByTime(JAM_GOVERNANCE.AUTO_TICK_INTERVAL_MS);
+    await vi.advanceTimersByTimeAsync(0);
+
+    sendAgentResponse(bassProc, {
+      pattern: 'no_change',
+      thoughts: 'Pocket is right',
+      reaction: 'Holding steady',
+    });
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(getJamStateForRound(broadcast, 2)).toBeDefined();
 
     await manager.stop();
   });

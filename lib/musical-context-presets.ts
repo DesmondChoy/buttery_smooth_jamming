@@ -1,12 +1,13 @@
 /**
  * Pool of diverse musical context presets for jam sessions.
- * A random preset is selected at jam start to avoid every session
- * sounding like the same C minor / 120 BPM electronic track.
+ * Autonomous opening mode picks a random preset at jam start.
+ * Staged-silent jam mode can apply a specific preset later.
  */
 import type { MusicalContext } from './types';
 import { deriveScale } from './musical-context-parser';
 
-interface Preset {
+export interface JamPreset {
+  id: string;
   genre: string;
   key: string;
   scale?: string[]; // explicit scale for modal keys; derived for major/minor
@@ -16,7 +17,9 @@ interface Preset {
   energy: number;
 }
 
-export const PRESETS: Preset[] = [
+type RawPreset = Omit<JamPreset, 'id'>;
+
+const RAW_PRESETS: RawPreset[] = [
   {
     genre: 'Dark Ambient',
     key: 'C minor',
@@ -149,8 +152,37 @@ export const PRESETS: Preset[] = [
   },
 ];
 
+function presetIdFromGenre(genre: string): string {
+  return genre
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+export const PRESETS: JamPreset[] = RAW_PRESETS.map((preset) => ({
+  id: presetIdFromGenre(preset.genre),
+  ...preset,
+}));
+
+const PRESETS_BY_ID = new Map(PRESETS.map((preset) => [preset.id, preset]));
+
 // Fallback scale if deriveScale fails for a non-modal key
 const C_MAJOR_FALLBACK = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
+
+export const UNCONFIGURED_MUSICAL_CONTEXT: MusicalContext = {
+  genre: '',
+  key: '',
+  scale: [],
+  chordProgression: [],
+  bpm: 120,
+  timeSignature: '4/4',
+  energy: 5,
+};
+
+export function getPresetById(presetId: string): JamPreset | null {
+  return PRESETS_BY_ID.get(presetId) ?? null;
+}
 
 /**
  * Pick a random preset and return a fully-formed MusicalContext.
@@ -163,15 +195,20 @@ export function randomMusicalContext(): MusicalContext {
 /**
  * Convert a preset to a MusicalContext, deriving the scale if not explicit.
  */
-function presetToMusicalContext(preset: Preset): MusicalContext {
+export function presetToMusicalContext(preset: JamPreset): MusicalContext {
   const scale = preset.scale ?? deriveScale(preset.key) ?? C_MAJOR_FALLBACK;
   return {
     genre: preset.genre,
     key: preset.key,
-    scale,
-    chordProgression: preset.chordProgression,
+    scale: [...scale],
+    chordProgression: [...preset.chordProgression],
     bpm: preset.bpm,
     timeSignature: preset.timeSignature,
     energy: preset.energy,
   };
+}
+
+export function presetIdToMusicalContext(presetId: string): MusicalContext | null {
+  const preset = getPresetById(presetId);
+  return preset ? presetToMusicalContext(preset) : null;
 }

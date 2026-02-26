@@ -21,7 +21,12 @@ import {
   detectRelativeMusicalContextCues,
   parseDeterministicMusicalContextChanges,
 } from './musical-context-parser';
-import { randomMusicalContext } from './musical-context-presets';
+import {
+  getPresetById,
+  presetToMusicalContext,
+  randomMusicalContext,
+  UNCONFIGURED_MUSICAL_CONTEXT,
+} from './musical-context-presets';
 import { map_codex_event_to_runtime_events } from './codex-process';
 import {
   assert_codex_runtime_ready,
@@ -77,6 +82,12 @@ interface AgentProcessManagerOptions {
   broadcast: BroadcastFn;
 }
 
+export type JamStartMode = 'autonomous_opening' | 'staged_silent';
+
+interface StartJamOptions {
+  mode?: JamStartMode;
+}
+
 // Codex CLI `exec` no longer accepts legacy `--tools/--strict-mcp-config` flags.
 // Jam agents remain isolated via the dedicated `jam_agent` profile (MCP disabled)
 // plus prompt-level policy; keep this empty for CLI compatibility.
@@ -114,6 +125,7 @@ export class AgentProcessManager {
   private agentDecisions: Record<string, StructuredMusicalDecision | undefined> = {};
   private musicalContext: MusicalContext = randomMusicalContext();
   private activeAgents: string[] = [];
+  private activatedAgents: string[] = [];
   private broadcast: BroadcastFn;
   private workingDir: string;
   private stopped = false;
@@ -126,6 +138,8 @@ export class AgentProcessManager {
   private sessionId = 'direct-0';
   private codexConfigOverrides: string[] = [];
   private codexJamDefaultModel = 'gpt-5-codex-mini';
+  private jamStartMode: JamStartMode = 'autonomous_opening';
+  private presetConfigured = true;
 
   constructor(options: AgentProcessManagerOptions) {
     this.workingDir = options.workingDir;
@@ -171,22 +185,31 @@ export class AgentProcessManager {
 
   /**
    * Start the jam session: connect to /api/ws, spawn agent processes,
-   * send initial context, and broadcast opening patterns.
+   * then either free-jam immediately or wait silently for boss cues.
    */
-  async start(activeAgents: string[]): Promise<void> {
+  async start(activeAgents: string[], options: StartJamOptions = {}): Promise<void> {
     await assert_codex_runtime_ready({
       working_dir: this.workingDir,
     });
     const codexConfig = load_project_codex_config(this.workingDir);
     this.codexConfigOverrides = build_codex_overrides(codexConfig, CODEX_JAM_PROFILE);
     this.codexJamDefaultModel = codexConfig.jam_agent_model;
+    this.jamStartMode = options.mode ?? 'autonomous_opening';
 
     this.activeAgents = activeAgents;
+    this.activatedAgents = this.jamStartMode === 'staged_silent' ? [] : [...activeAgents];
     this.stopped = false;
     this.roundNumber = 0;
     this.tickScheduled = false;
     this.sessionId = 'direct-' + Date.now();
-    this.musicalContext = randomMusicalContext();
+    this.presetConfigured = this.jamStartMode !== 'staged_silent';
+    this.musicalContext = this.jamStartMode === 'staged_silent'
+      ? {
+          ...UNCONFIGURED_MUSICAL_CONTEXT,
+          scale: [...UNCONFIGURED_MUSICAL_CONTEXT.scale],
+          chordProgression: [...UNCONFIGURED_MUSICAL_CONTEXT.chordProgression],
+        }
+      : randomMusicalContext();
     this.agentDecisions = {};
 
     // Initialize state for each agent
@@ -210,11 +233,48 @@ export class AgentProcessManager {
     // Prepare one Codex-backed session per agent
     await Promise.all(activeAgents.map((key) => this.spawnAgent(key)));
 
-    // Send initial jam context to each agent and collect responses
-    await this.sendJamStart();
+    if (this.jamStartMode === 'autonomous_opening') {
+      // Send initial jam context to each agent and collect responses
+      await this.sendJamStart();
+    } else {
+      // Staged silent mode: no opening prompts until the boss explicitly cues an agent.
+      this.broadcastJamStateOnly();
+    }
 
     // Start autonomous evolution ticks
     this.startAutoTick();
+  }
+
+  /**
+   * Apply a specific preset to a staged-silent jam before the first join.
+   */
+  async setJamPreset(presetId: string): Promise<void> {
+    return this.enqueueTurn('set-preset', async () => {
+      if (this.stopped) return;
+
+      if (this.activatedAgents.length > 0) {
+        throw new Error('Preset is locked after the first agent joins.');
+      }
+
+      const preset = getPresetById(presetId);
+      if (!preset) {
+        throw new Error(`Unknown jam preset: ${presetId}`);
+      }
+
+      this.musicalContext = presetToMusicalContext(preset);
+      this.presetConfigured = true;
+
+      // Rebuild agent prompts so genre-specific guidance reflects the chosen preset
+      // before any agent takes its first turn in staged-silent mode.
+      for (const [key, agent] of Array.from(this.agents.entries())) {
+        const rebuilt = this.buildAgentSystemPrompt(key);
+        if (!rebuilt) continue;
+        agent.systemPrompt = rebuilt.prompt;
+        agent.model = rebuilt.model;
+      }
+
+      this.broadcastJamStateOnly();
+    });
   }
 
   /**
@@ -225,23 +285,43 @@ export class AgentProcessManager {
     targetAgent: string | undefined,
     activeAgents: string[]
   ): Promise<void> {
+    void activeAgents; // routing uses manager-owned session membership, not client input
+
     return this.enqueueTurn('directive', async () => {
       if (this.stopped) return;
 
       // Reset tick timer to avoid double-triggering during directive
       if (this.tickTimer) clearInterval(this.tickTimer);
 
-      // Guard: if a specific agent was targeted but is unavailable, error early
-      if (targetAgent && !this.agents.has(targetAgent)) {
-        const meta = AGENT_META[targetAgent];
-        const name = meta?.name ?? targetAgent;
-        const reason = !activeAgents.includes(targetAgent)
-          ? `${name} is not in this jam session`
-          : `${name}'s process is unavailable`;
-        console.warn(`[AgentManager] Directive target unavailable: ${reason}`);
-        this.broadcastWs('directive_error', { message: reason, targetAgent });
+      if (!this.presetConfigured) {
+        this.broadcastWs('directive_error', {
+          message: 'Choose a genre preset and press Play before sending directives.',
+          targetAgent,
+        });
         this.startAutoTick();
         return;
+      }
+
+      // Guard: if a specific agent was targeted but is unavailable, error early
+      if (targetAgent) {
+        const meta = AGENT_META[targetAgent];
+        const name = meta?.name ?? targetAgent;
+
+        if (!this.activeAgents.includes(targetAgent)) {
+          const reason = `${name} is not in this jam session`;
+          console.warn(`[AgentManager] Directive target unavailable: ${reason}`);
+          this.broadcastWs('directive_error', { message: reason, targetAgent });
+          this.startAutoTick();
+          return;
+        }
+
+        if (!this.agents.has(targetAgent)) {
+          const reason = `${name}'s process is unavailable`;
+          console.warn(`[AgentManager] Directive target unavailable: ${reason}`);
+          this.broadcastWs('directive_error', { message: reason, targetAgent });
+          this.startAutoTick();
+          return;
+        }
       }
 
       // Apply deterministic anchors first (explicit BPM / half/double-time / explicit energy / key).
@@ -259,9 +339,22 @@ export class AgentProcessManager {
       }
 
       // Determine which agents to target
-      const targets = targetAgent
-        ? [targetAgent]
-        : activeAgents.filter((k) => this.agents.has(k));
+      let targets: string[] = [];
+      if (targetAgent) {
+        if (!this.activatedAgents.includes(targetAgent)) {
+          this.activatedAgents = [...this.activatedAgents, targetAgent];
+        }
+        targets = [targetAgent];
+      } else {
+        targets = this.activatedAgents.filter((k) => this.agents.has(k));
+        if (targets.length === 0) {
+          this.broadcastWs('directive_error', {
+            message: 'No agents are active yet. @mention an agent to start the jam.',
+          });
+          this.startAutoTick();
+          return;
+        }
+      }
 
       // Set targeted agents to "thinking"
       for (const key of targets) {
@@ -336,10 +429,13 @@ export class AgentProcessManager {
     this.agentStates = {};
     this.agentDecisions = {};
     this.activeAgents = [];
+    this.activatedAgents = [];
     this.sessionId = 'direct-0';
     this.turnInProgress = Promise.resolve();
     this.turnCounter = 0;
     this.codexConfigOverrides = [];
+    this.jamStartMode = 'autonomous_opening';
+    this.presetConfigured = true;
   }
 
   /**
@@ -361,6 +457,7 @@ export class AgentProcessManager {
       },
       agents,
       activeAgents: [...this.activeAgents],
+      activatedAgents: [...this.activatedAgents],
     };
   }
 
@@ -1129,7 +1226,7 @@ export class AgentProcessManager {
     const ctx = this.musicalContext;
     const isBroadcast = !targetAgent;
 
-    const bandStateLines = this.activeAgents
+    const bandStateLines = this.activatedAgents
       .filter((k) => k !== key)
       .map((k) => this.formatAgentBandState(k));
 
@@ -1168,15 +1265,18 @@ export class AgentProcessManager {
   private async sendAutoTick(): Promise<void> {
     return this.enqueueTurn('auto-tick', async () => {
       if (this.stopped) return;
+      if (!this.presetConfigured) return;
+
+      const activeTargets = this.activatedAgents.filter((key) => this.agents.has(key));
+      if (activeTargets.length === 0) return;
 
       this.roundNumber++;
       const ctx = this.musicalContext;
-      const activeTargets = this.activeAgents.filter((key) => this.agents.has(key));
 
       console.log(`[AgentManager] Auto-tick round ${this.roundNumber}`);
 
       const responsePromises = activeTargets.map((key) => {
-        const bandStateLines = this.activeAgents
+        const bandStateLines = this.activatedAgents
           .filter((k) => k !== key)
           .map((k) => this.formatAgentBandState(k));
 
@@ -1293,7 +1393,7 @@ export class AgentProcessManager {
   // ─── Private: Pattern Composition ────────────────────────────────
 
   private composePatterns(): string {
-    const patterns = this.activeAgents
+    const patterns = this.activatedAgents
       .map((k) => this.agentPatterns[k])
       .filter((p) => p && p !== 'silence');
 
@@ -1302,12 +1402,21 @@ export class AgentProcessManager {
     return `stack(${patterns.join(', ')})`;
   }
 
+  private broadcastJamStateOnly(): void {
+    const combinedPattern = this.composePatterns();
+    this.broadcastJamStatePayload(combinedPattern);
+  }
+
   private composeAndBroadcast(): void {
     const combinedPattern = this.composePatterns();
 
     // Execute the composed pattern
     this.broadcastWs('execute', { code: combinedPattern });
 
+    this.broadcastJamStatePayload(combinedPattern);
+  }
+
+  private broadcastJamStatePayload(combinedPattern: string): void {
     // Broadcast full jam state
     const jamState = this.getJamStateSnapshot();
 

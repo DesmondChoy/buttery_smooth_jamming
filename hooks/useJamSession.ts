@@ -30,7 +30,9 @@ export interface UseJamSessionReturn {
   musicalContext: MusicalContext;
   chatMessages: JamChatMessage[];
   selectedAgents: string[];
+  activatedAgents: string[];
   showAgentSelection: boolean;
+  isJamReady: boolean;
 
   // Actions
   startJam: () => void;
@@ -56,6 +58,12 @@ const DEFAULT_AGENTS: Record<string, AgentState> = Object.fromEntries(
   ])
 );
 
+function cloneDefaultAgents(): Record<string, AgentState> {
+  return Object.fromEntries(
+    Object.entries(DEFAULT_AGENTS).map(([key, agent]) => [key, { ...agent }])
+  );
+}
+
 const DEFAULT_MUSICAL_CONTEXT: MusicalContext = {
   genre: '',
   key: 'C',
@@ -74,13 +82,16 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
     ?? false;
 
   const [isJamming, setIsJamming] = useState(false);
-  const [agentStates, setAgentStates] = useState<Record<string, AgentState>>({ ...DEFAULT_AGENTS });
+  const [agentStates, setAgentStates] = useState<Record<string, AgentState>>(cloneDefaultAgents);
   const [musicalContext, setMusicalContext] = useState<MusicalContext>(DEFAULT_MUSICAL_CONTEXT);
   const [chatMessages, setChatMessages] = useState<JamChatMessage[]>([]);
   const [selectedAgents, setSelectedAgents] = useState<string[]>([...ALL_AGENT_KEYS]);
+  const [activatedAgents, setActivatedAgents] = useState<string[]>([]);
   const [showAgentSelection, setShowAgentSelection] = useState(false);
+  const [isJamReady, setIsJamReady] = useState(false);
 
   const selectedAgentsRef = useRef(selectedAgents);
+  const currentSessionIdRef = useRef<string | null>(null);
 
   const addChatMessage = useCallback((msg: Omit<JamChatMessage, 'id' | 'timestamp'>) => {
     setChatMessages((prev) => {
@@ -104,19 +115,22 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
   const startJam = useCallback(() => {
     if (!isRuntimeConnected) return;
     setIsJamming(true);
+    setIsJamReady(false);
+    setActivatedAgents([]);
+    setAgentStates(cloneDefaultAgents());
+    setMusicalContext(DEFAULT_MUSICAL_CONTEXT);
+    currentSessionIdRef.current = null;
     sendStartJam(selectedAgentsRef.current);
   }, [isRuntimeConnected, sendStartJam]);
 
   const stopJam = useCallback(() => {
     setIsJamming(false);
+    setIsJamReady(false);
+    setActivatedAgents([]);
     clearChatMessages();
-    setAgentStates(prev => {
-      const reset = { ...prev };
-      for (const key of Object.keys(reset)) {
-        reset[key] = { ...reset[key], status: 'idle' };
-      }
-      return reset;
-    });
+    setAgentStates(cloneDefaultAgents());
+    setMusicalContext(DEFAULT_MUSICAL_CONTEXT);
+    currentSessionIdRef.current = null;
     // Tell server to kill agent processes
     sendStopJam();
   }, [clearChatMessages, sendStopJam]);
@@ -130,6 +144,11 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
     setSelectedAgents(agents);
     selectedAgentsRef.current = agents;
     setShowAgentSelection(false);
+    setIsJamReady(false);
+    setActivatedAgents([]);
+    setAgentStates(cloneDefaultAgents());
+    setMusicalContext(DEFAULT_MUSICAL_CONTEXT);
+    currentSessionIdRef.current = null;
 
     // Start the jam
     setIsJamming(true);
@@ -204,11 +223,25 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
   }, []);
 
   const handleJamStateUpdate = useCallback((payload: JamStatePayload) => {
+    if (!isJamming) return;
+
     // Full state sync from the server
     const { jamState } = payload;
+    if (!jamState?.sessionId || jamState.sessionId === 'direct-0') return;
+
+    const currentSessionId = currentSessionIdRef.current;
+    if (!currentSessionId) {
+      if (jamState.currentRound !== 0) return;
+      currentSessionIdRef.current = jamState.sessionId;
+    } else if (currentSessionId !== jamState.sessionId) {
+      return;
+    }
+
     setAgentStates(jamState.agents);
     setMusicalContext(jamState.musicalContext);
-  }, []);
+    setActivatedAgents(jamState.activatedAgents ?? jamState.activeAgents);
+    setIsJamReady(true);
+  }, [isJamming]);
 
   return {
     isJamming,
@@ -216,7 +249,9 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
     musicalContext,
     chatMessages,
     selectedAgents,
+    activatedAgents,
     showAgentSelection,
+    isJamReady,
 
     startJam,
     stopJam,

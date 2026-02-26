@@ -23,6 +23,16 @@ export function AudioStartButton({
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
+    const test_window = window as typeof window & {
+      __BSJ_E2E_FORCE_AUDIO_READY__?: boolean;
+    };
+    if (test_window.__BSJ_E2E_FORCE_AUDIO_READY__ === true) {
+      setAudioState('ready');
+      setIsVisible(false);
+      onAudioReady?.();
+      return;
+    }
+
     const checkExistingAudio = async () => {
       try {
         const { getAudioContext } = await import('@strudel/webaudio');

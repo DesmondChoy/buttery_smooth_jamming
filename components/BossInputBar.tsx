@@ -8,6 +8,7 @@ interface BossInputBarProps {
   selectedAgents: string[];
   isConnected: boolean;
   isJamming: boolean;
+  canSendDirectives: boolean;
   onSendDirective: (text: string, targetAgent?: string) => void;
 }
 
@@ -27,6 +28,7 @@ export function BossInputBar({
   selectedAgents,
   isConnected,
   isJamming,
+  canSendDirectives,
   onSendDirective,
 }: BossInputBarProps) {
   const [inputValue, setInputValue] = useState('');
@@ -133,15 +135,17 @@ export function BossInputBar({
               ? 'Connecting...'
               : !isJamming
                 ? 'Start a jam first...'
-                : 'Give a directive... (@ to mention an agent)'
+                : !canSendDirectives
+                  ? 'Choose a preset and press Play first...'
+                  : 'Give a directive... (@ to mention an agent)'
           }
-          disabled={!isConnected || !isJamming}
+          disabled={!isConnected || !isJamming || !canSendDirectives}
           className="flex-1 bg-transparent text-white py-3 pr-4 outline-none placeholder-gray-500 disabled:opacity-50 text-sm font-mono"
           aria-label="Boss directive input"
         />
         <button
           type="submit"
-          disabled={!isConnected || !isJamming || !inputValue.trim()}
+          disabled={!isConnected || !isJamming || !canSendDirectives || !inputValue.trim()}
           className="px-4 py-3 text-amber-400 hover:text-amber-300 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium shrink-0"
           aria-label="Send directive"
         >

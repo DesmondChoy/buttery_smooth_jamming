@@ -103,6 +103,7 @@ export interface JamState {
   musicalContext: MusicalContext;
   agents: Record<string, AgentState>;
   activeAgents: string[];
+  activatedAgents: string[];
 }
 
 export interface JamChatMessage {

@@ -26,6 +26,7 @@ export interface UseRuntimeTerminalReturn {
   error: string | null;
   sendMessage: (text: string) => void;
   sendStartJam: (activeAgents: string[]) => void;
+  sendJamPreset: (presetId: string) => void;
   sendBossDirective: (text: string, targetAgent?: string, activeAgents?: string[]) => void;
   sendStopJam: () => void;
   clearLines: () => void;
@@ -273,6 +274,13 @@ export function useRuntimeTerminal(
     }
   }, []);
 
+  const sendJamPreset = useCallback((presetId: string) => {
+    if (!presetId) return;
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'set_jam_preset', presetId }));
+    }
+  }, []);
+
   const sendStopJam = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: 'stop_jam' }));
@@ -291,6 +299,7 @@ export function useRuntimeTerminal(
     error,
     sendMessage,
     sendStartJam,
+    sendJamPreset,
     sendBossDirective,
     sendStopJam,
     clearLines,

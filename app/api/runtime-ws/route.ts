@@ -17,6 +17,7 @@ const clientProcesses = new Map<WebSocket, RuntimeProcess>();
 
 // Store agent process managers per client (for jam sessions)
 const agentManagers = new Map<WebSocket, AgentProcessManager>();
+const pendingJamStarts = new Map<WebSocket, Promise<void>>();
 
 const MAX_CONCURRENT_JAMS = getPositiveInt(process.env.MAX_CONCURRENT_JAMS, 1);
 const MAX_TOTAL_AGENT_PROCESSES = getPositiveInt(process.env.MAX_TOTAL_AGENT_PROCESSES, 4);
@@ -53,10 +54,11 @@ function endTimer(client: WebSocket): void {
 
 // Message types for browser <-> server communication
 interface BrowserMessage {
-  type: 'user_input' | 'stop' | 'ping' | 'start_jam' | 'boss_directive' | 'stop_jam';
+  type: 'user_input' | 'stop' | 'ping' | 'start_jam' | 'set_jam_preset' | 'boss_directive' | 'stop_jam';
   text?: string;
   activeAgents?: string[];
   targetAgent?: string;
+  presetId?: string;
 }
 
 interface ServerMessage {
@@ -103,6 +105,12 @@ function countActiveAgentProcesses(): number {
   return Array.from(agentManagers.values()).reduce((total, manager) => {
     return total + getActiveAgentCount(manager);
   }, 0);
+}
+
+async function awaitPendingJamStart(client: WebSocket): Promise<void> {
+  const pendingStart = pendingJamStarts.get(client);
+  if (!pendingStart) return;
+  await pendingStart;
 }
 
 async function startRuntimeForClient(
@@ -339,7 +347,10 @@ export function SOCKET(
           const manager = new AgentProcessManager({ workingDir, broadcast: broadcastToClient });
           agentManagers.set(client, manager);
 
-          manager.start(agents).then(() => {
+          const startPromise = manager.start(agents, { mode: 'staged_silent' });
+          pendingJamStarts.set(client, startPromise);
+
+          startPromise.then(() => {
             endTimer(client);
             sendToClient(client, { type: 'status', status: 'done' });
           }).catch(async (error) => {
@@ -355,14 +366,66 @@ export function SOCKET(
             endTimer(client);
             sendErrorToClient(client, `Failed to start jam: ${error.message}`);
             sendToClient(client, { type: 'status', status: 'done' });
+          }).finally(() => {
+            if (pendingJamStarts.get(client) === startPromise) {
+              pendingJamStarts.delete(client);
+            }
+          });
+          break;
+        }
+
+        case 'set_jam_preset': {
+          if (!message.presetId) {
+            sendErrorToClient(client, 'Missing jam preset id.');
+            break;
+          }
+
+          try {
+            await awaitPendingJamStart(client);
+          } catch (error) {
+            const err = error as Error;
+            sendErrorToClient(client, `Cannot set jam preset before jam startup completes: ${err.message}`);
+            break;
+          }
+
+          const manager = agentManagers.get(client);
+          if (!manager) {
+            sendErrorToClient(client, 'No active jam session for preset selection.');
+            break;
+          }
+
+          startTimer(client, `SET_JAM_PRESET: ${message.presetId}`);
+          sendToClient(client, { type: 'status', status: 'thinking' });
+
+          manager.setJamPreset(message.presetId).then(() => {
+            endTimer(client);
+            sendToClient(client, { type: 'status', status: 'done' });
+          }).catch((error) => {
+            console.error('[Runtime WS] Set jam preset failed:', error);
+            endTimer(client);
+            sendErrorToClient(client, `Failed to set jam preset: ${error.message}`);
+            sendToClient(client, { type: 'status', status: 'done' });
           });
           break;
         }
 
         case 'boss_directive': {
           const text = message.text;
-          const manager = agentManagers.get(client);
-          if (text && manager) {
+          if (text) {
+            try {
+              await awaitPendingJamStart(client);
+            } catch (error) {
+              const err = error as Error;
+              sendErrorToClient(client, `Cannot send directive before jam startup completes: ${err.message}`);
+              break;
+            }
+
+            const manager = agentManagers.get(client);
+            if (!manager) {
+              sendErrorToClient(client, 'No active jam session for boss directive.');
+              break;
+            }
+
             startTimer(client, `BOSS_DIRECTIVE: "${text.substring(0, 50)}" (target: ${message.targetAgent || 'all'})`);
             sendToClient(client, { type: 'status', status: 'thinking' });
 
@@ -374,13 +437,14 @@ export function SOCKET(
               endTimer(client);
               sendErrorToClient(client, `Directive failed: ${error.message}`);
             });
-          } else if (!manager) {
+          } else {
             sendErrorToClient(client, 'No active jam session for boss directive.');
           }
           break;
         }
 
         case 'stop_jam': {
+          pendingJamStarts.delete(client);
           const jamManager = agentManagers.get(client);
           if (jamManager) {
             console.log(`[Runtime WS] Stopping jam for client #${clientIds.get(client) || '?'}`);
@@ -428,6 +492,8 @@ export function SOCKET(
       await jamManager.stop();
       agentManagers.delete(client);
     }
+
+    pendingJamStarts.delete(client);
 
     clientIds.delete(client);
   });

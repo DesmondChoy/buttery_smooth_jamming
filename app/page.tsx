@@ -11,16 +11,22 @@ import { PatternDisplay } from '@/components/PatternDisplay';
 import { AgentSelectionModal } from '@/components/AgentSelectionModal';
 import { AudioStartButton } from '@/components/AudioStartButton';
 import { useWebSocket, useStrudel, useRuntimeTerminal, useJamSession } from '@/hooks';
+import { PRESETS } from '@/lib/musical-context-presets';
 
 const StrudelPanel = dynamic(
   () => import('@/components/StrudelPanel'),
   { ssr: false }
 );
 
+const SILENT_JAM_PATTERN = 'silence';
+
 export default function Home() {
   const [audioReady, setAudioReady] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selectedJamPresetId, setSelectedJamPresetId] = useState<string | null>(null);
+  const [jamPlayRequested, setJamPlayRequested] = useState(false);
+  const [lastSentJamPresetId, setLastSentJamPresetId] = useState<string | null>(null);
   const pendingExecuteFrameRef = useRef<number | null>(null);
 
   const { ref, setCode, evaluate, stop, onEditorReady } = useStrudel();
@@ -50,8 +56,10 @@ export default function Home() {
     lines: runtimeLines,
     status: runtimeStatus,
     isConnected: isRuntimeConnected,
+    error: runtimeTerminalError,
     sendMessage,
     clearLines,
+    sendJamPreset,
     sendBossDirective,
   } = runtimeTerminal;
 
@@ -64,7 +72,9 @@ export default function Home() {
     cancelStartJam,
     chatMessages,
     selectedAgents,
+    activatedAgents,
     isJamming,
+    isJamReady,
     stopJam,
     musicalContext,
     agentStates,
@@ -96,6 +106,20 @@ export default function Home() {
     return result;
   }, [chatMessages, selectedAgents]);
 
+  const selectedJamPreset = useMemo(
+    () => PRESETS.find((preset) => preset.id === selectedJamPresetId) ?? null,
+    [selectedJamPresetId]
+  );
+
+  const isSelectedJamPresetApplied = Boolean(
+    selectedJamPreset
+    && musicalContext.genre
+    && musicalContext.genre === selectedJamPreset.genre
+  );
+
+  const isJamPlayArmed = jamPlayRequested && isSelectedJamPresetApplied;
+  const isJamPresetLocked = activatedAgents.length > 0;
+
   const handleStrudelError = useCallback((err: Error | null) => {
     setError(err?.message || null);
   }, []);
@@ -121,6 +145,10 @@ export default function Home() {
   }, [setCode, evaluate]);
 
   const handleStop = useCallback(() => {
+    if (pendingExecuteFrameRef.current !== null) {
+      cancelAnimationFrame(pendingExecuteFrameRef.current);
+      pendingExecuteFrameRef.current = null;
+    }
     stop();
     setIsPlaying(false);
   }, [stop]);
@@ -191,10 +219,122 @@ export default function Home() {
     setIsPlaying(true);
   }, [evaluate]);
 
+  const handleConfirmStartJam = useCallback((agents: string[]) => {
+    // Guarantee silence when entering jam mode, even if a prior normal-mode pattern was playing.
+    handleStop();
+    setSelectedJamPresetId(null);
+    setJamPlayRequested(false);
+    setLastSentJamPresetId(null);
+    confirmStartJam(agents);
+  }, [handleStop, confirmStartJam]);
+
+  const handleSelectJamPreset = useCallback((presetId: string | null) => {
+    // We do not support clearing the preset after Play has started, because the
+    // backend has no "unset preset" command and would drift from the UI.
+    if (jamPlayRequested && !isJamPresetLocked && !presetId) {
+      return;
+    }
+
+    setSelectedJamPresetId(presetId);
+
+    if (
+      jamPlayRequested
+      && presetId
+      && isJamming
+      && isJamReady
+      && isRuntimeConnected
+      && !isJamPresetLocked
+    ) {
+      setLastSentJamPresetId(presetId);
+      sendJamPreset(presetId);
+    }
+  }, [
+    jamPlayRequested,
+    isJamPresetLocked,
+    isJamming,
+    isJamReady,
+    isRuntimeConnected,
+    sendJamPreset,
+  ]);
+
+  const handleJamPlay = useCallback(() => {
+    if (!isJamming || !isJamReady || !audioReady || !isRuntimeConnected) return;
+    if (!selectedJamPresetId) return;
+
+    if (!jamPlayRequested) {
+      setJamPlayRequested(true);
+      handleExecute(SILENT_JAM_PATTERN);
+    }
+
+    // Allow retries and resends until the server confirms the preset in jam state.
+    if (!isSelectedJamPresetApplied) {
+      setLastSentJamPresetId(selectedJamPresetId);
+      sendJamPreset(selectedJamPresetId);
+    }
+
+    // If transport stopped for any reason before we finished arming the jam, restart silence.
+    if (jamPlayRequested && !isPlaying) {
+      handleExecute(SILENT_JAM_PATTERN);
+    }
+  }, [
+    isJamming,
+    isJamReady,
+    audioReady,
+    isRuntimeConnected,
+    jamPlayRequested,
+    isPlaying,
+    selectedJamPresetId,
+    isSelectedJamPresetApplied,
+    sendJamPreset,
+    handleExecute,
+  ]);
+
+  const handleStopJamAndAudio = useCallback(() => {
+    handleStop();
+    setSelectedJamPresetId(null);
+    setJamPlayRequested(false);
+    setLastSentJamPresetId(null);
+    stopJam();
+  }, [handleStop, stopJam]);
+
+  const isJamPresetApplying = Boolean(
+    jamPlayRequested
+    && selectedJamPresetId
+    && !isJamPlayArmed
+    && lastSentJamPresetId === selectedJamPresetId
+    && runtimeStatus === 'thinking'
+  );
+
+  const canPlayJam = Boolean(
+    isJamming
+    && isJamReady
+    && isRuntimeConnected
+    && audioReady
+    && selectedJamPresetId
+    && !isJamPresetLocked
+    && (!isJamPlayArmed || !isPlaying)
+  );
+
+  const canSendJamDirectives = Boolean(
+    isJamming
+    && isJamReady
+    && selectedJamPresetId
+    && isJamPlayArmed
+  );
+
   const handleSendDirective = useCallback((text: string, targetAgent?: string) => {
+    if (!isJamming || !isJamReady || !selectedJamPresetId || !isJamPlayArmed) return;
     addBossDirective(text, targetAgent);
     sendBossDirective(text, targetAgent, selectedAgents);
-  }, [addBossDirective, sendBossDirective, selectedAgents]);
+  }, [
+    isJamming,
+    isJamReady,
+    selectedJamPresetId,
+    isJamPlayArmed,
+    addBossDirective,
+    sendBossDirective,
+    selectedAgents,
+  ]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -213,12 +353,16 @@ export default function Home() {
       if (e.ctrlKey || e.metaKey) {
         if (e.key === 'Enter') {
           e.preventDefault();
-          if (audioReady) {
+          if (isJamming) {
+            handleJamPlay();
+          } else if (audioReady) {
             handlePlay();
           }
         } else if (e.key === '.') {
           e.preventDefault();
-          if (audioReady && isPlaying) {
+          if (isJamming) {
+            handleStopJamAndAudio();
+          } else if (audioReady && isPlaying) {
             handleStop();
           }
         }
@@ -227,7 +371,7 @@ export default function Home() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [audioReady, isPlaying, handlePlay, handleStop]);
+  }, [audioReady, isPlaying, isJamming, handlePlay, handleStop, handleJamPlay, handleStopJamAndAudio]);
 
   return (
     <main className="flex flex-col h-screen overflow-hidden">
@@ -238,7 +382,19 @@ export default function Home() {
             {/* Top bar: controls + musical context */}
             <JamTopBar
               musicalContext={musicalContext}
-              onStopJam={stopJam}
+              presets={PRESETS}
+              selectedPresetId={selectedJamPresetId}
+              isPresetLocked={isJamPresetLocked}
+              showPresetPreview={!isJamPlayArmed}
+              canPlayJam={canPlayJam}
+              isPlaying={isPlaying}
+              isAudioReady={audioReady}
+              isJamReady={isJamReady}
+              isPresetApplying={isJamPresetApplying}
+              errorMessage={runtimeTerminalError}
+              onSelectPreset={handleSelectJamPreset}
+              onPlayJam={handleJamPlay}
+              onStopJam={handleStopJamAndAudio}
             />
 
             {/* Agent columns grid */}
@@ -261,6 +417,7 @@ export default function Home() {
               selectedAgents={selectedAgents}
               isConnected={isRuntimeConnected}
               isJamming={isJamming}
+              canSendDirectives={canSendJamDirectives}
               onSendDirective={handleSendDirective}
             />
 
@@ -355,7 +512,7 @@ note("c3 e3 g3 c4").sound("piano")._pianoroll({ fold: 1 })`}
       {/* Agent selection modal */}
       {showAgentSelection && (
         <AgentSelectionModal
-          onConfirm={confirmStartJam}
+          onConfirm={handleConfirmStartJam}
           onCancel={cancelStartJam}
           initialSelection={selectedAgents}
         />
