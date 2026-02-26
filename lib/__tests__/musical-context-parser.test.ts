@@ -4,7 +4,6 @@ import {
   detectRelativeMusicalContextCues,
   deriveScale,
   parseDeterministicMusicalContextChanges,
-  parseLegacyMusicalContextChanges,
 } from '../musical-context-parser';
 import type { MusicalContext } from '../types';
 
@@ -74,214 +73,163 @@ describe('deriveScale', () => {
 
 // ─── Key Parsing ────────────────────────────────────────────────
 
-describe('parseLegacyMusicalContextChanges — key', () => {
+describe('parseDeterministicMusicalContextChanges — key', () => {
   it('"Switch to D major"', () => {
-    const result = parseLegacyMusicalContextChanges('Switch to D major', DEFAULT_CTX);
+    const result = parseDeterministicMusicalContextChanges('Switch to D major', DEFAULT_CTX);
     expect(result?.key).toBe('D major');
     expect(result?.scale).toEqual(['D', 'E', 'F#', 'G', 'A', 'B', 'C#']);
   });
 
   it('"key of Eb minor"', () => {
-    const result = parseLegacyMusicalContextChanges('key of Eb minor', DEFAULT_CTX);
+    const result = parseDeterministicMusicalContextChanges('key of Eb minor', DEFAULT_CTX);
     expect(result?.key).toBe('Eb minor');
     expect(result?.scale).toBeDefined();
   });
 
   it('"F# minor" (standalone key+quality)', () => {
-    const result = parseLegacyMusicalContextChanges('Try F# minor for a darker sound', DEFAULT_CTX);
+    const result = parseDeterministicMusicalContextChanges('Try F# minor for a darker sound', DEFAULT_CTX);
     expect(result?.key).toBe('F# minor');
   });
 
   it('"switch to G" defaults to major', () => {
-    const result = parseLegacyMusicalContextChanges('switch to G', DEFAULT_CTX);
+    const result = parseDeterministicMusicalContextChanges('switch to G', DEFAULT_CTX);
     expect(result?.key).toBe('G major');
     expect(result?.scale).toEqual(['G', 'A', 'B', 'C', 'D', 'E', 'F#']);
   });
 
   it('"change key to Bb major"', () => {
-    const result = parseLegacyMusicalContextChanges('change key to Bb major', DEFAULT_CTX);
+    const result = parseDeterministicMusicalContextChanges('change key to Bb major', DEFAULT_CTX);
     expect(result?.key).toBe('Bb major');
   });
 
   it('"change to A min"', () => {
-    const result = parseLegacyMusicalContextChanges('change to A min', DEFAULT_CTX);
+    const result = parseDeterministicMusicalContextChanges('change to A min', DEFAULT_CTX);
     expect(result?.key).toBe('A minor');
   });
 
   it('"in the key of Ab major"', () => {
-    const result = parseLegacyMusicalContextChanges('Play in the key of Ab major', DEFAULT_CTX);
+    const result = parseDeterministicMusicalContextChanges('Play in the key of Ab major', DEFAULT_CTX);
     expect(result?.key).toBe('Ab major');
   });
 
   it('case insensitive: "switch to d major"', () => {
-    const result = parseLegacyMusicalContextChanges('switch to d major', DEFAULT_CTX);
+    const result = parseDeterministicMusicalContextChanges('switch to d major', DEFAULT_CTX);
     expect(result?.key).toBe('D major');
   });
 
   it('"switch it to E minor"', () => {
-    const result = parseLegacyMusicalContextChanges('switch it to E minor', DEFAULT_CTX);
+    const result = parseDeterministicMusicalContextChanges('switch it to E minor', DEFAULT_CTX);
     expect(result?.key).toBe('E minor');
   });
 
   it('"switch the key to C major"', () => {
-    const result = parseLegacyMusicalContextChanges('switch the key to C major', DEFAULT_CTX);
+    const result = parseDeterministicMusicalContextChanges('switch the key to C major', DEFAULT_CTX);
     expect(result?.key).toBe('C major');
   });
 });
 
 // ─── BPM Parsing ────────────────────────────────────────────────
 
-describe('parseLegacyMusicalContextChanges — BPM', () => {
+describe('parseDeterministicMusicalContextChanges — BPM', () => {
   it('"BPM 140"', () => {
-    const result = parseLegacyMusicalContextChanges('Set BPM 140', DEFAULT_CTX);
+    const result = parseDeterministicMusicalContextChanges('Set BPM 140', DEFAULT_CTX);
     expect(result?.bpm).toBe(140);
   });
 
   it('"tempo 90"', () => {
-    const result = parseLegacyMusicalContextChanges('tempo 90 please', DEFAULT_CTX);
+    const result = parseDeterministicMusicalContextChanges('tempo 90 please', DEFAULT_CTX);
     expect(result?.bpm).toBe(90);
   });
 
   it('"140 BPM"', () => {
-    const result = parseLegacyMusicalContextChanges('Take it to 140 BPM', DEFAULT_CTX);
+    const result = parseDeterministicMusicalContextChanges('Take it to 140 BPM', DEFAULT_CTX);
     expect(result?.bpm).toBe(140);
   });
 
   it('"140bpm" (no space)', () => {
-    const result = parseLegacyMusicalContextChanges('Go to 140bpm', DEFAULT_CTX);
+    const result = parseDeterministicMusicalContextChanges('Go to 140bpm', DEFAULT_CTX);
     expect(result?.bpm).toBe(140);
   });
 
   it('clamps below 60', () => {
-    const result = parseLegacyMusicalContextChanges('BPM 30', DEFAULT_CTX);
+    const result = parseDeterministicMusicalContextChanges('BPM 30', DEFAULT_CTX);
     expect(result?.bpm).toBe(60);
   });
 
   it('clamps above 300', () => {
-    const result = parseLegacyMusicalContextChanges('BPM 400', DEFAULT_CTX);
+    const result = parseDeterministicMusicalContextChanges('BPM 400', DEFAULT_CTX);
     expect(result?.bpm).toBe(300);
   });
 
-  it('"speed up" adds 15', () => {
-    const result = parseLegacyMusicalContextChanges('speed up', DEFAULT_CTX);
-    expect(result?.bpm).toBe(135);
-  });
-
-  it('"faster" adds 15', () => {
-    const result = parseLegacyMusicalContextChanges('Make it faster', DEFAULT_CTX);
-    expect(result?.bpm).toBe(135);
-  });
-
-  it('"slow down" subtracts 15', () => {
-    const result = parseLegacyMusicalContextChanges('slow down a bit', DEFAULT_CTX);
-    expect(result?.bpm).toBe(105);
-  });
-
-  it('"slower" subtracts 15', () => {
-    const result = parseLegacyMusicalContextChanges('Go slower', DEFAULT_CTX);
-    expect(result?.bpm).toBe(105);
-  });
-
   it('"half time" halves BPM', () => {
-    const result = parseLegacyMusicalContextChanges('half time feel', DEFAULT_CTX);
+    const result = parseDeterministicMusicalContextChanges('half time feel', DEFAULT_CTX);
     expect(result?.bpm).toBe(60);
   });
 
   it('"double time" doubles BPM', () => {
-    const result = parseLegacyMusicalContextChanges('double time!', DEFAULT_CTX);
+    const result = parseDeterministicMusicalContextChanges('double time!', DEFAULT_CTX);
     expect(result?.bpm).toBe(240);
   });
 
   it('half time clamps to minimum', () => {
     const ctx = { ...DEFAULT_CTX, bpm: 80 };
-    const result = parseLegacyMusicalContextChanges('half time', ctx);
+    const result = parseDeterministicMusicalContextChanges('half time', ctx);
     expect(result?.bpm).toBe(60); // 80/2=40, clamped to 60
   });
 
   it('double time clamps to maximum', () => {
     const ctx = { ...DEFAULT_CTX, bpm: 200 };
-    const result = parseLegacyMusicalContextChanges('double time', ctx);
+    const result = parseDeterministicMusicalContextChanges('double time', ctx);
     expect(result?.bpm).toBe(300); // 200*2=400, clamped to 300
   });
 });
 
 // ─── Energy Parsing ─────────────────────────────────────────────
 
-describe('parseLegacyMusicalContextChanges — energy', () => {
+describe('parseDeterministicMusicalContextChanges — energy', () => {
   it('"energy 8"', () => {
-    const result = parseLegacyMusicalContextChanges('energy 8', DEFAULT_CTX);
+    const result = parseDeterministicMusicalContextChanges('energy 8', DEFAULT_CTX);
     expect(result?.energy).toBe(8);
   });
 
   it('"energy to 3"', () => {
-    const result = parseLegacyMusicalContextChanges('Set energy to 3', DEFAULT_CTX);
+    const result = parseDeterministicMusicalContextChanges('Set energy to 3', DEFAULT_CTX);
     expect(result?.energy).toBe(3);
   });
 
   it('clamps energy below 1', () => {
-    const result = parseLegacyMusicalContextChanges('energy 0', DEFAULT_CTX);
+    const result = parseDeterministicMusicalContextChanges('energy 0', DEFAULT_CTX);
     expect(result?.energy).toBe(1);
   });
 
   it('clamps energy above 10', () => {
-    const result = parseLegacyMusicalContextChanges('energy 15', DEFAULT_CTX);
+    const result = parseDeterministicMusicalContextChanges('energy 15', DEFAULT_CTX);
     expect(result?.energy).toBe(10);
   });
 
-  it('"more energy" adds 2', () => {
-    const result = parseLegacyMusicalContextChanges('more energy', DEFAULT_CTX);
-    expect(result?.energy).toBe(7);
-  });
-
-  it('"crank it" adds 2', () => {
-    const result = parseLegacyMusicalContextChanges('crank it up', DEFAULT_CTX);
-    expect(result?.energy).toBe(7);
-  });
-
-  it('"chill" subtracts 2', () => {
-    const result = parseLegacyMusicalContextChanges('chill out', DEFAULT_CTX);
-    expect(result?.energy).toBe(3);
-  });
-
-  it('"calmer" subtracts 2', () => {
-    const result = parseLegacyMusicalContextChanges('make it calmer', DEFAULT_CTX);
-    expect(result?.energy).toBe(3);
-  });
-
   it('"full energy" sets to 10', () => {
-    const result = parseLegacyMusicalContextChanges('full energy!', DEFAULT_CTX);
+    const result = parseDeterministicMusicalContextChanges('full energy!', DEFAULT_CTX);
     expect(result?.energy).toBe(10);
   });
 
   it('"max energy" sets to 10', () => {
-    const result = parseLegacyMusicalContextChanges('max energy now', DEFAULT_CTX);
+    const result = parseDeterministicMusicalContextChanges('max energy now', DEFAULT_CTX);
     expect(result?.energy).toBe(10);
   });
 
   it('"minimal" sets to 1', () => {
-    const result = parseLegacyMusicalContextChanges('Go minimal', DEFAULT_CTX);
+    const result = parseDeterministicMusicalContextChanges('Go minimal', DEFAULT_CTX);
     expect(result?.energy).toBe(1);
   });
 
-  it('"more energy" clamps at 10', () => {
-    const ctx = { ...DEFAULT_CTX, energy: 9 };
-    const result = parseLegacyMusicalContextChanges('more energy', ctx);
-    expect(result?.energy).toBe(10);
-  });
-
-  it('"chill" clamps at 1', () => {
-    const ctx = { ...DEFAULT_CTX, energy: 1 };
-    const result = parseLegacyMusicalContextChanges('chill', ctx);
-    expect(result?.energy).toBe(1);
-  });
 });
 
 // ─── Combined Directives ────────────────────────────────────────
 
-describe('parseLegacyMusicalContextChanges — combined', () => {
-  it('"Switch to D major, BPM 140, more energy"', () => {
-    const result = parseLegacyMusicalContextChanges(
-      'Switch to D major, BPM 140, more energy',
+describe('parseDeterministicMusicalContextChanges — combined', () => {
+  it('"Switch to D major, BPM 140, energy 7"', () => {
+    const result = parseDeterministicMusicalContextChanges(
+      'Switch to D major, BPM 140, energy 7',
       DEFAULT_CTX
     );
     expect(result?.key).toBe('D major');
@@ -290,48 +238,35 @@ describe('parseLegacyMusicalContextChanges — combined', () => {
     expect(result?.scale).toEqual(['D', 'E', 'F#', 'G', 'A', 'B', 'C#']);
   });
 
-  it('"Faster and more energy"', () => {
-    const result = parseLegacyMusicalContextChanges('Faster and more energy', DEFAULT_CTX);
-    expect(result?.bpm).toBe(135);
-    expect(result?.energy).toBe(7);
-    expect(result?.key).toBeUndefined();
-  });
-
   it('"BPM 140 and faster" prefers explicit BPM over relative tempo', () => {
-    const result = parseLegacyMusicalContextChanges('BPM 140 and faster', DEFAULT_CTX);
+    const result = parseDeterministicMusicalContextChanges('BPM 140 and faster', DEFAULT_CTX);
     expect(result?.bpm).toBe(140);
   });
 
   it('"energy 8 and more energy" prefers explicit energy over relative energy', () => {
-    const result = parseLegacyMusicalContextChanges('energy 8 and more energy', DEFAULT_CTX);
+    const result = parseDeterministicMusicalContextChanges('energy 8 and more energy', DEFAULT_CTX);
     expect(result?.energy).toBe(8);
   });
 
-  it('"Chill at 80 BPM in A minor"', () => {
-    const result = parseLegacyMusicalContextChanges('Chill at 80 BPM in A minor', DEFAULT_CTX);
-    expect(result?.energy).toBe(3); // chill → -2
-    expect(result?.bpm).toBe(80);
-    expect(result?.key).toBe('A minor');
-  });
 });
 
 // ─── No-Match Cases ─────────────────────────────────────────────
 
-describe('parseLegacyMusicalContextChanges — no match', () => {
+describe('parseDeterministicMusicalContextChanges — no match', () => {
   it('"more cowbell" returns null', () => {
-    expect(parseLegacyMusicalContextChanges('more cowbell', DEFAULT_CTX)).toBeNull();
+    expect(parseDeterministicMusicalContextChanges('more cowbell', DEFAULT_CTX)).toBeNull();
   });
 
   it('"play something funky" returns null', () => {
-    expect(parseLegacyMusicalContextChanges('play something funky', DEFAULT_CTX)).toBeNull();
+    expect(parseDeterministicMusicalContextChanges('play something funky', DEFAULT_CTX)).toBeNull();
   });
 
   it('"add some reverb" returns null', () => {
-    expect(parseLegacyMusicalContextChanges('add some reverb', DEFAULT_CTX)).toBeNull();
+    expect(parseDeterministicMusicalContextChanges('add some reverb', DEFAULT_CTX)).toBeNull();
   });
 
   it('empty string returns null', () => {
-    expect(parseLegacyMusicalContextChanges('', DEFAULT_CTX)).toBeNull();
+    expect(parseDeterministicMusicalContextChanges('', DEFAULT_CTX)).toBeNull();
   });
 });
 

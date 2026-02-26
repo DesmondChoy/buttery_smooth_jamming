@@ -140,9 +140,9 @@ Jam runtime directive parsing must use:
 1. `parseDeterministicMusicalContextChanges()` for explicit anchors (key, BPM, half/double-time, explicit energy)
 2. `detectRelativeMusicalContextCues()` to detect relative phrasing that gates model-provided deltas
 
-Jam runtime must not use `parseLegacyMusicalContextChanges()`, which exists only as
-a legacy compatibility helper and retains coarse synthetic relative heuristics
-(`+15/-15 BPM`, `+2/-2 energy`).
+The legacy monolithic parser helper that combined deterministic anchors with
+coarse synthetic relative heuristics (`+15/-15 BPM`, `+2/-2 energy`) has been
+removed to prevent jam/runtime boundary regressions.
 
 If relative cues are present but no usable model decision delta is returned, jam mode
 preserves current tempo/energy (no synthetic fallback delta).
