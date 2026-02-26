@@ -31,6 +31,7 @@ export interface UseJamSessionReturn {
   chatMessages: JamChatMessage[];
   selectedAgents: string[];
   activatedAgents: string[];
+  mutedAgents: string[];
   showAgentSelection: boolean;
   isJamReady: boolean;
 
@@ -87,6 +88,7 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
   const [chatMessages, setChatMessages] = useState<JamChatMessage[]>([]);
   const [selectedAgents, setSelectedAgents] = useState<string[]>([...ALL_AGENT_KEYS]);
   const [activatedAgents, setActivatedAgents] = useState<string[]>([]);
+  const [mutedAgents, setMutedAgents] = useState<string[]>([]);
   const [showAgentSelection, setShowAgentSelection] = useState(false);
   const [isJamReady, setIsJamReady] = useState(false);
 
@@ -117,6 +119,7 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
     setIsJamming(true);
     setIsJamReady(false);
     setActivatedAgents([]);
+    setMutedAgents([]);
     setAgentStates(cloneDefaultAgents());
     setMusicalContext(DEFAULT_MUSICAL_CONTEXT);
     currentSessionIdRef.current = null;
@@ -127,6 +130,7 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
     setIsJamming(false);
     setIsJamReady(false);
     setActivatedAgents([]);
+    setMutedAgents([]);
     clearChatMessages();
     setAgentStates(cloneDefaultAgents());
     setMusicalContext(DEFAULT_MUSICAL_CONTEXT);
@@ -146,6 +150,7 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
     setShowAgentSelection(false);
     setIsJamReady(false);
     setActivatedAgents([]);
+    setMutedAgents([]);
     setAgentStates(cloneDefaultAgents());
     setMusicalContext(DEFAULT_MUSICAL_CONTEXT);
     currentSessionIdRef.current = null;
@@ -240,6 +245,7 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
     setAgentStates(jamState.agents);
     setMusicalContext(jamState.musicalContext);
     setActivatedAgents(jamState.activatedAgents ?? jamState.activeAgents);
+    setMutedAgents(jamState.mutedAgents ?? []);
     setIsJamReady(true);
   }, [isJamming]);
 
@@ -250,6 +256,7 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
     chatMessages,
     selectedAgents,
     activatedAgents,
+    mutedAgents,
     showAgentSelection,
     isJamReady,
 

@@ -240,6 +240,7 @@ interface BroadcastJamState {
   agents: Record<string, unknown>;
   activeAgents: string[];
   activatedAgents: string[];
+  mutedAgents?: string[];
 }
 
 function getJamStateForRound(
@@ -1969,6 +1970,97 @@ describe('AgentProcessManager staged_silent mode', () => {
     await vi.advanceTimersByTimeAsync(0);
 
     expect(getJamStateForRound(broadcast, 2)).toBeDefined();
+
+    await manager.stop();
+  });
+
+  it('keeps a targeted muted agent silent across auto-ticks until explicitly re-cued', async () => {
+    const { manager, broadcast, processes } = createTestManager();
+
+    await manager.start(['drums'], { mode: 'staged_silent' });
+    await manager.setJamPreset('funk');
+
+    const joinPromise = manager.handleDirective(
+      '@BEAT start with a steady pocket',
+      'drums',
+      ['drums']
+    );
+    await vi.advanceTimersByTimeAsync(0);
+
+    const drumsProc = getProcessByKey(processes, 'drums');
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd ~ sd ~").bank("LinnDrum")',
+      thoughts: 'Locking in the groove',
+      reaction: 'Holding the pocket',
+    });
+    await joinPromise;
+
+    let executeMessages = broadcast.mock.calls
+      .map(([msg]: unknown[]) => msg as { type: string; payload?: { code?: string } })
+      .filter((msg) => msg.type === 'execute');
+    expect(executeMessages[executeMessages.length - 1]?.payload?.code).toContain('bd ~ sd ~');
+
+    const mutePromise = manager.handleDirective('@BEAT mute', 'drums', ['drums']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Even if the model replies "no_change", an explicit mute cue must force silence.
+    sendAgentResponse(drumsProc, {
+      pattern: 'no_change',
+      thoughts: 'Muting for the boss',
+      reaction: 'Letting the rest breathe',
+      decision: {
+        tempo_delta_pct: 10,
+        energy_delta: 2,
+        confidence: 'high',
+      },
+    });
+    await mutePromise;
+
+    const mutedSnapshot = manager.getJamStateSnapshot();
+    expect(mutedSnapshot.agents.drums?.pattern).toBe('silence');
+    expect(mutedSnapshot.agents.drums?.status).toBe('idle');
+    expect(mutedSnapshot.mutedAgents).toEqual(['drums']);
+
+    executeMessages = broadcast.mock.calls
+      .map(([msg]: unknown[]) => msg as { type: string; payload?: { code?: string } })
+      .filter((msg) => msg.type === 'execute');
+    const executeCountAfterMute = executeMessages.length;
+    expect(executeMessages[executeMessages.length - 1]?.payload?.code).toBe('silence');
+
+    const roundAfterMute = mutedSnapshot.currentRound;
+    const bpmAfterMute = mutedSnapshot.musicalContext.bpm;
+    const energyAfterMute = mutedSnapshot.musicalContext.energy;
+
+    vi.advanceTimersByTime(JAM_GOVERNANCE.AUTO_TICK_INTERVAL_MS);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const afterTickWhileMuted = manager.getJamStateSnapshot();
+    expect(afterTickWhileMuted.currentRound).toBe(roundAfterMute);
+    expect(afterTickWhileMuted.musicalContext.bpm).toBe(bpmAfterMute);
+    expect(afterTickWhileMuted.musicalContext.energy).toBe(energyAfterMute);
+
+    executeMessages = broadcast.mock.calls
+      .map(([msg]: unknown[]) => msg as { type: string; payload?: { code?: string } })
+      .filter((msg) => msg.type === 'execute');
+    expect(executeMessages).toHaveLength(executeCountAfterMute);
+
+    const rejoinPromise = manager.handleDirective(
+      '@BEAT come back in gently',
+      'drums',
+      ['drums']
+    );
+    await vi.advanceTimersByTimeAsync(0);
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd ~ ~ sd").bank("LinnDrum").gain(0.4)',
+      thoughts: 'Reentering gently',
+      reaction: 'Back in under the melody',
+    });
+    await rejoinPromise;
+
+    executeMessages = broadcast.mock.calls
+      .map(([msg]: unknown[]) => msg as { type: string; payload?: { code?: string } })
+      .filter((msg) => msg.type === 'execute');
+    expect(executeMessages[executeMessages.length - 1]?.payload?.code).toContain('bd ~ ~ sd');
 
     await manager.stop();
   });

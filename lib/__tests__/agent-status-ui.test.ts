@@ -26,6 +26,14 @@ describe('get_agent_status_display', () => {
     });
   });
 
+  it('maps muted to a neutral dot with muted label', () => {
+    const result = get_agent_status_display('muted');
+    expect(result).toEqual({
+      color_class: 'bg-slate-400',
+      label: 'muted',
+    });
+  });
+
   it('maps error to red with error label', () => {
     const result = get_agent_status_display('error');
     expect(result).toEqual({

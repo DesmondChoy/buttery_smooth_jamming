@@ -104,6 +104,7 @@ export interface JamState {
   agents: Record<string, AgentState>;
   activeAgents: string[];
   activatedAgents: string[];
+  mutedAgents: string[];
 }
 
 export interface JamChatMessage {

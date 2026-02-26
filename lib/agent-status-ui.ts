@@ -5,12 +5,16 @@ export interface AgentStatusDisplay {
   label: string;
 }
 
-export function get_agent_status_display(status: AgentState['status']): AgentStatusDisplay {
+export type AgentStatusUiKey = AgentState['status'] | 'muted';
+
+export function get_agent_status_display(status: AgentStatusUiKey): AgentStatusDisplay {
   switch (status) {
     case 'thinking':
       return { color_class: 'bg-yellow-500 animate-pulse', label: 'thinking' };
     case 'playing':
       return { color_class: 'bg-green-500 animate-pulse-gentle', label: 'playing' };
+    case 'muted':
+      return { color_class: 'bg-slate-400', label: 'muted' };
     case 'error':
       return { color_class: 'bg-red-500', label: 'error' };
     case 'timeout':

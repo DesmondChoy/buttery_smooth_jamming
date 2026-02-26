@@ -126,6 +126,7 @@ export class AgentProcessManager {
   private musicalContext: MusicalContext = randomMusicalContext();
   private activeAgents: string[] = [];
   private activatedAgents: string[] = [];
+  private mutedAgents = new Set<string>();
   private broadcast: BroadcastFn;
   private workingDir: string;
   private stopped = false;
@@ -198,6 +199,7 @@ export class AgentProcessManager {
 
     this.activeAgents = activeAgents;
     this.activatedAgents = this.jamStartMode === 'staged_silent' ? [] : [...activeAgents];
+    this.mutedAgents.clear();
     this.stopped = false;
     this.roundNumber = 0;
     this.tickScheduled = false;
@@ -324,6 +326,12 @@ export class AgentProcessManager {
         }
       }
 
+      const forceMuteTarget = Boolean(targetAgent && this.isExplicitMuteDirective(text));
+      if (targetAgent && this.mutedAgents.has(targetAgent) && !forceMuteTarget) {
+        // Any targeted non-mute cue counts as an explicit re-entry request.
+        this.mutedAgents.delete(targetAgent);
+      }
+
       // Apply deterministic anchors first (explicit BPM / half/double-time / explicit energy / key).
       // Relative tempo/energy cues are handled after agent responses using model decisions.
       // Intentionally uses split deterministic anchors + relative cue detection
@@ -346,10 +354,17 @@ export class AgentProcessManager {
         }
         targets = [targetAgent];
       } else {
-        targets = this.activatedAgents.filter((k) => this.agents.has(k));
+        targets = this.activatedAgents.filter(
+          (k) => this.agents.has(k) && !this.mutedAgents.has(k)
+        );
         if (targets.length === 0) {
+          const hasMutedActives = this.activatedAgents.some(
+            (k) => this.agents.has(k) && this.mutedAgents.has(k)
+          );
           this.broadcastWs('directive_error', {
-            message: 'No agents are active yet. @mention an agent to start the jam.',
+            message: hasMutedActives
+              ? 'All active agents are currently muted. @mention an agent to unmute or add a new one.'
+              : 'No agents are active yet. @mention an agent to start the jam.',
           });
           this.startAutoTick();
           return;
@@ -375,7 +390,16 @@ export class AgentProcessManager {
       // Process responses and update state
       for (let i = 0; i < targets.length; i++) {
         const key = targets[i];
-        const response = responses[i];
+        const rawResponse = responses[i];
+        const response = (forceMuteTarget && targetAgent === key)
+          ? this.coerceResponseToForcedSilence(rawResponse)
+          : rawResponse;
+
+        if (forceMuteTarget && targetAgent === key) {
+          this.mutedAgents.add(key);
+        }
+
+        responses[i] = response;
         this.applyAgentResponse(key, response);
       }
 
@@ -430,6 +454,7 @@ export class AgentProcessManager {
     this.agentDecisions = {};
     this.activeAgents = [];
     this.activatedAgents = [];
+    this.mutedAgents.clear();
     this.sessionId = 'direct-0';
     this.turnInProgress = Promise.resolve();
     this.turnCounter = 0;
@@ -458,6 +483,7 @@ export class AgentProcessManager {
       agents,
       activeAgents: [...this.activeAgents],
       activatedAgents: [...this.activatedAgents],
+      mutedAgents: this.activatedAgents.filter((key) => this.mutedAgents.has(key)),
     };
   }
 
@@ -1215,6 +1241,9 @@ export class AgentProcessManager {
   }
 
   private formatAgentBandState(k: string): string {
+    if (this.mutedAgents.has(k)) {
+      return formatBandStateLine(k, 'silence');
+    }
     return formatBandStateLine(k, this.agentPatterns[k] || 'silence');
   }
 
@@ -1267,7 +1296,9 @@ export class AgentProcessManager {
       if (this.stopped) return;
       if (!this.presetConfigured) return;
 
-      const activeTargets = this.activatedAgents.filter((key) => this.agents.has(key));
+      const activeTargets = this.activatedAgents.filter(
+        (key) => this.agents.has(key) && !this.mutedAgents.has(key)
+      );
       if (activeTargets.length === 0) return;
 
       this.roundNumber++;
@@ -1394,6 +1425,7 @@ export class AgentProcessManager {
 
   private composePatterns(): string {
     const patterns = this.activatedAgents
+      .filter((k) => !this.mutedAgents.has(k))
       .map((k) => this.agentPatterns[k])
       .filter((p) => p && p !== 'silence');
 
@@ -1448,6 +1480,41 @@ export class AgentProcessManager {
       pattern: response.pattern,
       timestamp: new Date().toISOString(),
     });
+  }
+
+  private isExplicitMuteDirective(text: string): boolean {
+    const normalized = text.trim().toLowerCase();
+    if (!normalized) return false;
+
+    // Prevent false positives (e.g. "unmute" contains "mute")
+    if (/\bunmute\b/.test(normalized)) return false;
+
+    return (
+      /\bmute\b/.test(normalized)
+      || /\bgo silent\b/.test(normalized)
+      || /\bstop playing\b/.test(normalized)
+      || /\bdrop out\b/.test(normalized)
+      || /\blay out\b/.test(normalized)
+      || /\bsit out\b/.test(normalized)
+    );
+  }
+
+  private coerceResponseToForcedSilence(response: AgentResponse | null): AgentResponse {
+    if (!response) {
+      return {
+        pattern: 'silence',
+        thoughts: 'Muting for the boss.',
+        reaction: 'Staying out until called back in.',
+      };
+    }
+
+    return {
+      ...response,
+      pattern: 'silence',
+      // Muting is a deterministic transport command; ignore model-proposed
+      // global-context drift when the boss explicitly asks an agent to mute.
+      decision: undefined,
+    };
   }
 
   // ─── Private: Cleanup ────────────────────────────────────────────

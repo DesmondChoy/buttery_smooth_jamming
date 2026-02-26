@@ -8,11 +8,20 @@ import { get_agent_status_display } from '@/lib/agent-status-ui';
 interface AgentColumnProps {
   agentKey: string;
   agentState: AgentState;
+  isMuted?: boolean;
   messages: JamChatMessage[];
 }
 
-function StatusDot({ status, agentKey }: { status: AgentState['status']; agentKey?: string }) {
-  const { color_class, label } = get_agent_status_display(status);
+function StatusDot({
+  status,
+  agentKey,
+  isMuted = false,
+}: {
+  status: AgentState['status'];
+  agentKey?: string;
+  isMuted?: boolean;
+}) {
+  const { color_class, label } = get_agent_status_display(isMuted ? 'muted' : status);
 
   return (
     <div className="flex items-center gap-1.5">
@@ -77,7 +86,7 @@ function ColumnMessage({ message, agentKey }: { message: JamChatMessage; agentKe
   );
 }
 
-export function AgentColumn({ agentKey, agentState, messages }: AgentColumnProps) {
+export function AgentColumn({ agentKey, agentState, isMuted = false, messages }: AgentColumnProps) {
   const meta = AGENT_META[agentKey];
   const scrollRef = useRef<HTMLDivElement>(null);
   const autoScrollRef = useRef(true);
@@ -105,7 +114,7 @@ export function AgentColumn({ agentKey, agentState, messages }: AgentColumnProps
           <span className="text-base">{meta.emoji}</span>
           <span className={`text-sm font-bold ${meta.colors.accent}`}>{meta.name}</span>
         </div>
-        <StatusDot status={agentState.status} agentKey={agentKey} />
+        <StatusDot status={agentState.status} agentKey={agentKey} isMuted={isMuted} />
       </div>
 
       {/* Message list */}

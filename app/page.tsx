@@ -73,6 +73,7 @@ export default function Home() {
     chatMessages,
     selectedAgents,
     activatedAgents,
+    mutedAgents,
     isJamming,
     isJamReady,
     stopJam,
@@ -407,6 +408,7 @@ export default function Home() {
                   key={key}
                   agentKey={key}
                   agentState={agentStates[key]}
+                  isMuted={mutedAgents.includes(key)}
                   messages={agentMessages[key] ?? []}
                 />
               ))}
