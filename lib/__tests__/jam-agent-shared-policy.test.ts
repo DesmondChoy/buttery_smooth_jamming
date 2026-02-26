@@ -87,9 +87,9 @@ describe('shared jam policy prompt', () => {
       {
         skill_name: 'strudel-validity-policy',
         skill_content: strudel_skill_content,
-        skill_anchor: 'For jam output, obey JSON shape exactly:',
+        skill_anchor: 'optional `decision` object may be included when relevant.',
         condensed_anchor:
-          'Jam output must be exactly one JSON object with keys pattern, thoughts, reaction.',
+          'Jam output must be exactly one JSON object with required keys pattern, thoughts, reaction; optional decision may be included when relevant.',
       },
       {
         skill_name: 'strudel-validity-policy',

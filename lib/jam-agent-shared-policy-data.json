@@ -9,7 +9,7 @@
     "Generate canonical Strudel only: avoid invented methods and host JS globals.",
     "Use valid roots: note(...), s(...), sound(...), stack(...), cat(...), seq(...), or silence.",
     "Prefer canonical mappings like .s(\"sawtooth\"), .bpf(...), and .pan(sine.range(0,1)).",
-    "Jam output must be exactly one JSON object with keys pattern, thoughts, reaction.",
+    "Jam output must be exactly one JSON object with required keys pattern, thoughts, reaction; optional decision may be included when relevant.",
     "If syntax confidence is low, use \"no_change\" instead of speculative invalid code."
   ]
 }
