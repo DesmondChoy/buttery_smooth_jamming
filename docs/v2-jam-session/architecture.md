@@ -240,3 +240,10 @@ v2 persistent sessions are significantly faster than v1's orchestrator approach:
 Default jam model is sourced from the Codex `jam_agent` profile (`config/codex/config.toml`). Latency varies by model choice.
 
 See [Implementation Plan: Architecture Evolution](./implementation-plan.md#architecture-evolution-orchestrator-v1--per-agent-persistent-processes-v2) for the full v1-to-v2 migration story.
+
+## Model-Policy Architecture
+
+For system prompt assembly, directive processing flow, governance constants, and
+operator triage, see the [Model-Policy Playbook](../v3/model-policy-playbook.md).
+
+The canonical boundary definition is at [Model Policy Boundary](../v3/model-policy-boundary.md).

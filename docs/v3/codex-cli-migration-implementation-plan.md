@@ -381,6 +381,16 @@ musical capability enhancements on top of the Codex-backed architecture:
 See [Model Policy Boundary](./model-policy-boundary.md) for the full creative-autonomy
 contract including agent suggestion precedence and consensus rules.
 
+## Model-Driven Musical Policy (bsj-7k4)
+
+The bsj-7k4 epic hardened the model/code boundary established during bsj-bx1:
+audited all hardcoded musical/policy behavior, classified each as code-owned (A),
+prompt-owned (B), or hybrid (C), and produced an operator playbook for tuning
+and extending policy.
+
+- [Hardcoding Audit](./hardcoding-audit-bsj-7k4.8.md): Full A/B/C inventory and follow-up bead mapping
+- [Operator Playbook](./model-policy-playbook.md): Tuning knobs, failure triage, policy extension guidance
+
 ## Source Links (Corroboration)
 
 Codex CLI and configuration:

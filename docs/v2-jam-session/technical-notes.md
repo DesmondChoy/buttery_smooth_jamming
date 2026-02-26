@@ -194,3 +194,8 @@ Each jam session starts with a randomized musical context (key, BPM, energy, gen
 | Auto-tick context drift unexpected | BPM/energy creeping up or down | Auto-tick applies 0.5x dampening; check confidence scaling in `getDecisionConfidenceMultiplier()` |
 | Agent key suggestion ignored | Key doesn't change despite agent suggestions | Requires 2+ agents with high confidence suggesting the same key |
 | Same starting context every jam | Jams always start in same key/BPM | Verify `randomMusicalContext()` is called in manager constructor |
+
+## Model-Policy Operator Playbook
+
+For governance constant tuning, model-policy failure triage, and guidance for
+adding future policy, see the [Model-Policy Playbook](../v3/model-policy-playbook.md).
