@@ -50,9 +50,11 @@ agent's system prompt from five layers, injected in this order:
 │   at manager construction)                  │
 ├─────────────────────────────────────────────┤
 │  Layer 5: Turn Context                      │
-│  (buildAgentTurnPrompt() wraps the above    │
-│   with <manager_turn> + JSON contract +     │
-│   decision schema instructions)             │
+│  (jam-start/directive/auto-tick phrasing    │
+│   from lib/jam-manager-context-templates.ts │
+│   then buildAgentTurnPrompt() wraps with    │
+│   <manager_turn> + JSON contract + decision │
+│   schema instructions)                      │
 └─────────────────────────────────────────────┘
 ```
 
@@ -164,6 +166,7 @@ behavior through the system prompt assembly pipeline.
 | Shared jam policy | `lib/jam-agent-shared-policy.ts` (constants `JAM_MUSICAL_POLICY_LINES`, `STRUDEL_VALIDITY_POLICY_LINES`) | Cross-agent musical policy and Strudel validity rules |
 | Genre-energy guidance | `.codex/skills/genre-energy-guidance/SKILL.md` | Per-genre, per-role energy behavior at LOW/MID/HIGH bands |
 | Strudel API reference | `lib/strudel-reference.md` | Valid Strudel functions, mini-notation, sound banks |
+| Jam manager context templates | `lib/jam-manager-context-templates.ts` | Behavior-shaping jam-start/directive/auto-tick wording (not routing, lifecycle, or JSON schema contract) |
 | Musical context presets | `lib/musical-context-presets.ts` | Starting key/BPM/energy/genre/chords for new jams |
 
 ---

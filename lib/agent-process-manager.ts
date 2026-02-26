@@ -32,6 +32,11 @@ import {
 import { SHARED_JAM_POLICY_PROMPT } from './jam-agent-shared-policy';
 import { buildGenreEnergySection } from './genre-energy-guidance';
 import { JAM_GOVERNANCE } from './jam-governance-constants';
+import {
+  buildAutoTickManagerContext,
+  buildDirectiveManagerContext,
+  buildJamStartManagerContext,
+} from './jam-manager-context-templates';
 
 // Callback type for broadcasting messages to browser clients
 export type BroadcastFn = (message: { type: string; payload: unknown }) => void;
@@ -1087,20 +1092,11 @@ export class AgentProcessManager {
           return `${meta.emoji} ${meta.name} (${k}): [first round — no pattern yet]`;
         });
 
-        const context = [
-          'JAM START — CONTEXT',
-          `Round: ${this.roundNumber} (opening)`,
-          `Genre: ${ctx.genre}`,
-          `Key: ${ctx.key} | Scale: ${ctx.scale.join(', ')} | BPM: ${ctx.bpm} | Time: ${ctx.timeSignature} | Energy: ${ctx.energy}/10`,
-          `Chords: ${ctx.chordProgression.join(' → ')}`,
-          '',
-          'BAND STATE:',
-          ...bandStateLines,
-          '',
-          'BOSS SAYS: No directives — free jam. Create your opening pattern.',
-          '',
-          'YOUR LAST PATTERN: None yet — this is your first round.',
-        ].join('\n');
+        const context = buildJamStartManagerContext({
+          roundNumber: this.roundNumber,
+          musicalContext: ctx,
+          bandStateLines,
+        });
 
         this.setAgentStatus(key, 'thinking');
         return this.sendToAgentAndCollect(key, context);
@@ -1134,23 +1130,14 @@ export class AgentProcessManager {
       .filter((k) => k !== key)
       .map((k) => this.formatAgentBandState(k));
 
-    return [
-      'DIRECTIVE from the boss.',
-      `Round: ${this.roundNumber}`,
-      '',
-      isBroadcast
-        ? `BOSS SAYS: ${directive}`
-        : `BOSS SAYS TO YOU: ${directive}`,
-      '',
-      `Current musical context: Genre=${ctx.genre}, Key=${ctx.key}, BPM=${ctx.bpm}, Energy=${ctx.energy}/10`,
-      `Scale: ${ctx.scale.join(', ')} | Chords: ${ctx.chordProgression.join(' → ')}`,
-      `Your current pattern: ${this.agentPatterns[key] || 'silence'}`,
-      '',
-      'BAND STATE:',
-      ...bandStateLines,
-      '',
-      'Respond with your updated pattern.',
-    ].join('\n');
+    return buildDirectiveManagerContext({
+      roundNumber: this.roundNumber,
+      musicalContext: ctx,
+      directive,
+      isBroadcast,
+      currentPattern: this.agentPatterns[key] || 'silence',
+      bandStateLines,
+    });
   }
 
   // ─── Private: Auto-Tick ─────────────────────────────────────────
@@ -1192,22 +1179,12 @@ export class AgentProcessManager {
 
         const myPattern = this.agentPatterns[key] || 'silence';
 
-        const context = [
-          'AUTO-TICK — LISTEN AND EVOLVE',
-          `Round: ${this.roundNumber}`,
-          `Genre: ${ctx.genre}`,
-          `Key: ${ctx.key} | Scale: ${ctx.scale.join(', ')} | BPM: ${ctx.bpm} | Time: ${ctx.timeSignature} | Energy: ${ctx.energy}/10`,
-          `Chords: ${ctx.chordProgression.join(' → ')}`,
-          '',
-          'BAND STATE:',
-          ...bandStateLines,
-          '',
-          `YOUR CURRENT PATTERN: ${myPattern}`,
-          '',
-          'Listen to the band. If the music calls for change, evolve your pattern.',
-          'If your groove serves the song, respond with "no_change" as your pattern.',
-          'Include a decision block if you feel the musical context should evolve.',
-        ].join('\n');
+        const context = buildAutoTickManagerContext({
+          roundNumber: this.roundNumber,
+          musicalContext: ctx,
+          currentPattern: myPattern,
+          bandStateLines,
+        });
 
         this.setAgentStatus(key, 'thinking');
         return this.sendToAgentAndCollect(key, context);

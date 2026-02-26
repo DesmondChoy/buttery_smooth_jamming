@@ -390,6 +390,49 @@ describe('AgentProcessManager turn serialization', () => {
     expect(second!.prompt).toBe(first!.prompt);
   });
 
+  it('writes persona + manager-turn wrapper + JSON contract instructions to agent stdin', async () => {
+    const { manager, processes } = createTestManager();
+
+    const startPromise = manager.start(['drums']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const drumsProc = getNthProcess(processes, 0);
+
+    let writtenPrompt = '';
+    while (true) {
+      const chunk = drumsProc.stdin.read();
+      if (chunk == null) break;
+      writtenPrompt += chunk.toString();
+    }
+
+    expect(writtenPrompt).toContain('<agent_persona>\nYou are a test agent.\n</agent_persona>');
+
+    const managerTurnStart = writtenPrompt.indexOf('<manager_turn>');
+    const managerTurnEnd = writtenPrompt.indexOf('</manager_turn>');
+    const contractIndex = writtenPrompt.indexOf('Output only one JSON object.');
+
+    expect(managerTurnStart).toBeGreaterThanOrEqual(0);
+    expect(managerTurnEnd).toBeGreaterThan(managerTurnStart);
+    expect(contractIndex).toBeGreaterThan(managerTurnEnd);
+
+    const managerTurnSection = writtenPrompt.slice(managerTurnStart, managerTurnEnd);
+    expect(managerTurnSection).toContain('JAM START — CONTEXT');
+    expect(managerTurnSection).toContain('BOSS SAYS: No directives — free jam. Create your opening pattern.');
+
+    expect(writtenPrompt).toContain('Required keys: pattern, thoughts, reaction.');
+    expect(writtenPrompt).toContain('Optional key: decision (tempo_delta_pct');
+    expect(writtenPrompt).toContain('Use decision only when relevant; omit decision or any field when not relevant or not confident.');
+
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd sd")',
+      thoughts: 'Opening beat',
+      reaction: 'Ready',
+    });
+    await startPromise;
+
+    await manager.stop();
+  });
+
   it('enforces hard-toolless codex args for jam turns and resumes', async () => {
     const { manager, processes } = createTestManager();
 
