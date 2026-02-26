@@ -27,15 +27,16 @@ Test count growth (+97 tests since bsj-6ud.1) is attributable to bsj-bx1 and bsj
 
 ### musical-context-parser.ts (bsj-7k4.7 — Parser Pruning)
 
-76 tests across 6 describe blocks:
+65 tests across 6 describe blocks (post bsj-7k4.12 legacy parser removal):
 
 | Block | Tests | Coverage |
 |-------|-------|----------|
 | `deriveScale` | 12 | All 12 chromatic roots × major/minor; invalid input |
-| `parseLegacyMusicalContextChanges — key` | 10 | Key extraction, case insensitivity, quality defaults |
-| `parseLegacyMusicalContextChanges — BPM` | 13 | Absolute, relative, half/double-time, clamping |
-| `parseLegacyMusicalContextChanges — energy` | 12 | Absolute, relative, extremes, clamping |
-| `parseDeterministicMusicalContextChanges` | 8 | Deterministic-only anchors, excludes relative cues, ignores named progressions and Roman numerals |
+| `parseDeterministicMusicalContextChanges — key` | 10 | Key extraction, case insensitivity, quality defaults |
+| `parseDeterministicMusicalContextChanges — BPM` | 8 | Absolute, half/double-time, clamping (coarse relative heuristic tests removed) |
+| `parseDeterministicMusicalContextChanges — energy` | 5 | Absolute, extremes, clamping (coarse relative heuristic tests removed) |
+| `parseDeterministicMusicalContextChanges — combined` | 3 | Combined key+BPM+energy anchors, explicit-over-relative precedence |
+| `parseDeterministicMusicalContextChanges — no match` | 4 | Non-musical directives return null |
 | `detectRelativeMusicalContextCues` | 6 | Tempo/energy increase/decrease, mixed, half/double-time exclusion |
 | `deriveChordProgression` | 4 | Major/minor patterns, flat keys, invalid input |
 
@@ -74,14 +75,13 @@ Test count growth (+97 tests since bsj-6ud.1) is attributable to bsj-bx1 and bsj
 
 **No untested gaps identified** for bsj-7k4.6.
 
-### Working Tree Changes (bsj-7k4.11 — De-constrained Prompts)
+### Working Tree Changes (bsj-7k4.11/12 — De-constrained Prompts + Legacy Parser Removal)
 
-Uncommitted changes include:
-- Rename `parseMusicalContextChanges` → `parseLegacyMusicalContextChanges` with `@deprecated` annotation
-- Additional inline comment in `agent-process-manager.ts` documenting why jam runtime avoids legacy parser
-- Parser implementation boundary section added to `docs/v3/model-policy-boundary.md`
-- New test: relative tempo+energy without model decisions does not apply legacy synthetic fallback deltas
-- All 241 tests pass with these changes
+Changes committed in bsj-7k4.12:
+- Removed legacy monolithic parser helper (`parseLegacyMusicalContextChanges`) entirely — the coarse synthetic relative heuristics (`+15/-15 BPM`, `+2/-2 energy`) no longer exist in the codebase
+- Refactored parser tests to target `parseDeterministicMusicalContextChanges` directly; removed all synthetic-delta test cases
+- Updated inline comment in `agent-process-manager.ts` documenting the split deterministic + cue detection boundary
+- Parser implementation boundary section in `docs/v3/model-policy-boundary.md` updated to reflect complete removal
 
 ## 3) Behavioral Acceptance Evidence
 
@@ -118,10 +118,10 @@ Docs-only change providing tuning guidance for operators. No code behavior chang
 
 | Aspect | Before | After |
 |--------|--------|-------|
-| Parser function name | `parseMusicalContextChanges` (ambiguous scope) | `parseLegacyMusicalContextChanges` with `@deprecated` — clearly marks legacy coarse heuristics |
+| Parser function name | `parseMusicalContextChanges` (ambiguous scope) | Legacy monolithic parser removed entirely; jam runtime uses `parseDeterministicMusicalContextChanges` + `detectRelativeMusicalContextCues` |
 | Jam runtime boundary | Implicit (comment-only) | Explicit section in `model-policy-boundary.md` + inline comment in agent-process-manager |
 
-**Working tree** — uncommitted, validated in this gate.
+**Commit**: `df4b86e` — bsj-7k4.12: remove legacy parser helper references
 
 ## 4) Epic Completion Checklist
 

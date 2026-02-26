@@ -250,7 +250,7 @@ They represent the planned sequence for further boundary hardening:
 
 | Bead | Title |
 |------|-------|
-| `bsj-7k4.12` | Fence legacy `parseMusicalContextChanges()` heuristics away from jam runtime paths |
+| `bsj-7k4.12` | ~~Fence legacy `parseMusicalContextChanges()` heuristics away from jam runtime paths~~ — **Done**: legacy monolithic parser removed entirely (`df4b86e`) |
 | `bsj-7k4.13` | Broaden deterministic relative cue detection to match jam-musical-policy phrase families |
 | `bsj-7k4.14` | Document and centralize jam runtime governance constants (confidence, dampening, consensus) |
 | `bsj-7k4.15` | Codify boundary for runtime chord-progression fallback templates after key changes |
