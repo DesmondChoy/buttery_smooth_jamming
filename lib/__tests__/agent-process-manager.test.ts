@@ -149,6 +149,12 @@ function sendAgentResponse(
   proc.stdout.write(JSON.stringify(resultMsg) + '\n');
 }
 
+function sendThreadStarted(proc: ReturnType<typeof createFakeProcess>, threadId: string) {
+  proc.stdout.write(
+    JSON.stringify({ type: 'thread.started', thread_id: threadId }) + '\n'
+  );
+}
+
 function sendRawAgentText(proc: ReturnType<typeof createFakeProcess>, rawText: string) {
   const assistantMsg = {
     type: 'assistant',
@@ -329,6 +335,84 @@ describe('AgentProcessManager turn serialization', () => {
       expect.stringContaining('/.codex/agents/drummer.md'),
       'utf-8'
     );
+  });
+
+  it('assembles persona + shared policy + strudel reference deterministically', () => {
+    const { manager } = createTestManager();
+    const rawManager = manager as unknown as {
+      buildAgentSystemPrompt: (agentKey: string) => { prompt: string; model: string } | null;
+    };
+
+    const first = rawManager.buildAgentSystemPrompt('drums');
+    const second = rawManager.buildAgentSystemPrompt('drums');
+
+    expect(first).not.toBeNull();
+    expect(second).not.toBeNull();
+    expect(first!.model).toBe('gpt-5-codex-mini');
+    expect(first!.prompt).toContain('<agent_persona>');
+    expect(first!.prompt).toContain('You are a test agent.');
+    expect(first!.prompt).toContain('<shared_policy>');
+    expect(first!.prompt).toContain('<jam_musical_policy>');
+    expect(first!.prompt).toContain('<strudel_validity_policy>');
+    expect(first!.prompt).toContain('<strudel_reference>\n# Strudel Ref\n</strudel_reference>');
+
+    const personaIndex = first!.prompt.indexOf('<agent_persona>');
+    const policyIndex = first!.prompt.indexOf('<shared_policy>');
+    const strudelIndex = first!.prompt.indexOf('<strudel_reference>');
+    expect(personaIndex).toBeGreaterThanOrEqual(0);
+    expect(policyIndex).toBeGreaterThan(personaIndex);
+    expect(strudelIndex).toBeGreaterThan(policyIndex);
+    expect(second!.prompt).toBe(first!.prompt);
+  });
+
+  it('enforces hard-toolless codex args for jam turns and resumes', async () => {
+    const { manager, processes } = createTestManager();
+
+    const startPromise = manager.start(['drums']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const drumsProc = getNthProcess(processes, 0);
+    sendThreadStarted(drumsProc, 'thread-drums-1');
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd sd")',
+      thoughts: 'Opening beat',
+      reaction: 'Ready',
+    });
+    await startPromise;
+
+    const directivePromise = manager.handleDirective(
+      'hold pocket',
+      'drums',
+      ['drums']
+    );
+    await vi.advanceTimersByTimeAsync(0);
+
+    sendAgentResponse(drumsProc, {
+      pattern: 'no_change',
+      thoughts: 'Pocket is locked',
+      reaction: 'Holding',
+    });
+    await directivePromise;
+
+    const jamTurnCalls = mockedSpawn.mock.calls.slice(0, 2);
+    expect(jamTurnCalls).toHaveLength(2);
+
+    for (const call of jamTurnCalls) {
+      const args = call[1] as string[];
+      const toolsIndex = args.indexOf('--tools');
+      expect(toolsIndex).toBeGreaterThanOrEqual(0);
+      expect(args[toolsIndex + 1]).toBe('');
+      expect(args).toContain('--strict-mcp-config');
+    }
+
+    const initialArgs = jamTurnCalls[0][1] as string[];
+    expect(initialArgs).toEqual(expect.arrayContaining(['--profile', 'jam_agent']));
+
+    const resumeArgs = jamTurnCalls[1][1] as string[];
+    expect(resumeArgs[0]).toBe('exec');
+    expect(resumeArgs[1]).toBe('resume');
+
+    await manager.stop();
   });
 
   it('skips spawning when a .codex persona file is missing', async () => {

@@ -21,6 +21,7 @@ import {
   CODEX_JAM_PROFILE,
   load_project_codex_config,
 } from './codex-runtime-checks';
+import { SHARED_JAM_POLICY_PROMPT } from './jam-agent-shared-policy';
 
 // Callback type for broadcasting messages to browser clients
 export type BroadcastFn = (message: { type: string; payload: unknown }) => void;
@@ -61,6 +62,7 @@ interface AgentProcessManagerOptions {
 }
 
 const AGENT_TIMEOUT_MS = 15000;
+const JAM_TOOLLESS_ARGS = ['--tools', '', '--strict-mcp-config'] as const;
 
 /**
  * Manages per-agent Codex-backed sessions for jam mode.
@@ -370,15 +372,35 @@ export class AgentProcessManager {
       }
 
       // Strip YAML frontmatter (between --- markers at start of file)
-      let prompt = content.replace(/^---[\s\S]*?---\n*/, '');
+      const personaPrompt = content.replace(/^---[\s\S]*?---\n*/, '');
+
+      const promptParts = [
+        '<agent_persona>',
+        personaPrompt,
+        '</agent_persona>',
+      ];
+
+      if (SHARED_JAM_POLICY_PROMPT) {
+        promptParts.push(
+          '',
+          '<shared_policy>',
+          SHARED_JAM_POLICY_PROMPT,
+          '</shared_policy>'
+        );
+      }
 
       // Append shared Strudel API reference
       if (this.strudelReference) {
-        prompt += `\n\n<strudel_reference>\n${this.strudelReference}\n</strudel_reference>`;
+        promptParts.push(
+          '',
+          '<strudel_reference>',
+          this.strudelReference,
+          '</strudel_reference>'
+        );
       }
 
       return {
-        prompt,
+        prompt: promptParts.join('\n'),
         model: modelOverride ?? this.codexJamDefaultModel,
       };
     } catch (err) {
@@ -389,8 +411,17 @@ export class AgentProcessManager {
 
   private buildCodexTurnArgs(agent: AgentProcess): string[] {
     const args = agent.threadId
-      ? ['exec', 'resume', '--json', '--skip-git-repo-check']
-      : ['exec', '--json', '--profile', CODEX_JAM_PROFILE, '--skip-git-repo-check', '--color', 'never'];
+      ? ['exec', 'resume', '--json', '--skip-git-repo-check', ...JAM_TOOLLESS_ARGS]
+      : [
+        'exec',
+        '--json',
+        '--profile',
+        CODEX_JAM_PROFILE,
+        '--skip-git-repo-check',
+        '--color',
+        'never',
+        ...JAM_TOOLLESS_ARGS,
+      ];
 
     if (agent.model) {
       args.push('--model', agent.model);
