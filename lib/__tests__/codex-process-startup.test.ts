@@ -21,6 +21,7 @@ vi.mock('../codex-runtime-checks', () => ({
 
 import { spawn } from 'child_process';
 import { CodexProcess } from '../codex-process';
+import normal_mode_prompt_data from '../normal-mode-system-prompt-data.json';
 
 const mocked_spawn = vi.mocked(spawn);
 
@@ -122,6 +123,33 @@ describe('CodexProcess startup checks + profile args', () => {
     expect(args).toContain('profiles.normal_mode.model="gpt-5-codex"');
     expect(args).toContain(`mcp_servers.strudel.env.WS_URL="ws://localhost:4123/api/ws"`);
     expect(options.env?.CODEX_HOME).toBeUndefined();
+
+    fake_child.emit('exit', 0, null);
+    await proc.stop();
+  });
+
+  it('writes the rendered normal-mode system prompt into codex stdin', async () => {
+    const fake_child = create_fake_process();
+    const stdin_chunks: Buffer[] = [];
+    fake_child.stdin.on('data', (chunk) => {
+      stdin_chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk)));
+    });
+    mocked_spawn.mockReturnValue(fake_child as unknown as ReturnType<typeof spawn>);
+
+    const proc = new CodexProcess({
+      workingDir: '/repo',
+      wsUrl: 'ws://localhost:4123/api/ws',
+    });
+
+    await proc.start();
+    proc.send('make a beat');
+
+    const stdin_payload = Buffer.concat(stdin_chunks).toString('utf-8');
+    expect(stdin_payload).toContain(normal_mode_prompt_data.validity_behavior_bullets[0]);
+    expect(stdin_payload).toContain(normal_mode_prompt_data.validity_behavior_bullets[1]);
+    expect(stdin_payload).toContain(
+      'If playback is requested, call execute_pattern(). If stop is requested, call stop_pattern().'
+    );
 
     fake_child.emit('exit', 0, null);
     await proc.stop();

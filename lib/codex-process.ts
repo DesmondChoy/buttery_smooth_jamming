@@ -1,8 +1,6 @@
 import { spawn, ChildProcess } from 'child_process';
 import { EventEmitter } from 'events';
 import * as readline from 'readline';
-import * as fs from 'fs';
-import * as path from 'path';
 import type {
   RuntimeEvent,
   RuntimeProcess,
@@ -14,13 +12,10 @@ import {
   CODEX_NORMAL_PROFILE,
   load_project_codex_config,
 } from './codex-runtime-checks';
+import { load_normal_mode_system_prompt } from './normal-mode-system-prompt';
 
 const DEFAULT_WS_URL = 'ws://localhost:3000/api/ws';
 const HISTORY_LIMIT = 12;
-const NORMAL_MODE_SYSTEM_PROMPT_FILE = 'normal-mode-system-prompt.md';
-const NORMAL_MODE_PROMPT_DIR_CANDIDATES = [
-  ['.codex', 'agents'],
-] as const;
 
 export type CodexProcessOptions = RuntimeProcessOptions & {
   model?: string;
@@ -37,40 +32,6 @@ interface CodexJsonEvent {
   error?: unknown;
   message?: unknown;
   [key: string]: unknown;
-}
-
-function resolve_normal_mode_prompt_path(root_dir: string): string | null {
-  for (const segments of NORMAL_MODE_PROMPT_DIR_CANDIDATES) {
-    const candidate = path.join(root_dir, ...segments, NORMAL_MODE_SYSTEM_PROMPT_FILE);
-    if (fs.existsSync(candidate)) return candidate;
-  }
-  return null;
-}
-
-function load_system_prompt(working_dir: string): string {
-  const search_roots = [working_dir, process.cwd()];
-  const visited = new Set<string>();
-  const attempted_paths: string[] = [];
-
-  for (const root of search_roots) {
-    if (!root || visited.has(root)) continue;
-    visited.add(root);
-    for (const segments of NORMAL_MODE_PROMPT_DIR_CANDIDATES) {
-      attempted_paths.push(path.join(root, ...segments, NORMAL_MODE_SYSTEM_PROMPT_FILE));
-    }
-    const prompt_path = resolve_normal_mode_prompt_path(root);
-    if (!prompt_path) continue;
-
-    const prompt = fs.readFileSync(prompt_path, 'utf-8').trim();
-    if (!prompt) {
-      throw new Error(`Normal mode system prompt is empty: ${prompt_path}`);
-    }
-    return prompt;
-  }
-
-  throw new Error(
-    `Normal mode system prompt not found. Tried: ${attempted_paths.join(', ')}`
-  );
 }
 
 export interface CodexEventParseState {
@@ -486,7 +447,7 @@ export class CodexProcess extends EventEmitter implements RuntimeProcess {
     super();
     this.options = options;
     this.working_dir = options.workingDir || process.cwd();
-    this.system_prompt = load_system_prompt(this.working_dir);
+    this.system_prompt = load_normal_mode_system_prompt(this.working_dir);
   }
 
   async start(): Promise<void> {

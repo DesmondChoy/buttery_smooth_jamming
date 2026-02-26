@@ -1,0 +1,7 @@
+{
+  "validity_behavior_bullets": [
+    "Generate canonical Strudel only: use documented methods from the Strudel reference, and avoid invented methods or host JS globals.",
+    "Use valid roots: note(...), s(...), sound(...), stack(...), cat(...), seq(...), or silence.",
+    "Prefer canonical mappings like .s(\"sawtooth\"), .bpf(...), and .pan(sine.range(0,1)); never use .wave()."
+  ]
+}
