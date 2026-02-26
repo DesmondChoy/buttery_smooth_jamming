@@ -116,8 +116,8 @@ export interface JamState {
 export interface JamChatMessage {
   id: string;
   type: 'agent_thought' | 'agent_commentary' | 'boss_directive' | 'system';
-  agent?: string;          // 'drums' | 'bass' | 'melody' | 'fx'
-  agentName?: string;      // 'BEAT' | 'GROOVE' | 'ARIA' | 'GLITCH'
+  agent?: string;          // 'drums' | 'bass' | 'melody' | 'chords'
+  agentName?: string;      // 'BEAT' | 'GROOVE' | 'ARIA' | 'CHORDS'
   emoji?: string;
   text: string;
   pattern?: string;        // optional code snippet
@@ -149,5 +149,5 @@ export const AGENT_META: Record<string, {
   drums:  { key: 'drums',  name: 'BEAT',   emoji: '🥁', mention: '@BEAT',   colors: { border: 'border-red-500/50',    accent: 'text-red-400',    bg: 'bg-red-500/10',    bgSolid: 'bg-red-900/50' } },
   bass:   { key: 'bass',   name: 'GROOVE', emoji: '🎸', mention: '@GROOVE', colors: { border: 'border-blue-500/50',   accent: 'text-blue-400',   bg: 'bg-blue-500/10',   bgSolid: 'bg-blue-900/50' } },
   melody: { key: 'melody', name: 'ARIA',   emoji: '🎹', mention: '@ARIA',   colors: { border: 'border-purple-500/50', accent: 'text-purple-400', bg: 'bg-purple-500/10', bgSolid: 'bg-purple-900/50' } },
-  fx:     { key: 'fx',     name: 'GLITCH', emoji: '🎛️', mention: '@GLITCH', colors: { border: 'border-green-500/50',  accent: 'text-green-400',  bg: 'bg-green-500/10',  bgSolid: 'bg-green-900/50' } },
+  chords: { key: 'chords', name: 'CHORDS', emoji: '🎼', mention: '@CHORDS', colors: { border: 'border-green-500/50',  accent: 'text-green-400',  bg: 'bg-green-500/10',  bgSolid: 'bg-green-900/50' } },
 };

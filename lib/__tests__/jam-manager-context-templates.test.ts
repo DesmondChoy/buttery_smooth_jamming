@@ -70,7 +70,7 @@ describe('jam manager context templates', () => {
       roundNumber: 5,
       musicalContext,
       currentPattern: 's("bd sd")',
-      bandStateLines: ['🌀 FX (fx): silence'],
+      bandStateLines: ['🎼 CHORDS (chords): silence'],
     });
 
     expect(rendered).toContain('AUTO-TICK — LISTEN AND EVOLVE');

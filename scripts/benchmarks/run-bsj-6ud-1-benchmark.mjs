@@ -9,6 +9,7 @@ const DEFAULT_TIMEOUT_MS = 120000;
 const DEFAULT_JAM_START_RUNS = 8;
 const DEFAULT_TARGETED_RUNS = 12;
 const DEFAULT_BROADCAST_RUNS = 12;
+const DEFAULT_DIRECTIVE_PRESET_ID = 'funk';
 
 const THRESHOLDS = {
   jam_start_p95_ms: 20000,
@@ -16,7 +17,7 @@ const THRESHOLDS = {
   directive_success_rate_percent: 98,
 };
 
-const ACTIVE_AGENTS = ['drums', 'bass', 'melody', 'fx'];
+const ACTIVE_AGENTS = ['drums', 'bass', 'melody', 'chords'];
 
 function parse_int_arg(raw, fallback) {
   const parsed = Number.parseInt(String(raw ?? ''), 10);
@@ -243,7 +244,7 @@ async function measure_jam_start_series(ws, run_count, timeout_ms) {
       }, {
         label,
         timeout_ms,
-        required_message_types: ['jam_state_update', 'execute'],
+        required_message_types: ['jam_state_update'],
       });
 
       results.push({
@@ -272,6 +273,28 @@ async function ensure_jam_started_for_directives(ws, timeout_ms) {
     activeAgents: ACTIVE_AGENTS,
   }, {
     label: 'directive_warm_start_jam',
+    timeout_ms,
+    required_message_types: ['jam_state_update'],
+  });
+
+  await run_operation(ws, {
+    type: 'set_jam_preset',
+    presetId: DEFAULT_DIRECTIVE_PRESET_ID,
+  }, {
+    label: `directive_warm_set_preset(${DEFAULT_DIRECTIVE_PRESET_ID})`,
+    timeout_ms,
+    required_message_types: ['jam_state_update'],
+  });
+
+  // Seed at least one active agent so subsequent broadcast directives hit the
+  // normal "active agents" path in staged-silent jams.
+  await run_operation(ws, {
+    type: 'boss_directive',
+    text: '@CHORDS join with clear comping stabs for benchmark warmup',
+    targetAgent: 'chords',
+    activeAgents: ACTIVE_AGENTS,
+  }, {
+    label: 'directive_warm_activate_chords',
     timeout_ms,
     required_message_types: ['jam_state_update', 'execute'],
   });
@@ -376,7 +399,7 @@ async function main() {
     await run_operation(ws, { type: 'start_jam', activeAgents: ACTIVE_AGENTS }, {
       label: 'warmup_jam_start',
       timeout_ms: args.timeout_ms,
-      required_message_types: ['jam_state_update', 'execute'],
+      required_message_types: ['jam_state_update'],
     });
     await stop_jam_best_effort(ws, args.timeout_ms);
 

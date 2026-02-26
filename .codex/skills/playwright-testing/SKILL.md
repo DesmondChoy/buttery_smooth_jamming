@@ -29,7 +29,7 @@ Work through the structured checklists systematically. Do NOT skip items or test
 
 **Why?** Direct MCP calls (like `mcp__strudel__execute_pattern`) bypass part of the code path:
 - Direct MCP: Playwright → MCP Server → WebSocket → Browser
-- AI terminal path: Browser → app WS route (`/api/claude-ws`, legacy name) → runtime CLI process → MCP Server → WebSocket → Browser
+- AI terminal path: Browser → app WS route (`/api/ai-ws`) → runtime CLI process → MCP Server → WebSocket → Browser
 
 Testing through the AI terminal exercises the **complete integration** and catches bugs that direct MCP calls miss (e.g., WebSocket connection issues, ref timing problems).
 
@@ -135,7 +135,7 @@ await page.waitForSelector('button:has-text("Playing")');
 ### Pre-flight Checks
 - [ ] No "WebSocket connection error" banner visible
 - [ ] Console shows no WebSocket connection failures for `/api/ws`
-- [ ] Console shows no WebSocket connection failures for `/api/claude-ws`
+- [ ] Console shows no WebSocket connection failures for `/api/ai-ws`
 
 ### AI Terminal Connection
 - [ ] Terminal panel shows connection status indicator
@@ -232,21 +232,21 @@ If step 6 or 7 fails, there's a WebSocket or ref-forwarding bug.
 
 ### Jam Session Lifecycle (requires terminal connection)
 - [ ] Clicking "Start Jam" → Agent Selection Modal appears
-- [ ] Modal shows all 4 agents (BEAT, GROOVE, ARIA, GLITCH) with emoji and checkboxes
+- [ ] Modal shows all 4 agents (BEAT, GROOVE, ARIA, CHORDS) with emoji and checkboxes
 - [ ] Can toggle individual agents on/off
 - [ ] "Start Jam (N agents)" button shows count of selected agents
 - [ ] Cannot deselect the last agent (minimum 1 required)
 - [ ] Enter key confirms selection (same as clicking "Start Jam" button)
 - [ ] Confirming modal → **layout switches to jam mode** (Terminal panel disappears, AgentColumns appear)
-- [ ] All selected agents show "thinking" status during initial jam start
-- [ ] Agents respond with opening patterns (all transition to green "playing")
+- [ ] Initial jam start is staged-silent: selected agents remain idle until the first explicit `@mention`
+- [ ] After choosing a preset and pressing Play, the jam becomes ready for boss directives without auto-playing patterns
 - [ ] Clicking "Stop" → returns to normal mode layout
 - [ ] Cancel button / Esc dismisses modal without starting jam
 
 ### Jam Admission Limits (Concurrency + Process Caps)
 - [ ] Default server limits are `MAX_CONCURRENT_JAMS=1` and `MAX_TOTAL_AGENT_PROCESSES=4` (unless overridden in env)
 - [ ] With one active jam in Tab A, starting a jam in Tab B returns an error message containing "Jam capacity reached"
-- [ ] The rejection frame on `/api/claude-ws` includes `code: "jam_capacity_exceeded"` plus `details` with active/projected counts
+- [ ] The rejection frame on `/api/ai-ws` includes `code: "jam_capacity_exceeded"` plus `details` with active/projected counts
 - [ ] If env is configured for >1 concurrent jam but limited total processes (example: `MAX_CONCURRENT_JAMS=2`, `MAX_TOTAL_AGENT_PROCESSES=4`), a second jam that exceeds process cap returns `code: "agent_capacity_exceeded"`
 - [ ] Stopping the existing jam frees capacity and allows a new jam start
 
@@ -259,14 +259,16 @@ If step 6 or 7 fails, there's a WebSocket or ref-forwarding bug.
 Note: v2 uses a directive-driven architecture — agents respond on-demand to boss directives, plus autonomous auto-ticks every ~30s for organic evolution. WebSocket events fire per-directive AND per-tick.
 
 ### Agent Status Broadcasts
-- [ ] Open browser DevTools → Network → WS tab → filter `/api/claude-ws` (jam-manager broadcasts); optionally also watch `/api/ws` for MCP bridge traffic
+- [ ] Open browser DevTools → Network → WS tab → filter `/api/ai-ws` (jam-manager broadcasts); optionally also watch `/api/ws` for MCP bridge traffic
 - [ ] When a directive is sent, `agent_status` messages appear for targeted agent(s)
-- [ ] Each contains `{ agent: "drums"|"bass"|"melody"|"fx", status: "thinking"|"playing"|"idle"|"error"|"timeout" }`
+- [ ] Each contains `{ agent: "drums"|"bass"|"melody"|"chords", status: "thinking"|"playing"|"idle"|"error"|"timeout" }`
 
-### Agent Thought Broadcasts
-- [ ] `agent_thought` messages appear with agent reactions
-- [ ] Each contains `{ agent, emoji, thought, reaction, pattern, timestamp }`
-- [ ] Agent columns show reactions inline (e.g., "🥁 BEAT: ...")
+### Agent Thought / Commentary Broadcasts
+- [ ] `agent_thought` messages appear with agent thoughts and patterns
+- [ ] Each `agent_thought` contains `{ agent, emoji, thought, pattern, timestamp }`
+- [ ] `agent_commentary` messages appear with inline chatter/commentary text
+- [ ] Each `agent_commentary` contains `{ agent, emoji, text, timestamp }`
+- [ ] Agent columns show commentary inline for the matching agent
 
 ### Musical Context Updates
 - [ ] Boss directives that change context (key/BPM/energy) are reflected in subsequent `jam_state_update` payloads
@@ -282,7 +284,7 @@ Every ~30 seconds, the system sends an auto-tick to all agents. This triggers th
 - [ ] `agent_thought` messages appear — agents may respond with new patterns or `no_change`
 - [ ] `jam_state_update` with updated `currentRound` (round number increments per tick)
 - [ ] Auto-tick resets when a boss directive is sent (avoids double-triggering)
-- [ ] **`no_change` sentinel**: Agents can respond with `"no_change"` as their pattern to keep playing their current pattern — thoughts/reactions update but the pattern row stays the same
+- [ ] **`no_change` sentinel**: Agents can respond with `"no_change"` as their pattern to keep playing their current pattern — thoughts/commentary update but the pattern row stays the same
 
 **Impact on testing:** Auto-ticks mean the system state can change without user input. Tests that assert pattern stability (e.g., Test 4.5) must complete within the ~30s tick window, or account for auto-tick changes.
 
@@ -318,7 +320,7 @@ Every ~30 seconds, the system sends an auto-tick to all agents. This triggers th
 - [ ] One column per selected agent in CSS grid layout
 - [ ] Each column header shows agent emoji and name (e.g., "🥁 BEAT")
 - [ ] Status indicator (StatusDot) visible per column
-- [ ] Color-coding per agent: drums=red, bass=blue, melody=purple, fx=green
+- [ ] Color-coding per agent: drums=red, bass=blue, melody=purple, chords=green
 - [ ] "Waiting for {AGENT}..." placeholder shown before first response
 - [ ] After agent responds: thoughts displayed with round marker (e.g., "R0")
 - [ ] Round numbers auto-increment with both boss directives and auto-ticks (~30s), so `R2` → `R5` gaps are normal
@@ -368,7 +370,7 @@ Verify the full transition cycle:
 
 ### PatternDisplay
 - [ ] Shows each agent's current pattern with emoji and name label
-- [ ] Each agent listed: 🥁 BEAT, 🎸 GROOVE, 🎹 ARIA, 🎛️ GLITCH
+- [ ] Each agent listed: 🥁 BEAT, 🎸 GROOVE, 🎹 ARIA, 🎼 CHORDS
 - [ ] Patterns shown as code (monospace)
 - [ ] "silence" shown when agent has no pattern
 - [ ] Collapsible via "▶ Patterns" toggle
@@ -382,7 +384,7 @@ Verify the full transition cycle:
 ### Agent Context Isolation & Latency
 
 These tests use `data-testid` attributes for reliable element targeting:
-- `agent-column-{key}` — column wrapper (drums, bass, melody, fx)
+- `agent-column-{key}` — column wrapper (drums, bass, melody, chords)
 - `status-label-{key}` — status text (shows "idle", "thinking", "playing", "error", or "timeout")
 - `agent-messages-{key}` — message list container
 - `pattern-display` — PatternDisplay container
@@ -404,7 +406,7 @@ These tests use `data-testid` attributes for reliable element targeting:
      return thoughts?.length ? thoughts[thoughts.length - 1].textContent : null;
    }
    ```
-4. For each non-targeted agent (bass, melody, fx), use `browser_evaluate` to check that text does NOT appear:
+4. For each non-targeted agent (bass, melody, chords), use `browser_evaluate` to check that text does NOT appear:
    ```javascript
    (element) => element.textContent.includes('<drums thought text>')
    ```
@@ -418,7 +420,7 @@ These tests use `data-testid` attributes for reliable element targeting:
 2. Use `browser_evaluate` to read each agent's pattern:
    ```javascript
    () => {
-     const keys = ['drums', 'bass', 'melody', 'fx'];
+     const keys = ['drums', 'bass', 'melody', 'chords'];
      const patterns = {};
      for (const key of keys) {
        const row = document.querySelector(`[data-testid="pattern-row-${key}"]`);
@@ -452,7 +454,7 @@ Use a two-phase approach to avoid Playwright command queue deadlock:
     if (drumsLabel.textContent === 'thinking') {
       observer.disconnect();
       const statuses = {};
-      for (const key of ['drums', 'bass', 'melody', 'fx']) {
+      for (const key of ['drums', 'bass', 'melody', 'chords']) {
         const label = document.querySelector(`[data-testid="status-label-${key}"]`);
         statuses[key] = label?.textContent || 'not found';
       }
@@ -510,7 +512,7 @@ async (page) => {
    ```javascript
    () => {
      const patterns = {};
-     for (const key of ['drums', 'bass', 'melody', 'fx']) {
+     for (const key of ['drums', 'bass', 'melody', 'chords']) {
        const row = document.querySelector(`[data-testid="pattern-row-${key}"]`);
        patterns[key] = row?.querySelector('code')?.textContent?.trim() || null;
      }
@@ -519,7 +521,7 @@ async (page) => {
    ```
 2. Send targeted directive `@BEAT double time` and wait for drums to return to "playing"
 3. **After** response, capture all pattern values again using the same evaluate
-4. Compare: non-targeted agents (bass, melody, fx) should have identical patterns before/after
+4. Compare: non-targeted agents (bass, melody, chords) should have identical patterns before/after
 5. **Pass:** `before[key] === after[key]` for all non-targeted agents. The targeted agent (drums) MAY have changed.
 
 **Auto-tick caveat:** The system sends auto-ticks every ~30s which can change any agent's pattern. Run this test quickly after a known state change (directive response or auto-tick completion) to stay within the tick window. If a non-targeted pattern changes, verify it was due to an auto-tick (check for `agent_thought` messages on that agent) rather than directive leakage.
@@ -543,7 +545,7 @@ Use this 15-item checklist for rapid validation:
 11. [ ] JamControls panel visible with "Start Jam" button
 12. [ ] "Start Jam" button disabled when terminal is not connected, enabled when ready
 13. [ ] Starting a jam → agent selection modal → layout switches to jam mode (AgentColumns + BossInputBar)
-14. [ ] Agent columns show thoughts/reactions per agent, PatternDisplay shows patterns with emoji/names
+14. [ ] Agent columns show per-agent commentary while PatternDisplay shows patterns with emoji/names
 15. [ ] Stopping jam (via "Stop" button in JamTopBar) → layout reverts to normal mode
 
 Items 8 and 9 are the most critical - they test the complete integration.

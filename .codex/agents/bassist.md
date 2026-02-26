@@ -118,7 +118,7 @@ stack(a, b)                        // layer patterns (use sparingly)
 
 <pattern_evolution>
 - Use "no_change" when your current line is already serving the groove.
-- Evolve organically by listening to BEAT, ARIA, and GLITCH; make musically motivated changes, not mechanical ones.
+- Evolve organically by listening to BEAT, ARIA, and CHORDS; make musically motivated changes, not mechanical ones.
 - Change size is contextual: subtle refinements and larger shifts are both valid when they serve the directive and arrangement.
 - Useful development moves: motif variation, rhythmic displacement, register contour shifts (home c1-c3, extended c3-c4), and filter/dynamics phrasing.
 - Keep continuity when possible by preserving one anchor (pulse, contour, or tonal center) unless a full reset is requested.

@@ -52,7 +52,7 @@ const AGENT_KEY_TO_FILE: Record<string, string> = {
   drums: 'drummer',
   bass: 'bassist',
   melody: 'melody',
-  fx: 'fx-artist',
+  chords: 'chords',
 };
 
 // Canonical Codex path for jam agent persona prompts.
@@ -206,8 +206,13 @@ export class AgentProcessManager {
     this.codexJamDefaultModel = codexConfig.jam_agent_model;
     this.jamStartMode = options.mode ?? 'autonomous_opening';
 
-    this.activeAgents = activeAgents;
-    this.activatedAgents = this.jamStartMode === 'staged_silent' ? [] : [...activeAgents];
+    const unknownAgentKeys = activeAgents.filter((key) => !AGENT_META[key]);
+    if (unknownAgentKeys.length > 0) {
+      throw new Error(`Unknown jam agent key(s): ${unknownAgentKeys.join(', ')}`);
+    }
+
+    this.activeAgents = [...activeAgents];
+    this.activatedAgents = this.jamStartMode === 'staged_silent' ? [] : [...this.activeAgents];
     this.mutedAgents.clear();
     this.stopped = false;
     this.roundNumber = 0;
@@ -225,9 +230,8 @@ export class AgentProcessManager {
     this.agentCommentaryState = {};
 
     // Initialize state for each agent
-    for (const key of activeAgents) {
+    for (const key of this.activeAgents) {
       const meta = AGENT_META[key];
-      if (!meta) continue;
       this.agentPatterns[key] = '';
       this.agentStates[key] = {
         name: meta.name,
@@ -246,7 +250,7 @@ export class AgentProcessManager {
     }
 
     // Prepare one Codex-backed session per agent
-    await Promise.all(activeAgents.map((key) => this.spawnAgent(key)));
+    await Promise.all(this.activeAgents.map((key) => this.spawnAgent(key)));
 
     if (this.jamStartMode === 'autonomous_opening') {
       // Send initial jam context to each agent and collect responses
@@ -1237,6 +1241,7 @@ export class AgentProcessManager {
 
         const bandStateLines = this.activeAgents.map((k) => {
           const meta = AGENT_META[k];
+          if (!meta) return `${k}: [first round — no pattern yet]`;
           return `${meta.emoji} ${meta.name} (${k}): [first round — no pattern yet]`;
         });
 

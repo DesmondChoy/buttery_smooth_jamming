@@ -30,7 +30,7 @@ const MENTION_TO_AGENT: Record<string, string> = {
   '@beat': 'drums',
   '@groove': 'bass',
   '@aria': 'melody',
-  '@glitch': 'fx',
+  '@chords': 'chords',
 };
 
 function parseMention(text: string): string | null {

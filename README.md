@@ -9,7 +9,7 @@ An autonomous AI jam session where band member agents play together in real-time
 | 🥁 BEAT | Drums | Syncopation-obsessed veteran, high ego |
 | 🎸 GROOVE | Bass | Selfless minimalist, locks in with the kick |
 | 🎹 ARIA | Melody | Classically trained, insists on harmonic correctness |
-| 🎛️ GLITCH | FX | Chaotic texture artist, lives to break conventions |
+| 🎼 CHORDS | Chords / Comping | Audible harmonic middle layer, comping and supportive texture |
 
 Each agent runs in a persistent Codex-backed session with its own personality, musical memory, and opinions. They share a musical context (key, scale, BPM, chords) for harmonic coherence and follow boss directives faithfully. Between directives, agents autonomously evolve their patterns every 30 seconds and can collectively suggest key changes, chord progressions, and tempo/energy shifts.
 
@@ -30,8 +30,10 @@ Then open http://localhost:3000:
 
 1. Click **Start Audio** to unlock browser audio
 2. Click **Start Jam** and select your agents
-3. Type directives: `"More energy!"` or target an agent: `"@BEAT double time"`
-4. Click **Stop** to end the session
+3. Choose a jam preset and click **▶ Play** (jam starts in staged-silent mode)
+4. Activate the band with an `@mention` directive like `"@CHORDS add offbeat comping stabs"` or `"@BEAT double time"`
+5. Type broadcast directives like `"More energy!"` once at least one agent has joined
+6. Click **Stop** to end the session
 
 Outside of jam mode, the app also works as a Strudel assistant — chat with the Codex runtime to learn and explore live coding patterns.
 
@@ -50,11 +52,11 @@ You (the Boss)
   │     │
   │     ▼
   │   { pattern, thoughts,        Agent responds with JSON
-  │     reaction }
+  │     commentary }
   │     │
   │     ▼
   │   stack(drums, bass,           Server composes patterns in TypeScript
-  │         melody, fx)
+  │         melody, chords)
   │     │
   │     ▼
   └── Browser plays music          Strudel evaluates the composed pattern

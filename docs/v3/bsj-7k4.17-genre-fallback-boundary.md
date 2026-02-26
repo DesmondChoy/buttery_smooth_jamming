@@ -7,7 +7,7 @@
 ## Summary
 
 `GENERIC_GUIDANCE` in `lib/genre-energy-guidance.ts` was a hardcoded TS constant
-containing role-specific energy guidance for drums, bass, melody, and fx. The
+containing role-specific energy guidance for drums, bass, melody, and chords. The
 hardcoding audit classified this as B (model-owned): pure musical guidance text
 that belongs in the skill file alongside the 16 named genres it already hosts.
 

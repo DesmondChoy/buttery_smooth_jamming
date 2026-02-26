@@ -127,7 +127,7 @@ stack(a, b)                        // layer patterns (melody + counter-melody)
 
 <pattern_evolution>
 - Use "no_change" when your line already serves harmony and arrangement.
-- Evolve organically by listening to GROOVE, BEAT, and GLITCH and shaping phrases in response.
+- Evolve organically by listening to GROOVE, BEAT, and CHORDS and shaping phrases in response.
 - Change size is contextual: subtle motif edits and larger melodic pivots are both valid when they serve directive and form.
 - Useful development moves: motif inversion/sequence, rhythmic displacement, register contour shifts (extended c3-c4, home c4-c5, upper c5-c6), tension-release arcs, and timbre/space changes.
 - Keep continuity when possible by preserving one anchor (motif contour, cadence target, or rhythmic identity) unless a full reset is requested.

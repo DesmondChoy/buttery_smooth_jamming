@@ -27,4 +27,12 @@ describe('buildGenreEnergySection', () => {
     expect(result).toContain('space-dominant');
     expect(result).toContain('</genre_energy_guidance>');
   });
+
+  it('returns genre-specific guidance for chords', () => {
+    const result = buildGenreEnergySection(workingDir, 'funk', 'chords');
+
+    expect(result).toContain('<genre_energy_guidance genre="funk">');
+    expect(result).toContain('comp chops');
+    expect(result).toContain('</genre_energy_guidance>');
+  });
 });

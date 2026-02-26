@@ -9,7 +9,7 @@ test.describe('Staged Jam UI Flow', () => {
     });
 
     await page.addInitScript(() => {
-      type AgentKey = 'drums' | 'bass' | 'melody' | 'fx';
+      type AgentKey = 'drums' | 'bass' | 'melody' | 'chords';
       type ClientMessage = {
         type?: string;
         activeAgents?: string[];
@@ -22,7 +22,7 @@ test.describe('Staged Jam UI Flow', () => {
         drums: { name: 'BEAT', emoji: '🥁' },
         bass: { name: 'GROOVE', emoji: '🎸' },
         melody: { name: 'ARIA', emoji: '🎹' },
-        fx: { name: 'GLITCH', emoji: '🎛️' },
+        chords: { name: 'CHORDS', emoji: '🎼' },
       };
 
       const PRESET_CONTEXTS: Record<string, {
@@ -58,7 +58,7 @@ test.describe('Staged Jam UI Flow', () => {
       const state = {
         sessionId: 'e2e-session-1',
         round: 0,
-        selectedAgents: ['drums', 'bass', 'melody', 'fx'] as AgentKey[],
+        selectedAgents: ['drums', 'bass', 'melody', 'chords'] as AgentKey[],
         activatedAgents: [] as AgentKey[],
         musicalContext: { ...BLANK_CONTEXT },
         agentStates: {} as Record<string, {
@@ -67,7 +67,6 @@ test.describe('Staged Jam UI Flow', () => {
           pattern: string;
           fallbackPattern: string;
           thoughts: string;
-          reaction: string;
           lastUpdated: string;
           status: 'idle' | 'thinking' | 'playing' | 'error' | 'timeout';
         }>,
@@ -86,7 +85,6 @@ test.describe('Staged Jam UI Flow', () => {
             pattern: '',
             fallbackPattern: '',
             thoughts: '',
-            reaction: '',
             lastUpdated: nowIso(),
             status: 'idle',
           };
@@ -144,26 +142,26 @@ test.describe('Staged Jam UI Flow', () => {
             return {
               pattern: 'note("d2 a2").s("sawtooth").slow(2)',
               thoughts: 'Starting a slow, pocketed riff',
-              reaction: 'Locking in a gentle groove',
+              commentary: 'Locking in a gentle groove',
             };
           case 'melody':
             return {
               pattern: 'note("f4 a4 c5 e5").s("piano").slow(2)',
               thoughts: 'Joining softly around the bass line',
-              reaction: 'Entering gently with space',
+              commentary: 'Entering gently with space',
             };
           case 'drums':
             return {
               pattern: 's("bd ~ sd ~").slow(2)',
               thoughts: 'Soft pulse',
-              reaction: 'Minimal pocket',
+              commentary: 'Minimal pocket',
             };
-          case 'fx':
+          case 'chords':
           default:
             return {
-              pattern: 's("noise").gain(0.1).slow(4)',
-              thoughts: 'Subtle texture',
-              reaction: 'Just a little atmosphere',
+              pattern: 'note("<[d3,f3,a3,c4] ~ [d3,f3,a3,c4] ~>").s("gm_epiano1").gain(0.45)',
+              thoughts: 'Clear comping support joins the pocket',
+              commentary: 'Filling the harmonic middle',
             };
         }
       }
@@ -201,12 +199,11 @@ test.describe('Staged Jam UI Flow', () => {
         });
       }
 
-      function emitAgentThought(ws: FakeWebSocket, agent: AgentKey, pattern: string, thoughts: string, reaction: string) {
+      function emitAgentThought(ws: FakeWebSocket, agent: AgentKey, pattern: string, thoughts: string) {
         ensureAgentState(agent);
         state.agentStates[agent].pattern = pattern;
         state.agentStates[agent].fallbackPattern = pattern;
         state.agentStates[agent].thoughts = thoughts;
-        state.agentStates[agent].reaction = reaction;
         state.agentStates[agent].lastUpdated = nowIso();
         emitMessage(ws, {
           type: 'agent_thought',
@@ -214,53 +211,78 @@ test.describe('Staged Jam UI Flow', () => {
             agent,
             emoji: AGENT_META[agent].emoji,
             thought: thoughts,
-            reaction,
             pattern,
             timestamp: nowIso(),
           },
         });
       }
 
-      function handleBossDirective(ws: FakeWebSocket, parsed: { targetAgent?: AgentKey; text?: string }) {
-        if (!parsed.targetAgent) {
-          emitMessage(ws, {
-            type: 'directive_error',
-            payload: { message: 'No agents are active yet. @mention an agent to start the jam.' },
-          });
-          emitStatus(ws, 'done');
-          return;
-        }
+      function emitAgentCommentary(ws: FakeWebSocket, agent: AgentKey, text: string) {
+        emitMessage(ws, {
+          type: 'agent_commentary',
+          payload: {
+            agent,
+            emoji: AGENT_META[agent].emoji,
+            text,
+            timestamp: nowIso(),
+          },
+        });
+      }
 
-        const agent = parsed.targetAgent;
-        if (!state.selectedAgents.includes(agent)) {
-          emitMessage(ws, {
-            type: 'directive_error',
-            payload: { message: `${AGENT_META[agent].name} is not in this jam session`, targetAgent: agent },
-          });
-          emitStatus(ws, 'done');
-          return;
+      function handleBossDirective(ws: FakeWebSocket, parsed: { targetAgent?: AgentKey; text?: string }) {
+        let targets: AgentKey[] = [];
+
+        if (parsed.targetAgent) {
+          const agent = parsed.targetAgent;
+          if (!state.selectedAgents.includes(agent)) {
+            emitMessage(ws, {
+              type: 'directive_error',
+              payload: { message: `${AGENT_META[agent].name} is not in this jam session`, targetAgent: agent },
+            });
+            emitStatus(ws, 'done');
+            return;
+          }
+          targets = [agent];
+        } else {
+          targets = [...state.activatedAgents];
+          if (targets.length === 0) {
+            emitMessage(ws, {
+              type: 'directive_error',
+              payload: { message: 'No agents are active yet. @mention an agent to start the jam.' },
+            });
+            emitStatus(ws, 'done');
+            return;
+          }
         }
 
         if (!state.musicalContext.genre) {
           emitMessage(ws, {
             type: 'directive_error',
-            payload: { message: 'Choose a genre preset and press Play before sending directives.', targetAgent: agent },
+            payload: { message: 'Choose a genre preset and press Play before sending directives.', targetAgent: parsed.targetAgent },
           });
           emitStatus(ws, 'done');
           return;
         }
 
-        if (!state.activatedAgents.includes(agent)) {
-          state.activatedAgents = [...state.activatedAgents, agent];
+        for (const agent of targets) {
+          if (!state.activatedAgents.includes(agent)) {
+            state.activatedAgents = [...state.activatedAgents, agent];
+          }
         }
 
-        const response = makeAgentResponse(agent);
         state.round += 1;
 
-        emitAgentStatus(ws, agent, 'thinking');
+        for (const agent of targets) {
+          emitAgentStatus(ws, agent, 'thinking');
+        }
+
         setTimeout(() => {
-          emitAgentThought(ws, agent, response.pattern, response.thoughts, response.reaction);
-          emitAgentStatus(ws, agent, 'playing');
+          for (const agent of targets) {
+            const response = makeAgentResponse(agent);
+            emitAgentThought(ws, agent, response.pattern, response.thoughts);
+            emitAgentCommentary(ws, agent, response.commentary);
+            emitAgentStatus(ws, agent, 'playing');
+          }
           emitJamState(ws);
           emitStatus(ws, 'done');
         }, 20);
@@ -430,13 +452,13 @@ test.describe('Staged Jam UI Flow', () => {
     await expect(presetSelect).toBeDisabled();
     await expect(page.getByTestId('pattern-row-bass')).not.toContainText('silence');
     await expect(page.getByTestId('pattern-row-melody')).toContainText('silence');
-    await expect(page.getByTestId('agent-messages-bass')).toContainText('Starting a slow, pocketed riff');
+    await expect(page.getByTestId('agent-messages-bass')).toContainText('Locking in a gentle groove');
 
-    await bossInput.fill('@ARIA join in the jam gently');
+    await bossInput.fill('@CHORDS add clear comping support');
     await page.getByRole('button', { name: 'Send' }).click();
 
-    await expect(page.getByTestId('status-label-melody')).toHaveText('playing');
-    await expect(page.getByTestId('pattern-row-melody')).not.toContainText('silence');
-    await expect(page.getByTestId('agent-messages-melody')).toContainText('Joining softly around the bass line');
+    await expect(page.getByTestId('status-label-chords')).toHaveText('playing');
+    await expect(page.getByTestId('pattern-row-chords')).not.toContainText('silence');
+    await expect(page.getByTestId('agent-messages-chords')).toContainText('Filling the harmonic middle');
   });
 });

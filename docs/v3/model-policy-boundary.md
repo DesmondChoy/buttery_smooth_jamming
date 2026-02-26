@@ -35,10 +35,10 @@ is routable, bounded, schema-valid, and safely composable.
 | Nuanced directive interpretation | Interprets ambiguous terms like "darker", "edgier", "floaty", "tenser" into instrument-appropriate musical moves. | Deterministic routing to targeted agents (`@mention`) and deterministic broadcast when no mention is present. |
 | Tempo feel realization | Decides how tempo intent is expressed musically (subdivision density, articulation, syncopation). | Applies explicit tempo anchors (explicit BPM, half/double-time) with fixed precedence and bounds (`60..300`), and applies model-provided relative tempo deltas within minimal bounds. |
 | Energy realization | Chooses how "more/less energy" manifests per agent role (note density, accents, dynamics, register). | Applies explicit numeric/semantic energy anchors with deterministic clamps (`1..10`), and applies model-provided relative energy deltas within minimal bounds. |
-| Texture/timbre | Chooses synthesis/FX choices, effect movement, and texture transitions. | Enforces output schema validity and safe fallback behavior when output is invalid or missing. |
+| Texture/timbre | Chooses synthesis choices, effect movement, and texture transitions. | Enforces output schema validity and safe fallback behavior when output is invalid or missing. |
 | Arrangement evolution | Decides when to hold, vary, build, or simplify over rounds. | Owns turn serialization, session lifecycle, timeout handling, and no-overlap guarantees. |
 | Inter-agent musical adaptation | Reacts to band state and evolves in context. | Preserves canonical jam state server-side and broadcasts authoritative updates. |
-| Pattern output content | Emits Strudel pattern + thoughts + reaction with agent personality. | Validates JSON shape, handles invalid output deterministically, and preserves prior valid pattern as fallback. |
+| Pattern output content | Emits Strudel pattern + thoughts + commentary with agent personality. | Validates JSON shape, handles invalid output deterministically, and preserves prior valid pattern as fallback. |
 | Harmonic context evolution | Agents suggest key changes (`suggested_key`) and chord progressions (`suggested_chords`) via structured decision blocks. | Code enforces consensus rules: key changes require 2+ agents with high confidence suggesting the same key; chord changes require a single agent with high confidence. Validated via `normalizeSuggestedKey()` and `deriveScale()`. On key change, `deriveChordProgression()` auto-derives a minimal diatonic fallback (I-vi-IV-V major, i-VI-III-VII minor) so the jam has valid chords immediately; agents may override with genre-specific chords via `suggested_chords` on subsequent turns [C hybrid, MCP-04 / bsj-7k4.15]. |
 | Final playback composition | None (agents do not decide final merge algorithm). | Server composes final output via deterministic `stack(...)` composition. |
 | Runtime and process behavior | None (not model-controlled). | Preserves manager-owned, per-agent persistent Codex-backed sessions and controlled process lifecycle. |
@@ -83,7 +83,7 @@ Notes:
 
 ### Texture Priority
 
-1. Explicit boss constraints (for example: "no hats", "keep this dry", "add shimmer only to FX").
+1. Explicit boss constraints (for example: "no hats", "keep this dry", "add shimmer only to CHORDS").
 2. Hard runtime constraints (schema validity, safe output handling).
 3. Model-owned timbre/effect decisions.
 4. No confident decision: preserve prior texture or use `no_change`.
@@ -101,7 +101,7 @@ Failure handling must preserve session flow and musical continuity.
 
 | Scenario | Deterministic Behavior | Autonomy-Preserving Default |
 |---|---|---|
-| Invalid output shape (missing `pattern`/`thoughts`/`reaction`) | Reject response, mark agent as timeout/error path, keep session alive. | Reuse last known valid `fallbackPattern` so groove continues. |
+| Invalid output shape (missing `pattern`/`thoughts`/`commentary`) | Reject response, mark agent as timeout/error path, keep session alive. | Reuse last known valid `fallbackPattern` so groove continues. |
 | Unparseable/empty model output | Treat as failed turn; do not crash jam. | Continue with last valid pattern or `silence` only if no fallback exists. |
 | Targeted agent unavailable | Emit deterministic `directive_error`; do not mutate unrelated agents. | Keep the rest of the band running unchanged. |
 | No decision from model | Accept `no_change` behavior; do not force synthetic change. | Preserve existing pattern and continue autonomous evolution on later turns. |
@@ -153,15 +153,15 @@ These examples are intentionally model-owned and should not be hardcoded:
 
 1. Boss: "Make it more tense but keep it danceable."
    Model latitude: drums tighten syncopation, bass narrows register, melody uses
-   dissonant passing tones, FX increases modulation depth.
+   dissonant passing tones, CHORDS increases comping density and voicing tension.
 2. Boss: "@BEAT double time but don't overcrowd the pocket."
    Code guarantee: tempo context updates deterministically for the targeted turn.
    Model latitude: BEAT chooses ghost-note strategy versus full subdivision fill.
-3. Boss: "GLITCH, add texture but stay out of ARIA's register."
+3. Boss: "CHORDS, add offbeat stabs but stay out of ARIA's register."
    Code guarantee: deterministic targeted routing and safe composition.
-   Model latitude: GLITCH picks effect type, motion curve, and rhythmic placement.
+   Model latitude: CHORDS picks voicing shape, comping rhythm, texture support, and placement.
 4. Auto-tick round (no boss directive):
-   ARIA suggests "Eb major" with high confidence, GLITCH also suggests "Eb major"
+   ARIA suggests "Eb major" with high confidence, CHORDS also suggests "Eb major"
    with high confidence → 2+ agents agree, key changes to Eb major, scale and chords
    auto-derived (minimal diatonic fallback; agents may suggest genre-specific chords
    on subsequent turns). BEAT suggests "G minor" with low confidence alone → ignored

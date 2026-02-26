@@ -76,7 +76,7 @@ through these numbered steps:
    broadcast routes to all active agents. Unavailable targets emit
    `directive_error` without mutating other agents.
 5. **Collect responses** — All targeted agents respond in parallel with JSON
-   (`pattern`, `thoughts`, `reaction`, optional `decision`).
+   (`pattern`, `thoughts`, `commentary`, optional `decision`).
 6. **Validate and apply patterns** — `applyAgentResponse()` validates schema,
    handles `no_change` and `silence` sentinels, and manages fallback continuity.
 7. **Apply model-relative deltas** —
@@ -162,7 +162,7 @@ behavior through the system prompt assembly pipeline.
 
 | Knob | Location | What It Controls |
 |------|----------|-----------------|
-| Agent personas | `.codex/agents/{drummer,bassist,melody,fx-artist}.md` | Per-agent personality, musical vocabulary, role constraints |
+| Agent personas | `.codex/agents/{drummer,bassist,melody,chords}.md` | Per-agent personality, musical vocabulary, role constraints |
 | Shared jam policy | `lib/jam-agent-shared-policy.ts` (constants `JAM_MUSICAL_POLICY_LINES`, `STRUDEL_VALIDITY_POLICY_LINES`) | Cross-agent musical policy and Strudel validity rules |
 | Genre-energy guidance | `.codex/skills/genre-energy-guidance/SKILL.md` | Per-genre, per-role energy behavior at LOW/MID/HIGH bands |
 | Strudel API reference | `lib/strudel-reference.md` | Valid Strudel functions, mini-notation, sound banks |

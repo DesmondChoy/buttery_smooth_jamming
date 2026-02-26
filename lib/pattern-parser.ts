@@ -37,13 +37,14 @@ const MODIFIER_METHODS = new Set([
  *   "bd [~ bd] sd [bd ~]"  → ["bd", "sd"]
  *   "hh*4"                 → ["hh"]
  *   "c1 ~ eb1 g1"          → ["c1", "eb1", "g1"]
+ *   "<[c3,e3,g3] [f3,a3,c4]>" → ["c3", "e3", "g3", "f3", "a3", "c4"]
  *   "<bd sd> hh"            → ["bd", "sd", "hh"]
  */
 function extractMiniLeaves(miniStr: string): string[] {
   // Remove brackets, angle brackets, and operators
   const cleaned = miniStr.replace(/[[\]<>]/g, ' ');
   // Split on whitespace, filter rests/numbers/operators/empty
-  const tokens = cleaned.split(/\s+/).filter((t) => {
+  const tokens = cleaned.split(/[\s,]+/).filter((t) => {
     if (!t || t === '~' || t === '-') return false;
     // Strip trailing modifiers like ? or *N
     const base = t.replace(/[?*].*$/, '');

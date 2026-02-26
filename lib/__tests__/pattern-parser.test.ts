@@ -26,6 +26,15 @@ describe('parsePattern', () => {
     expect(result!.layers[0].effects.gain).toBe(0.6);
   });
 
+  it('parses chord mini-notation and splits comma-delimited notes', () => {
+    const result = parsePattern('note("<[c3,e3,g3] [f3,a3,c4]>").s("piano").gain(0.5)');
+    expect(result).not.toBeNull();
+    expect(result!.structure).toBe('single');
+    expect(result!.layers[0].source).toBe('note');
+    expect(result!.layers[0].content).toEqual(['c3', 'e3', 'g3', 'f3', 'a3', 'c4']);
+    expect(result!.layers[0].effects.s).toBe('piano');
+  });
+
   it('parses a stack() with multiple layers', () => {
     const result = parsePattern(
       'stack(s("bd [~ bd] sd [bd ~]").bank("RolandTR909"), s("hh*4").gain(0.5).sometimes(x => x.gain(0.3)), s("~ ~ ~ cp").every(4, x => x.s("cr")))'
@@ -198,37 +207,48 @@ describe('summarizePattern', () => {
     });
   });
 
-  // FX patterns (from fx-artist.md)
-  describe('fx patterns', () => {
-    it('low energy — ambient', () => {
+  // CHORDS patterns (from chords.md)
+  describe('chords patterns', () => {
+    it('low energy — pad comping bed', () => {
       const result = summarizePattern(
-        's("hh?").room(0.9).hpf(400).gain(0.3).degradeBy(0.7).pan(sine.range(0,1)).slow(2)'
+        'note("<[c3,e3,g3] ~ [f3,a3,c4] ~>").s("gm_pad_warm").room(0.7).gain(0.35).slow(2)'
       );
-      expect(result).toContain('hh');
-      expect(result).toContain('room 0.9');
-      expect(result).toContain('hpf 400');
-      expect(result).toContain('degradeBy(0.7)');
+      expect(result).toContain('c3');
+      expect(result).toContain('gm_pad_warm');
+      expect(result).toContain('room 0.7');
+      expect(result).toContain('slow(2)');
     });
 
-    it('mid energy — rhythmic effects', () => {
+    it('mid energy — rhythmic comping stabs', () => {
       const result = summarizePattern(
-        's("cp?").delay(0.5).room(0.5).hpf(400).gain(0.4).degradeBy(0.4).pan(sine.range(0.2,0.8))'
+        'note("<[d3,f3,a3,c4] ~ [d3,f3,a3,c4] ~>").s("gm_epiano1").gain(0.5).sometimes(x => x.fast(2))'
       );
+      expect(result).toContain('d3');
+      expect(result).toContain('gm_epiano1');
+      expect(result).toContain('sometimes');
+    });
+
+    it('high energy — comping plus percussion accents', () => {
+      const result = summarizePattern(
+        'stack(note("<[a3,e4,a4] [d4,a4,d5] [e4,b4,e5] [a3,e4,a4]>").s("supersaw").gain(0.55), s("cp*4").hpf(400).gain(0.35).degradeBy(0.4))'
+      );
+      expect(result).toContain('2 layers');
+      expect(result).toContain('a3');
+      expect(result).toContain('supersaw');
       expect(result).toContain('cp');
-      expect(result).toContain('delay 0.5');
+      expect(result).toContain('hpf 400');
       expect(result).toContain('degradeBy(0.4)');
     });
 
-    it('high energy — full chaos stack', () => {
+    it('keeps chord summaries readable for comma-separated mini-notation', () => {
       const result = summarizePattern(
-        'stack(s("cp*4").crush(4).distort(2).hpf(300).pan(sine.range(0,1)).gain(0.6), s("rim?").coarse(8).delay(0.25).hpf(500).degradeBy(0.4).fast(2))'
+        'note("<[c3,e3,g3] [bb2,d3,f3]>").s("piano").gain(0.45)'
       );
-      expect(result).toContain('2 layers');
-      expect(result).toContain('cp');
-      expect(result).toContain('crush 4');
-      expect(result).toContain('distort 2');
-      expect(result).toContain('rim');
-      expect(result).toContain('delay 0.25');
+      expect(result).toContain('c3');
+      expect(result).toContain('e3');
+      expect(result).toContain('g3');
+      expect(result).toContain('bb2');
+      expect(result).toContain('piano');
     });
   });
 
@@ -267,14 +287,14 @@ describe('summarizePattern', () => {
       expect(line).toContain('sine');
     });
 
-    it('includes emoji, name, key, summary, and raw pattern for fx', () => {
-      const line = formatBandStateLine('fx', 's("hh?").room(0.9).hpf(400).gain(0.3).degradeBy(0.7).slow(2)');
-      expect(line).toContain('🎛');
-      expect(line).toContain('GLITCH');
-      expect(line).toContain('(fx)');
+    it('includes emoji, name, key, summary, and raw pattern for chords', () => {
+      const line = formatBandStateLine('chords', 'note("<[c3,e3,g3] [f3,a3,c4]>").s("piano").gain(0.5)');
+      expect(line).toContain('🎼');
+      expect(line).toContain('CHORDS');
+      expect(line).toContain('(chords)');
       expect(line).toContain('[');
-      expect(line).toContain('hh');
-      expect(line).toContain('degradeBy(0.7)');
+      expect(line).toContain('c3');
+      expect(line).toContain('piano');
     });
 
     it('omits summary brackets for silence', () => {
@@ -315,8 +335,8 @@ describe('summarizePattern', () => {
       'stack(s("bd [~ bd] sd [bd ~]").bank("RolandTR909"), s("hh*4").gain(0.5).sometimes(x => x.gain(0.3)), s("~ ~ ~ cp").every(4, x => x.s("cr")))',
       'note("c1 ~ eb1 g1").s("sawtooth").lpf(600).gain(0.6)',
       'note("c5 bb4 ab4 g4 f4 eb4 d4 c4").s("piano").room(0.3).gain(0.7).sometimes(x => x.fast(2))',
-      'stack(s("cp*4").crush(4).distort(2).hpf(300).pan(sine.range(0,1)).gain(0.6), s("rim?").coarse(8).delay(0.25).hpf(500).degradeBy(0.4).fast(2))',
-      's("hh?").room(0.9).hpf(400).gain(0.3).degradeBy(0.7).pan(sine.range(0,1)).slow(2)',
+      'stack(note("<[a3,e4,a4] [d4,a4,d5] [e4,b4,e5] [a3,e4,a4]>").s("supersaw").gain(0.55), s("cp*4").hpf(400).gain(0.35).degradeBy(0.4))',
+      'note("<[c3,e3,g3] ~ [f3,a3,c4] ~>").s("gm_pad_warm").room(0.7).gain(0.35).slow(2)',
     ];
 
     it('parses all patterns in under 5ms total', () => {

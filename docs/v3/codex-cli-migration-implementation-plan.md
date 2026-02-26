@@ -65,7 +65,7 @@ Key behaviors to preserve during migration:
 Recommended GA approach: **manager-controlled Codex processes per logical agent** (not model-decided routing).
 
 1. Normal mode:
-- Replace `CodexProcess` with `CodexProcess` wrapper.
+- Replace legacy `ClaudeProcess` path with `CodexProcess` wrapper.
 - Preserve process-lifetime continuity as baseline behavior.
 - Treat session resume as optional optimization/fallback, not a correctness dependency.
 - Preserve websocket message payload contract where practical while moving endpoint naming to provider-neutral paths.
@@ -73,7 +73,7 @@ Recommended GA approach: **manager-controlled Codex processes per logical agent*
 2. Jam mode:
 - Keep `AgentProcessManager` orchestration pattern (deterministic, server-owned).
 - Replace `codex exec` workers with long-lived Codex CLI workers.
-- Maintain one active long-lived process per active band agent (`drums`, `bass`, `melody`, `fx`) for session duration.
+- Maintain one active long-lived process per active band agent (`drums`, `bass`, `melody`, `chords`) for session duration.
 - Enforce structured responses for each agent turn.
 - Keep jam-state ownership in manager and server-side `stack()` composition.
 - Use `gpt-5-codex-mini` as the default jam-agent model in GA.
@@ -84,7 +84,7 @@ Recommended GA approach: **manager-controlled Codex processes per logical agent*
 - Enforce hard toolless jam agents via dedicated profile and fail-closed startup checks.
 
 4. Frontend transport contract:
-- Move route from `/api/ai-ws` to `/api/ai-ws` in GA.
+- Move route from `/api/claude-ws` to `/api/ai-ws` in GA.
 - Rename `useAiTerminal` and related provider-specific identifiers to neutral names.
 - Preserve message payload schema (`text`, `tool_use`, `tool_result`, `status`, `error`, jam broadcast types) where possible.
 
@@ -178,7 +178,7 @@ Tasks:
 - migrate `.codex/agents/*.md` content to provider-agnostic location (for example `prompts/agents/` or `.codex/agents/`)
 - maintain `AGENT_META` and deterministic key mapping as canonical
 3. Enforce strict output shape for each agent turn:
-- `pattern`, `thoughts`, `reaction`
+- `pattern`, `thoughts`, `commentary`
 - reject/repair invalid responses
 4. Enforce hard toolless jam policy:
 - jam profile must disable tool usage and MCP access
