@@ -134,7 +134,17 @@ function createFakeProcess() {
 /** Send a stream-json response line from a fake agent process. */
 function sendAgentResponse(
   proc: ReturnType<typeof createFakeProcess>,
-  response: { pattern: string; thoughts: string; reaction: string }
+  response: {
+    pattern: string;
+    thoughts: string;
+    reaction: string;
+    decision?: {
+      tempo_delta_pct?: unknown;
+      energy_delta?: unknown;
+      arrangement_intent?: unknown;
+      confidence?: unknown;
+    };
+  }
 ) {
   // Send assistant message with the JSON response
   const assistantMsg = {
@@ -450,6 +460,167 @@ describe('AgentProcessManager turn serialization', () => {
     const snapshot = manager.getJamStateSnapshot();
     expect(snapshot.agents.drums?.status).toBe('timeout');
     expect(snapshot.agents.drums?.reaction).toContain('timed out');
+
+    await manager.stop();
+  });
+
+  it('accepts legacy payload without decision block', async () => {
+    const { manager, processes } = createTestManager();
+    const rawManager = manager as unknown as {
+      agentDecisions: Record<string, unknown>;
+    };
+
+    const startPromise = manager.start(['drums']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const drumsProc = getNthProcess(processes, 0);
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd sd")',
+      thoughts: 'Opening beat',
+      reaction: 'Ready',
+    });
+    await startPromise;
+
+    const snapshot = manager.getJamStateSnapshot();
+    expect(snapshot.agents.drums?.status).toBe('playing');
+    expect(snapshot.agents.drums?.pattern).toBe('s("bd sd")');
+    expect(rawManager.agentDecisions.drums).toBeUndefined();
+
+    await manager.stop();
+  });
+
+  it('accepts and stores normalized structured decision block', async () => {
+    const { manager, processes } = createTestManager();
+    const rawManager = manager as unknown as {
+      agentDecisions: Record<string, unknown>;
+    };
+
+    const startPromise = manager.start(['drums']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const drumsProc = getNthProcess(processes, 0);
+    sendRawAgentText(
+      drumsProc,
+      JSON.stringify({
+        pattern: 's("bd sd")',
+        thoughts: 'Pushing forward',
+        reaction: 'Leaning in',
+        decision: {
+          tempo_delta_pct: 72.4,
+          energy_delta: -4.8,
+          arrangement_intent: 'Strip Back',
+          confidence: 'HIGH',
+        },
+      })
+    );
+    await startPromise;
+
+    expect(rawManager.agentDecisions.drums).toEqual({
+      tempo_delta_pct: 50,
+      energy_delta: -3,
+      arrangement_intent: 'strip_back',
+      confidence: 'high',
+    });
+
+    await manager.stop();
+  });
+
+  it('handles partial decision block safely', async () => {
+    const { manager, processes } = createTestManager();
+    const rawManager = manager as unknown as {
+      agentDecisions: Record<string, unknown>;
+    };
+
+    const startPromise = manager.start(['drums']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const drumsProc = getNthProcess(processes, 0);
+    sendRawAgentText(
+      drumsProc,
+      JSON.stringify({
+        pattern: 's("bd sd cp sd")',
+        thoughts: 'Slightly more pressure',
+        reaction: 'Still steady',
+        decision: {
+          energy_delta: 1.8,
+        },
+      })
+    );
+    await startPromise;
+
+    expect(rawManager.agentDecisions.drums).toEqual({
+      energy_delta: 2,
+    });
+
+    const snapshot = manager.getJamStateSnapshot();
+    expect(snapshot.agents.drums?.status).toBe('playing');
+
+    await manager.stop();
+  });
+
+  it('tolerates invalid decision block without rejecting valid required fields', async () => {
+    const { manager, processes } = createTestManager();
+    const rawManager = manager as unknown as {
+      agentDecisions: Record<string, unknown>;
+    };
+
+    const startPromise = manager.start(['drums']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const drumsProc = getNthProcess(processes, 0);
+    sendRawAgentText(
+      drumsProc,
+      JSON.stringify({
+        pattern: 's("bd sd")',
+        thoughts: 'Holding pocket',
+        reaction: 'Locked',
+        decision: {
+          tempo_delta_pct: 'faster',
+          energy_delta: null,
+          arrangement_intent: { mode: 'build' },
+          confidence: 'certainly',
+        },
+      })
+    );
+    await startPromise;
+
+    const snapshot = manager.getJamStateSnapshot();
+    expect(snapshot.agents.drums?.status).toBe('playing');
+    expect(snapshot.agents.drums?.reaction).toBe('Locked');
+    expect(rawManager.agentDecisions.drums).toBeUndefined();
+
+    await manager.stop();
+  });
+
+  it('still rejects invalid top-level required schema even when decision block exists', async () => {
+    const { manager, processes } = createTestManager();
+    const rawManager = manager as unknown as {
+      agentDecisions: Record<string, unknown>;
+    };
+
+    const startPromise = manager.start(['drums']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const drumsProc = getNthProcess(processes, 0);
+    sendRawAgentText(
+      drumsProc,
+      JSON.stringify({
+        pattern: 's("bd sd")',
+        thoughts: 'Missing reaction should fail',
+        decision: {
+          tempo_delta_pct: 10,
+          energy_delta: 1,
+          arrangement_intent: 'build',
+          confidence: 'medium',
+        },
+      })
+    );
+    await startPromise;
+
+    const snapshot = manager.getJamStateSnapshot();
+    expect(snapshot.agents.drums?.status).toBe('timeout');
+    expect(snapshot.agents.drums?.reaction).toContain('timed out');
+    expect(rawManager.agentDecisions.drums).toBeUndefined();
 
     await manager.stop();
   });

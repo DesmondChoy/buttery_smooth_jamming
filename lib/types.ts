@@ -65,6 +65,25 @@ export interface MusicalContext {
   energy: number;
 }
 
+export type DecisionConfidence = 'low' | 'medium' | 'high';
+
+export type ArrangementIntent =
+  | 'build'
+  | 'breakdown'
+  | 'drop'
+  | 'strip_back'
+  | 'bring_forward'
+  | 'hold'
+  | 'no_change'
+  | 'transition';
+
+export interface StructuredMusicalDecision {
+  tempo_delta_pct?: number;
+  energy_delta?: number;
+  arrangement_intent?: ArrangementIntent;
+  confidence?: DecisionConfidence;
+}
+
 export interface AgentState {
   name: string;
   emoji: string;

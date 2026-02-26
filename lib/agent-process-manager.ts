@@ -9,6 +9,9 @@ import type {
   AgentThoughtPayload,
   AgentStatusPayload,
   JamStatePayload,
+  StructuredMusicalDecision,
+  DecisionConfidence,
+  ArrangementIntent,
 } from './types';
 import { AGENT_META } from './types';
 import { formatBandStateLine } from './pattern-parser';
@@ -45,6 +48,7 @@ interface AgentResponse {
   pattern: string;
   thoughts: string;
   reaction: string;
+  decision?: StructuredMusicalDecision;
 }
 
 // Per-agent Codex-backed session handle
@@ -64,6 +68,23 @@ interface AgentProcessManagerOptions {
 
 const AGENT_TIMEOUT_MS = 15000;
 const JAM_TOOLLESS_ARGS = ['--tools', '', '--strict-mcp-config'] as const;
+const ARRANGEMENT_INTENT_MAP: Record<string, ArrangementIntent> = {
+  build: 'build',
+  breakdown: 'breakdown',
+  drop: 'drop',
+  'strip back': 'strip_back',
+  'strip-back': 'strip_back',
+  strip_back: 'strip_back',
+  'bring forward': 'bring_forward',
+  'bring-forward': 'bring_forward',
+  bring_forward: 'bring_forward',
+  hold: 'hold',
+  'no change': 'no_change',
+  'no-change': 'no_change',
+  no_change: 'no_change',
+  transition: 'transition',
+};
+const DECISION_CONFIDENCE_SET = new Set<DecisionConfidence>(['low', 'medium', 'high']);
 
 /**
  * Manages per-agent Codex-backed sessions for jam mode.
@@ -74,6 +95,7 @@ export class AgentProcessManager {
   private agents = new Map<string, AgentProcess>();
   private agentPatterns: Record<string, string> = {};
   private agentStates: Record<string, AgentState> = {};
+  private agentDecisions: Record<string, StructuredMusicalDecision | undefined> = {};
   private musicalContext: MusicalContext = randomMusicalContext();
   private activeAgents: string[] = [];
   private broadcast: BroadcastFn;
@@ -149,6 +171,7 @@ export class AgentProcessManager {
     this.tickScheduled = false;
     this.sessionId = 'direct-' + Date.now();
     this.musicalContext = randomMusicalContext();
+    this.agentDecisions = {};
 
     // Initialize state for each agent
     for (const key of activeAgents) {
@@ -165,6 +188,7 @@ export class AgentProcessManager {
         status: 'idle',
         lastUpdated: new Date().toISOString(),
       };
+      this.agentDecisions[key] = undefined;
     }
 
     // Prepare one Codex-backed session per agent
@@ -278,6 +302,7 @@ export class AgentProcessManager {
 
     this.agentPatterns = {};
     this.agentStates = {};
+    this.agentDecisions = {};
     this.activeAgents = [];
     this.sessionId = 'direct-0';
     this.turnInProgress = Promise.resolve();
@@ -627,7 +652,63 @@ export class AgentProcessManager {
       pattern: parsed.pattern,
       thoughts: parsed.thoughts,
       reaction: parsed.reaction,
+      decision: this.normalizeDecisionBlock(parsed.decision),
     };
+  }
+
+  private normalizeNumericDecisionValue(
+    value: unknown,
+    min: number,
+    max: number
+  ): number | undefined {
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
+      return undefined;
+    }
+    const rounded = Math.round(value);
+    return Math.min(max, Math.max(min, rounded));
+  }
+
+  private normalizeDecisionConfidence(value: unknown): DecisionConfidence | undefined {
+    if (typeof value !== 'string') return undefined;
+    const normalized = value.trim().toLowerCase() as DecisionConfidence;
+    return DECISION_CONFIDENCE_SET.has(normalized) ? normalized : undefined;
+  }
+
+  private normalizeArrangementIntent(value: unknown): ArrangementIntent | undefined {
+    if (typeof value !== 'string') return undefined;
+    const normalized = value.trim().toLowerCase();
+    return ARRANGEMENT_INTENT_MAP[normalized];
+  }
+
+  private normalizeDecisionBlock(value: unknown): StructuredMusicalDecision | undefined {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return undefined;
+    }
+
+    const raw = value as Record<string, unknown>;
+    const normalized: StructuredMusicalDecision = {};
+
+    const tempoDelta = this.normalizeNumericDecisionValue(raw.tempo_delta_pct, -50, 50);
+    if (tempoDelta !== undefined) {
+      normalized.tempo_delta_pct = tempoDelta;
+    }
+
+    const energyDelta = this.normalizeNumericDecisionValue(raw.energy_delta, -3, 3);
+    if (energyDelta !== undefined) {
+      normalized.energy_delta = energyDelta;
+    }
+
+    const arrangementIntent = this.normalizeArrangementIntent(raw.arrangement_intent);
+    if (arrangementIntent !== undefined) {
+      normalized.arrangement_intent = arrangementIntent;
+    }
+
+    const confidence = this.normalizeDecisionConfidence(raw.confidence);
+    if (confidence !== undefined) {
+      normalized.confidence = confidence;
+    }
+
+    return Object.keys(normalized).length > 0 ? normalized : undefined;
   }
 
   private formatCodexErrorForLog(raw: string): string {
@@ -854,6 +935,7 @@ export class AgentProcessManager {
     if (!state) return;
 
     if (response) {
+      this.agentDecisions[key] = response.decision;
       const pattern = response.pattern || 'silence';
 
       // no_change: keep existing pattern, update thoughts/reaction only
