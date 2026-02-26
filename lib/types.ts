@@ -82,6 +82,8 @@ export interface StructuredMusicalDecision {
   energy_delta?: number;
   arrangement_intent?: ArrangementIntent;
   confidence?: DecisionConfidence;
+  suggested_key?: string;           // e.g. "Eb major"
+  suggested_chords?: string[];      // e.g. ["Am", "F", "C", "G"]
 }
 
 export interface AgentState {

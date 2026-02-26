@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  deriveChordProgression,
   detectRelativeMusicalContextCues,
   deriveScale,
   parseDeterministicMusicalContextChanges,
@@ -442,5 +443,27 @@ describe('detectRelativeMusicalContextCues', () => {
       tempo: null,
       energy: null,
     });
+  });
+});
+
+describe('deriveChordProgression', () => {
+  it('returns I-vi-IV-V for major keys', () => {
+    expect(deriveChordProgression('C major')).toEqual(['C', 'Am', 'F', 'G']);
+    expect(deriveChordProgression('G major')).toEqual(['G', 'Em', 'C', 'D']);
+  });
+
+  it('returns i-VI-III-VII for minor keys', () => {
+    expect(deriveChordProgression('C minor')).toEqual(['Cm', 'Ab', 'Eb', 'Bb']);
+    expect(deriveChordProgression('A minor')).toEqual(['Am', 'F', 'C', 'G']);
+  });
+
+  it('handles flat keys', () => {
+    expect(deriveChordProgression('Eb major')).toEqual(['Eb', 'Cm', 'Ab', 'Bb']);
+  });
+
+  it('returns null for invalid key strings', () => {
+    expect(deriveChordProgression('H major')).toBeNull();
+    expect(deriveChordProgression('not a key')).toBeNull();
+    expect(deriveChordProgression('')).toBeNull();
   });
 });

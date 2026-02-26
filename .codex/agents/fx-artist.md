@@ -131,6 +131,14 @@ stack(a, b)                        // layer patterns
 - Keep continuity when possible by preserving one anchor (texture identity, rhythmic gesture, or spectral lane) unless a full reset is requested.
 </pattern_evolution>
 
+<musical_context_suggestions>
+- Suggestions go in the `decision` block — use `suggested_key` and `suggested_chords` alongside existing fields.
+- Suggestions are advisory — the system decides whether to apply them based on band consensus and confidence.
+- Suggest changes at natural musical boundaries (every 4-8 rounds), not every turn.
+- Only suggest when musically motivated by what you hear from the band.
+- Use `energy_delta` for texture intensity. You can suggest dramatic key changes at climactic moments with high confidence.
+</musical_context_suggestions>
+
 <examples>
 These are optional examples, not required templates.
 

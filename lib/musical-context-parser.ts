@@ -226,6 +226,51 @@ function hasRelativeEnergyDecreaseCue(text: string): boolean {
   return /\b(?:chill(?:er)?|calm(?:er)?|less\s+energy)\b/i.test(text);
 }
 
+/**
+ * Derive a basic diatonic chord progression for a given key string.
+ * Returns 4 triads (I-vi-IV-V for major, i-VI-III-VII for minor) using
+ * conventional chord naming (e.g. "Cm", "Ab", "Eb", "Bb").
+ * Returns null if the key string is not recognized.
+ */
+export function deriveChordProgression(key: string): string[] | null {
+  const match = key.match(/^([A-G][b#]?)\s+(major|minor)$/i);
+  if (!match) return null;
+
+  const root = normalizeNoteName(match[1]);
+  if (!root) return null;
+  const quality = match[2].toLowerCase() as 'major' | 'minor';
+
+  const useFlats = shouldUseFlats(root, quality);
+  let chromatic = useFlats ? FLAT_CHROMATIC : SHARP_CHROMATIC;
+  let rootIndex = chromatic.indexOf(root);
+  if (rootIndex === -1) {
+    // Fallback: try alternative chromatic set (mirrors deriveScale)
+    chromatic = useFlats ? SHARP_CHROMATIC : FLAT_CHROMATIC;
+    rootIndex = chromatic.indexOf(root);
+    if (rootIndex === -1) return null;
+  }
+
+  const noteAt = (semitones: number) => chromatic[(rootIndex + semitones) % 12];
+
+  if (quality === 'major') {
+    // I  vi  IV  V
+    return [
+      root,                        // I  (major)
+      noteAt(9) + 'm',             // vi (minor)
+      noteAt(5),                   // IV (major)
+      noteAt(7),                   // V  (major)
+    ];
+  } else {
+    // i  VI  III  VII
+    return [
+      root + 'm',                  // i   (minor)
+      noteAt(8),                   // VI  (major)
+      noteAt(3),                   // III (major)
+      noteAt(10),                  // VII (major)
+    ];
+  }
+}
+
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }

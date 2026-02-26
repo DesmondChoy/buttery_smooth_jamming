@@ -16,6 +16,8 @@ import type {
 import { AGENT_META } from './types';
 import { formatBandStateLine } from './pattern-parser';
 import {
+  deriveChordProgression,
+  deriveScale,
   detectRelativeMusicalContextCues,
   parseDeterministicMusicalContextChanges,
 } from './musical-context-parser';
@@ -510,10 +512,12 @@ export class AgentProcessManager {
       '',
       'Output only one JSON object.',
       'Required keys: pattern, thoughts, reaction.',
-      'Optional key: decision (tempo_delta_pct, energy_delta, arrangement_intent, confidence).',
+      'Optional key: decision (tempo_delta_pct, energy_delta, arrangement_intent, confidence, suggested_key, suggested_chords).',
       'Use decision only when relevant; omit decision or any field when not relevant or not confident.',
       'tempo_delta_pct is relative percent vs current BPM (positive=faster, negative=slower).',
       'energy_delta is relative energy steps (positive=more energy, negative=less energy).',
+      'suggested_key is a key string like "Eb major" or "D minor" — only when you feel a modulation is needed.',
+      'suggested_chords is an array like ["Am", "F", "C", "G"] — only when you want to propose a new progression.',
     ].join('\n');
   }
 
@@ -710,6 +714,20 @@ export class AgentProcessManager {
     return ARRANGEMENT_INTENT_MAP[normalized];
   }
 
+  private normalizeSuggestedKey(value: unknown): string | undefined {
+    if (typeof value !== 'string') return undefined;
+    const match = value.trim().match(/^([A-Ga-g])([bB#]?)\s+(major|minor)$/i);
+    if (!match) return undefined;
+
+    const root = match[1].toUpperCase();
+    const accidental = match[2] === 'B' ? 'b' : match[2];
+    const quality = match[3].toLowerCase();
+    const normalized = `${root}${accidental} ${quality}`;
+
+    // Reuse parser validation so accepted suggestions are actually applicable.
+    return deriveScale(normalized) ? normalized : undefined;
+  }
+
   private normalizeDecisionBlock(value: unknown): StructuredMusicalDecision | undefined {
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
       return undefined;
@@ -738,6 +756,21 @@ export class AgentProcessManager {
     const confidence = this.normalizeDecisionConfidence(raw.confidence);
     if (confidence !== undefined) {
       normalized.confidence = confidence;
+    }
+
+    const suggestedKey = this.normalizeSuggestedKey(raw.suggested_key);
+    if (suggestedKey !== undefined) {
+      normalized.suggested_key = suggestedKey;
+    }
+
+    // Validate suggested_chords: must be a non-empty array of strings
+    if (Array.isArray(raw.suggested_chords) && raw.suggested_chords.length > 0) {
+      const validChords = raw.suggested_chords.filter(
+        (c: unknown) => typeof c === 'string' && c.trim().length > 0
+      ) as string[];
+      if (validChords.length > 0) {
+        normalized.suggested_chords = validChords;
+      }
     }
 
     return Object.keys(normalized).length > 0 ? normalized : undefined;
@@ -843,6 +876,128 @@ export class AgentProcessManager {
 
     // Minimal code-owned guardrails: normalized decision ranges + final context clamps.
     this.musicalContext = { ...this.musicalContext, ...changes };
+    return changes;
+  }
+
+  /**
+   * Aggregate tempo/energy decisions from auto-tick responses.
+   * Simpler than directive-turn version: no boss cue direction to match.
+   * Applies 0.5x dampening to prevent runaway drift (auto-ticks fire every 30s).
+   */
+  private applyModelRelativeContextDeltaForAutoTick(
+    responses: Array<AgentResponse | null>
+  ): Partial<MusicalContext> | null {
+    const changes: Partial<MusicalContext> = {};
+    const current = this.musicalContext;
+    const AUTO_TICK_DAMPENING = 0.5;
+
+    // Aggregate tempo_delta_pct
+    const tempoValues: number[] = [];
+    for (const response of responses) {
+      const decision = response?.decision;
+      if (!decision) continue;
+      const raw = decision.tempo_delta_pct;
+      if (typeof raw !== 'number' || !Number.isFinite(raw) || raw === 0) continue;
+      const multiplier = this.getDecisionConfidenceMultiplier(decision.confidence);
+      if (multiplier === 0) continue;
+      tempoValues.push(raw * multiplier);
+    }
+    if (tempoValues.length > 0) {
+      const avg = tempoValues.reduce((s, v) => s + v, 0) / tempoValues.length;
+      const dampened = avg * AUTO_TICK_DAMPENING;
+      const bpmDelta = this.roundHalfAwayFromZero((current.bpm * dampened) / 100);
+      if (bpmDelta !== 0) {
+        const nextBpm = this.clampNumeric(current.bpm + bpmDelta, 60, 300);
+        if (nextBpm !== current.bpm) {
+          changes.bpm = nextBpm;
+        }
+      }
+    }
+
+    // Aggregate energy_delta
+    const energyValues: number[] = [];
+    for (const response of responses) {
+      const decision = response?.decision;
+      if (!decision) continue;
+      const raw = decision.energy_delta;
+      if (typeof raw !== 'number' || !Number.isFinite(raw) || raw === 0) continue;
+      const multiplier = this.getDecisionConfidenceMultiplier(decision.confidence);
+      if (multiplier === 0) continue;
+      energyValues.push(raw * multiplier);
+    }
+    if (energyValues.length > 0) {
+      const avg = energyValues.reduce((s, v) => s + v, 0) / energyValues.length;
+      const dampened = avg * AUTO_TICK_DAMPENING;
+      const energyDelta = this.roundHalfAwayFromZero(dampened);
+      if (energyDelta !== 0) {
+        const nextEnergy = this.clampNumeric(current.energy + energyDelta, 1, 10);
+        if (nextEnergy !== current.energy) {
+          changes.energy = nextEnergy;
+        }
+      }
+    }
+
+    if (Object.keys(changes).length === 0) return null;
+
+    this.musicalContext = { ...this.musicalContext, ...changes };
+    return changes;
+  }
+
+  /**
+   * Process agent key/chord suggestions from decision blocks.
+   * - Key: only applied if 2+ agents suggest the same key (consensus).
+   * - Chords: only applied if a single agent suggests with high confidence.
+   * When a key change is applied, scale and chords are auto-derived.
+   */
+  private applyContextSuggestions(
+    responses: Array<AgentResponse | null>
+  ): Partial<MusicalContext> | null {
+    const changes: Partial<MusicalContext> = {};
+
+    // Collect high-confidence key suggestions and count consensus.
+    // Key modulation mutates global harmonic context, so we gate it more strictly
+    // than presence-only suggestions.
+    const keyCounts = new Map<string, number>();
+    for (const response of responses) {
+      const decision = response?.decision;
+      const key = decision?.suggested_key;
+      if (!key || decision.confidence !== 'high') continue;
+      const normalized = key.trim();
+      keyCounts.set(normalized, (keyCounts.get(normalized) || 0) + 1);
+    }
+
+    // Apply key if 2+ agents agree
+    let keyApplied = false;
+    keyCounts.forEach((count, suggestedKey) => {
+      if (keyApplied) return;
+      if (count >= 2 && suggestedKey !== this.musicalContext.key) {
+        const scale = deriveScale(suggestedKey);
+        if (scale) {
+          changes.key = suggestedKey;
+          changes.scale = scale;
+          const chords = deriveChordProgression(suggestedKey);
+          if (chords) {
+            changes.chordProgression = chords;
+          }
+          keyApplied = true;
+        }
+      }
+    });
+
+    // Apply chord suggestions (high confidence only, skip if key was just changed)
+    if (!keyApplied) {
+      for (const response of responses) {
+        const decision = response?.decision;
+        if (!decision?.suggested_chords || decision.confidence !== 'high') continue;
+        changes.chordProgression = decision.suggested_chords;
+        break; // first high-confidence suggestion wins
+      }
+    }
+
+    if (Object.keys(changes).length === 0) return null;
+
+    this.musicalContext = { ...this.musicalContext, ...changes };
+    this.broadcastWs('musical_context_update', { musicalContext: { ...this.musicalContext } });
     return changes;
   }
 
@@ -1046,6 +1201,7 @@ export class AgentProcessManager {
           '',
           'Listen to the band. If the music calls for change, evolve your pattern.',
           'If your groove serves the song, respond with "no_change" as your pattern.',
+          'Include a decision block if you feel the musical context should evolve.',
         ].join('\n');
 
         this.setAgentStatus(key, 'thinking');
@@ -1061,6 +1217,16 @@ export class AgentProcessManager {
         const key = activeTargets[i];
         const response = responses[i];
         this.applyAgentResponse(key, response);
+      }
+
+      // Aggregate autonomous context drift from agent decisions
+      const autoTickDelta = this.applyModelRelativeContextDeltaForAutoTick(responses);
+      if (autoTickDelta) {
+        console.log('[AgentManager] Auto-tick context drift:', autoTickDelta);
+      }
+      const suggestionDelta = this.applyContextSuggestions(responses);
+      if (suggestionDelta) {
+        console.log('[AgentManager] Agent context suggestions applied:', suggestionDelta);
       }
 
       this.composeAndBroadcast();

@@ -143,6 +143,8 @@ function sendAgentResponse(
       energy_delta?: unknown;
       arrangement_intent?: unknown;
       confidence?: unknown;
+      suggested_key?: unknown;
+      suggested_chords?: unknown;
     };
   }
 ) {
@@ -521,6 +523,7 @@ describe('AgentProcessManager turn serialization', () => {
           energy_delta: -4.8,
           arrangement_intent: 'Strip Back',
           confidence: 'HIGH',
+          suggested_key: 'EB major',
         },
       })
     );
@@ -531,6 +534,7 @@ describe('AgentProcessManager turn serialization', () => {
       energy_delta: -3,
       arrangement_intent: 'strip_back',
       confidence: 'high',
+      suggested_key: 'Eb major',
     });
 
     await manager.stop();
@@ -1684,6 +1688,431 @@ describe('AgentProcessManager jam state snapshots', () => {
     expect(snapshot.musicalContext).toEqual(latestJamState.musicalContext);
     expect(snapshot.agents).toEqual(latestJamState.agents);
     expect(snapshot.activeAgents).toEqual(latestJamState.activeAgents);
+
+    await manager.stop();
+  });
+});
+
+describe('AgentProcessManager auto-tick context drift', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.clearAllMocks();
+    vi.mocked(fs.existsSync).mockImplementation(default_exists_sync_impl);
+    setupRuntimeCheckMocks();
+  });
+
+  afterEach(async () => {
+    vi.useRealTimers();
+  });
+
+  it('auto-tick aggregates tempo/energy decisions with dampening', async () => {
+    const { manager, broadcast, processes } = createTestManager();
+
+    const startPromise = manager.start(['drums', 'bass']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Respond to jam-start
+    for (const key of ['drums', 'bass']) {
+      const proc = getProcessByKey(processes, key);
+      sendAgentResponse(proc, {
+        pattern: `s("${key}")`,
+        thoughts: 'Opening',
+        reaction: 'Go',
+      });
+    }
+    await startPromise;
+
+    // Initial context: BPM 120, energy 5
+
+    // Trigger auto-tick
+    vi.advanceTimersByTime(30000);
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Both agents suggest tempo increase (+10%) and energy increase (+2) with high confidence
+    for (const key of ['drums', 'bass']) {
+      const proc = getProcessByKey(processes, key);
+      sendAgentResponse(proc, {
+        pattern: 'no_change',
+        thoughts: 'Building energy',
+        reaction: 'Let us go!',
+        decision: {
+          tempo_delta_pct: 10,
+          energy_delta: 2,
+          confidence: 'high',
+        },
+      });
+    }
+
+    await vi.advanceTimersByTimeAsync(0);
+
+    const jamState = getLatestJamState(broadcast);
+    expect(jamState).toBeDefined();
+    // 10% of 120 = 12, dampened 0.5x = 6 → BPM 126
+    expect(jamState!.musicalContext.bpm).toBe(126);
+    // energy_delta 2, dampened 0.5x = 1 → energy 6
+    expect(jamState!.musicalContext.energy).toBe(6);
+
+    await manager.stop();
+  });
+
+  it('auto-tick ignores low-confidence decisions', async () => {
+    const { manager, broadcast, processes } = createTestManager();
+
+    const startPromise = manager.start(['drums']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    sendAgentResponse(getProcessByKey(processes, 'drums'), {
+      pattern: 's("bd")',
+      thoughts: 'Opening',
+      reaction: 'Go',
+    });
+    await startPromise;
+
+    vi.advanceTimersByTime(30000);
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Low confidence → multiplier 0 → effectively zero
+    sendAgentResponse(getProcessByKey(processes, 'drums'), {
+      pattern: 'no_change',
+      thoughts: 'Unsure',
+      reaction: 'Hmm',
+      decision: {
+        tempo_delta_pct: 20,
+        energy_delta: 3,
+        confidence: 'low',
+      },
+    });
+
+    await vi.advanceTimersByTimeAsync(0);
+
+    const jamState = getLatestJamState(broadcast);
+    expect(jamState).toBeDefined();
+    // Nothing should change — low confidence produces 0
+    expect(jamState!.musicalContext.bpm).toBe(120);
+    expect(jamState!.musicalContext.energy).toBe(5);
+
+    await manager.stop();
+  });
+
+  it('auto-tick clamps BPM and energy to bounds', async () => {
+    const { manager, broadcast, processes } = createTestManager();
+
+    const startPromise = manager.start(['drums', 'bass']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    for (const key of ['drums', 'bass']) {
+      sendAgentResponse(getProcessByKey(processes, key), {
+        pattern: `s("${key}")`,
+        thoughts: 'Opening',
+        reaction: 'Go',
+      });
+    }
+    await startPromise;
+
+    vi.advanceTimersByTime(30000);
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Both agents suggest max increase
+    for (const key of ['drums', 'bass']) {
+      sendAgentResponse(getProcessByKey(processes, key), {
+        pattern: 'no_change',
+        thoughts: 'Max it',
+        reaction: 'Full throttle',
+        decision: {
+          tempo_delta_pct: 50,
+          energy_delta: 3,
+          confidence: 'high',
+        },
+      });
+    }
+
+    await vi.advanceTimersByTimeAsync(0);
+
+    const jamState = getLatestJamState(broadcast);
+    expect(jamState).toBeDefined();
+    // 50% of 120 = 60, dampened 0.5x = 30 → 150, clamped to 300 (within bounds)
+    expect(jamState!.musicalContext.bpm).toBe(150);
+    // energy 3, dampened 0.5x = 1.5, rounded = 2 → 5+2=7, clamped to 10 (within bounds)
+    expect(jamState!.musicalContext.energy).toBe(7);
+
+    await manager.stop();
+  });
+});
+
+describe('AgentProcessManager context suggestions', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.clearAllMocks();
+    vi.mocked(fs.existsSync).mockImplementation(default_exists_sync_impl);
+    setupRuntimeCheckMocks();
+  });
+
+  afterEach(async () => {
+    vi.useRealTimers();
+  });
+
+  it('applies key change when 2+ agents suggest the same key', async () => {
+    const { manager, broadcast, processes } = createTestManager();
+
+    const startPromise = manager.start(['drums', 'bass', 'melody']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    for (const key of ['drums', 'bass', 'melody']) {
+      sendAgentResponse(getProcessByKey(processes, key), {
+        pattern: `s("${key}")`,
+        thoughts: 'Opening',
+        reaction: 'Go',
+      });
+    }
+    await startPromise;
+
+    // Initial key: "C minor"
+
+    vi.advanceTimersByTime(30000);
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Melody and bass both suggest Eb major
+    sendAgentResponse(getProcessByKey(processes, 'drums'), {
+      pattern: 'no_change',
+      thoughts: 'Steady',
+      reaction: 'Staying put',
+    });
+    sendAgentResponse(getProcessByKey(processes, 'bass'), {
+      pattern: 'no_change',
+      thoughts: 'Following melody',
+      reaction: 'Eb sounds right',
+      decision: { suggested_key: 'Eb major', confidence: 'high' },
+    });
+    sendAgentResponse(getProcessByKey(processes, 'melody'), {
+      pattern: 'no_change',
+      thoughts: 'Time for relative major',
+      reaction: 'Modulating to Eb',
+      decision: { suggested_key: 'Eb major', confidence: 'high' },
+    });
+
+    await vi.advanceTimersByTimeAsync(0);
+
+    const jamState = getLatestJamState(broadcast);
+    expect(jamState).toBeDefined();
+    expect(jamState!.musicalContext.key).toBe('Eb major');
+    expect(jamState!.musicalContext.scale).toEqual(['Eb', 'F', 'G', 'Ab', 'Bb', 'C', 'D']);
+
+    await manager.stop();
+  });
+
+  it('applies key change when suggestions differ only by casing', async () => {
+    const { manager, broadcast, processes } = createTestManager();
+
+    const startPromise = manager.start(['drums', 'bass', 'melody']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    for (const key of ['drums', 'bass', 'melody']) {
+      sendAgentResponse(getProcessByKey(processes, key), {
+        pattern: `s("${key}")`,
+        thoughts: 'Opening',
+        reaction: 'Go',
+      });
+    }
+    await startPromise;
+
+    vi.advanceTimersByTime(30000);
+    await vi.advanceTimersByTimeAsync(0);
+
+    sendAgentResponse(getProcessByKey(processes, 'drums'), {
+      pattern: 'no_change',
+      thoughts: 'Steady',
+      reaction: 'Holding',
+    });
+    sendAgentResponse(getProcessByKey(processes, 'bass'), {
+      pattern: 'no_change',
+      thoughts: 'Relative major feels right',
+      reaction: 'Eb?',
+      decision: { suggested_key: 'eb major', confidence: 'high' },
+    });
+    sendAgentResponse(getProcessByKey(processes, 'melody'), {
+      pattern: 'no_change',
+      thoughts: 'Agree on modulation',
+      reaction: 'EB major',
+      decision: { suggested_key: 'EB major', confidence: 'high' },
+    });
+
+    await vi.advanceTimersByTimeAsync(0);
+
+    const jamState = getLatestJamState(broadcast);
+    expect(jamState).toBeDefined();
+    expect(jamState!.musicalContext.key).toBe('Eb major');
+    expect(jamState!.musicalContext.scale).toEqual(['Eb', 'F', 'G', 'Ab', 'Bb', 'C', 'D']);
+
+    await manager.stop();
+  });
+
+  it('does not apply key change when only 1 agent suggests it', async () => {
+    const { manager, broadcast, processes } = createTestManager();
+
+    const startPromise = manager.start(['drums', 'bass']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    for (const key of ['drums', 'bass']) {
+      sendAgentResponse(getProcessByKey(processes, key), {
+        pattern: `s("${key}")`,
+        thoughts: 'Opening',
+        reaction: 'Go',
+      });
+    }
+    await startPromise;
+
+    vi.advanceTimersByTime(30000);
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Only bass suggests key change
+    sendAgentResponse(getProcessByKey(processes, 'drums'), {
+      pattern: 'no_change',
+      thoughts: 'Steady',
+      reaction: 'No change',
+    });
+    sendAgentResponse(getProcessByKey(processes, 'bass'), {
+      pattern: 'no_change',
+      thoughts: 'Want to modulate',
+      reaction: 'D major?',
+      decision: { suggested_key: 'D major', confidence: 'high' },
+    });
+
+    await vi.advanceTimersByTimeAsync(0);
+
+    const jamState = getLatestJamState(broadcast);
+    expect(jamState).toBeDefined();
+    expect(jamState!.musicalContext.key).toBe('C minor'); // unchanged
+
+    await manager.stop();
+  });
+
+  it('does not apply key change when consensus is low confidence', async () => {
+    const { manager, broadcast, processes } = createTestManager();
+
+    const startPromise = manager.start(['drums', 'bass', 'melody']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    for (const key of ['drums', 'bass', 'melody']) {
+      sendAgentResponse(getProcessByKey(processes, key), {
+        pattern: `s("${key}")`,
+        thoughts: 'Opening',
+        reaction: 'Go',
+      });
+    }
+    await startPromise;
+
+    vi.advanceTimersByTime(30000);
+    await vi.advanceTimersByTimeAsync(0);
+
+    sendAgentResponse(getProcessByKey(processes, 'drums'), {
+      pattern: 'no_change',
+      thoughts: 'Steady',
+      reaction: 'No change',
+    });
+    sendAgentResponse(getProcessByKey(processes, 'bass'), {
+      pattern: 'no_change',
+      thoughts: 'Maybe modulate',
+      reaction: 'Not sure',
+      decision: { suggested_key: 'Eb major', confidence: 'low' },
+    });
+    sendAgentResponse(getProcessByKey(processes, 'melody'), {
+      pattern: 'no_change',
+      thoughts: 'Could modulate later',
+      reaction: 'Tentative',
+      decision: { suggested_key: 'Eb major', confidence: 'low' },
+    });
+
+    await vi.advanceTimersByTimeAsync(0);
+
+    const jamState = getLatestJamState(broadcast);
+    expect(jamState).toBeDefined();
+    expect(jamState!.musicalContext.key).toBe('C minor');
+    expect(jamState!.musicalContext.scale).toEqual(['C', 'D', 'Eb', 'F', 'G', 'Ab', 'Bb']);
+
+    await manager.stop();
+  });
+
+  it('applies chord suggestion with high confidence', async () => {
+    const { manager, broadcast, processes } = createTestManager();
+
+    const startPromise = manager.start(['drums', 'melody']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    for (const key of ['drums', 'melody']) {
+      sendAgentResponse(getProcessByKey(processes, key), {
+        pattern: `s("${key}")`,
+        thoughts: 'Opening',
+        reaction: 'Go',
+      });
+    }
+    await startPromise;
+
+    vi.advanceTimersByTime(30000);
+    await vi.advanceTimersByTimeAsync(0);
+
+    sendAgentResponse(getProcessByKey(processes, 'drums'), {
+      pattern: 'no_change',
+      thoughts: 'Steady',
+      reaction: 'No change',
+    });
+    sendAgentResponse(getProcessByKey(processes, 'melody'), {
+      pattern: 'no_change',
+      thoughts: 'New progression',
+      reaction: 'Trying a ii-V-I',
+      decision: {
+        suggested_chords: ['Dm', 'G', 'Cm'],
+        confidence: 'high',
+      },
+    });
+
+    await vi.advanceTimersByTimeAsync(0);
+
+    const jamState = getLatestJamState(broadcast);
+    expect(jamState).toBeDefined();
+    expect(jamState!.musicalContext.chordProgression).toEqual(['Dm', 'G', 'Cm']);
+
+    await manager.stop();
+  });
+
+  it('does not apply chord suggestion with low confidence', async () => {
+    const { manager, broadcast, processes } = createTestManager();
+
+    const startPromise = manager.start(['drums', 'melody']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    for (const key of ['drums', 'melody']) {
+      sendAgentResponse(getProcessByKey(processes, key), {
+        pattern: `s("${key}")`,
+        thoughts: 'Opening',
+        reaction: 'Go',
+      });
+    }
+    await startPromise;
+
+    vi.advanceTimersByTime(30000);
+    await vi.advanceTimersByTimeAsync(0);
+
+    sendAgentResponse(getProcessByKey(processes, 'drums'), {
+      pattern: 'no_change',
+      thoughts: 'Steady',
+      reaction: 'No change',
+    });
+    sendAgentResponse(getProcessByKey(processes, 'melody'), {
+      pattern: 'no_change',
+      thoughts: 'Maybe change chords',
+      reaction: 'Not sure though',
+      decision: {
+        suggested_chords: ['Am', 'F', 'C', 'G'],
+        confidence: 'medium',
+      },
+    });
+
+    await vi.advanceTimersByTimeAsync(0);
+
+    const jamState = getLatestJamState(broadcast);
+    expect(jamState).toBeDefined();
+    // Original chords unchanged
+    expect(jamState!.musicalContext.chordProgression).toEqual(['Cm', 'Ab', 'Eb', 'Bb']);
 
     await manager.stop();
   });
