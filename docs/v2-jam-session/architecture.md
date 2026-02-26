@@ -149,6 +149,11 @@ buttery_smooth_jamming/
 │   ├── musical-context-parser.ts    # Parses key/BPM/energy from boss directives
 │   ├── agent-status-ui.ts           # Status label/color mapping for jam agent UI
 │   ├── jam-admission.ts             # Jam admission/concurrency limit decisions
+│   ├── jam-agent-shared-policy.ts   # Shared policy prompt for all jam agents
+│   ├── genre-energy-guidance.ts     # Genre-aware energy guidance builder
+│   ├── musical-context-presets.ts   # Randomized starting contexts for jam sessions
+│   ├── codex-runtime-checks.ts     # Codex binary/auth/profile startup validation
+│   ├── runtime-factory.ts           # Runtime selection (Codex/provider-neutral)
 │   ├── strudel-reference.md         # Strudel API reference injected into agent prompts
 │   └── __tests__/
 │       ├── pattern-parser.test.ts          # Pattern parser unit tests
@@ -193,6 +198,7 @@ buttery_smooth_jamming/
 | `useAiTerminal` / `useRuntimeTerminal` | Runtime streaming + jam broadcast forwarding | Both |
 | `AgentProcessManager` | Manages per-agent Codex-backed jam sessions | Jam (server) |
 | `CodexProcess`/`ClaudeProcess` | Normal-mode runtime implementation | Normal (server) |
+| `musical-context-parser.ts` | Deterministic key/BPM/energy/chord parsing from directives | Jam (server) |
 | MCP Server | Normal-mode tool execution + user message queue | Normal (server) |
 
 ## Key Types
@@ -211,6 +217,17 @@ const AGENT_META: Record<string, {
   melody: { key: 'melody', name: 'ARIA',   emoji: '🎹', mention: '@ARIA',   colors: { ... } },
   fx:     { key: 'fx',     name: 'GLITCH', emoji: '🎛️', mention: '@GLITCH', colors: { ... } },
 };
+
+// lib/types.ts — Structured musical decisions (bsj-bx1)
+interface StructuredMusicalDecision {
+  tempo_delta_pct?: number;    // -50..50
+  energy_delta?: number;       // -3..3
+  arrangement_intent?: 'build' | 'breakdown' | 'drop' | 'strip_back'
+                      | 'bring_forward' | 'hold' | 'no_change' | 'transition';
+  confidence?: 'low' | 'medium' | 'high';
+  suggested_key?: string;      // e.g. "Eb major"
+  suggested_chords?: string[]; // e.g. ["Am", "F", "C", "G"]
+}
 ```
 
 ## Latency

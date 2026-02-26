@@ -146,11 +146,36 @@ Agents don't just respond to boss directives — they autonomously evolve their 
 
 **Key detail:** `no_change` is handled specially in `applyAgentResponse()` — it preserves the existing pattern in `agentPatterns[key]` while still updating `thoughts` and `reaction`. On the first round, if no pattern exists yet, it falls back to `"silence"`.
 
+**Decision aggregation (bsj-bx1.8):** Auto-tick now aggregates `decision` blocks from all agent responses:
+1. Tempo/energy deltas are averaged across agents, scaled by confidence, then dampened by 0.5x (`AUTO_TICK_DAMPENING`) to prevent runaway drift.
+2. Agent `suggested_key` and `suggested_chords` are processed via consensus rules (see Section 11).
+3. Context changes broadcast `musical_context_update` to all agents so the next turn sees the updated state.
+
 ## 10. Agent Strudel Reference Injection
 
 Each agent process receives a shared Strudel API reference (`lib/strudel-reference.md`) prepended to its system prompt. This gives agents knowledge of valid Strudel functions, mini-notation syntax, and available sound banks without relying on tool definitions.
 
 **Loaded at:** `AgentProcessManager` constructor reads the file once and caches it in `this.strudelReference`. It's injected into every agent's initial prompt context.
+
+## 11. Agent Context Suggestions (bsj-bx1.8)
+
+Agents can suggest harmonic context changes via `suggested_key` and `suggested_chords` fields in their structured decision blocks. These suggestions are processed by `applyContextSuggestions()` in `AgentProcessManager`.
+
+**Consensus rules:**
+- **Key changes** require 2+ agents with `high` confidence suggesting the same key. This is intentionally strict because key modulation affects global harmonic context for all agents.
+- **Chord changes** require a single agent with `high` confidence. The first high-confidence chord suggestion wins.
+- If a key change is applied, scale and chord progression are auto-derived via `deriveScale()` and `deriveChordProgression()`.
+- If a key was just changed, chord-only suggestions are skipped (the derived chords from the key change take precedence).
+
+**Validation:**
+- `normalizeSuggestedKey()` validates key format via `/^[A-Ga-g][bB#]?\s+(major|minor)$/i` and confirms the key produces a valid scale via `deriveScale()`.
+- `suggested_chords` must be a non-empty array of strings.
+
+**Precedence:** Boss deterministic directives > Agent consensus suggestions > Auto-derived context.
+
+## 12. Randomized Starting Context (bsj-bx1.1)
+
+Each jam session starts with a randomized musical context (key, BPM, energy, genre, chord progression) selected from `musical-context-presets.ts` via `randomMusicalContext()`. This prevents every jam from defaulting to the same key/tempo and encourages diverse musical exploration across sessions.
 
 ---
 
@@ -166,3 +191,6 @@ Each agent process receives a shared Strudel API reference (`lib/strudel-referen
 | Jam-state drift confusion | Different state views disagree | Treat `AgentProcessManager` as canonical source |
 | Jam start rejected at runtime | `jam_capacity_exceeded` / `agent_capacity_exceeded` | Increase env limits or stop existing jams |
 | React Compiler lint errors | Hooks dependency warnings | Destructure callback objects before use in effects |
+| Auto-tick context drift unexpected | BPM/energy creeping up or down | Auto-tick applies 0.5x dampening; check confidence scaling in `getDecisionConfidenceMultiplier()` |
+| Agent key suggestion ignored | Key doesn't change despite agent suggestions | Requires 2+ agents with high confidence suggesting the same key |
+| Same starting context every jam | Jams always start in same key/BPM | Verify `randomMusicalContext()` is called in manager constructor |

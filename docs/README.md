@@ -16,6 +16,10 @@ with deterministic routing and manager-owned jam-state continuity.
 | [V3 Workstream G Checkpoint](./v3/bsj-6ud.1-validation-rollout-2026-02-25.md) | Regression gate status, benchmark harness, staged rollout controls |
 | [V3 Model Policy Boundary](./v3/model-policy-boundary.md) | Source of truth for model-owned musical decisions vs code-owned guarantees |
 
+Post-migration musical enhancements (bsj-bx1 epic) are documented in the
+[model policy boundary](./v3/model-policy-boundary.md) and
+[v2 technical notes](./v2-jam-session/technical-notes.md).
+
 ## V2 Baseline (Reference)
 
 V2 docs remain available as a stable baseline and historical implementation

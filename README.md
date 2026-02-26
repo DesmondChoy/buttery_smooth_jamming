@@ -11,7 +11,7 @@ An autonomous AI jam session where band member agents play together in real-time
 | 🎹 ARIA | Melody | Classically trained, insists on harmonic correctness |
 | 🎛️ GLITCH | FX | Chaotic texture artist, lives to break conventions |
 
-Each agent runs in a persistent Codex-backed session with its own personality, musical memory, and opinions. They share a musical context (key, scale, BPM, chords) for harmonic coherence but may disagree with the boss in their own way.
+Each agent runs in a persistent Codex-backed session with its own personality, musical memory, and opinions. They share a musical context (key, scale, BPM, chords) for harmonic coherence and follow boss directives faithfully. Between directives, agents autonomously evolve their patterns every 30 seconds and can collectively suggest key changes, chord progressions, and tempo/energy shifts.
 
 ## Quick Start
 
@@ -58,6 +58,20 @@ You (the Boss)
   │     │
   │     ▼
   └── Browser plays music          Strudel evaluates the composed pattern
+
+Auto-tick (every 30s)
+  │
+  ▼
+All agents receive band state      Autonomous evolution prompt
+  │
+  ▼
+Agents respond + decision block    May suggest key/chord/tempo changes
+  │
+  ▼
+Consensus check                    2+ agents agree on key → applied
+  │
+  ▼
+Context updates broadcast          All agents see updated context
 ```
 
 Each agent keeps full conversational memory across the jam session. Directive-to-music latency is **5-7 seconds**.
@@ -73,7 +87,7 @@ buttery_smooth_jamming/
 ├── .codex/agents/                # Band member personas (drummer.md, bassist.md, etc.)
 ├── .codex/skills/                # Project-local Codex skills
 ├── packages/mcp-server/          # MCP server (Strudel bridge + jam state)
-└── docs/                         # Documentation (v1-mvp/, v2-jam-session/)
+└── docs/                         # Documentation (v1-mvp/, v2-jam-session/, v3/)
 ```
 
 ## Requirements

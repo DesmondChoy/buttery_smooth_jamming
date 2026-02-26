@@ -39,6 +39,7 @@ is routable, bounded, schema-valid, and safely composable.
 | Arrangement evolution | Decides when to hold, vary, build, or simplify over rounds. | Owns turn serialization, session lifecycle, timeout handling, and no-overlap guarantees. |
 | Inter-agent musical adaptation | Reacts to band state and evolves in context. | Preserves canonical jam state server-side and broadcasts authoritative updates. |
 | Pattern output content | Emits Strudel pattern + thoughts + reaction with agent personality. | Validates JSON shape, handles invalid output deterministically, and preserves prior valid pattern as fallback. |
+| Harmonic context evolution | Agents suggest key changes (`suggested_key`) and chord progressions (`suggested_chords`) via structured decision blocks. | Code enforces consensus rules: key changes require 2+ agents with high confidence suggesting the same key; chord changes require a single agent with high confidence. Validated via `normalizeSuggestedKey()` and `deriveScale()`. |
 | Final playback composition | None (agents do not decide final merge algorithm). | Server composes final output via deterministic `stack(...)` composition. |
 | Runtime and process behavior | None (not model-controlled). | Preserves manager-owned, per-agent persistent Codex-backed sessions and controlled process lifecycle. |
 | Agent identity and routing metadata | None (not inferred from model text). | Treats `AGENT_META` and agent key/file mappings as canonical. |
@@ -53,6 +54,9 @@ These rules define how conflicting intent is resolved.
 2. Explicit broadcast boss directive (for all active agents).
 3. Deterministic parser/context anchors (key, explicit BPM, half/double-time, explicit energy anchors).
 4. Model-provided relative tempo/energy intent (structured decisions).
+4a. Agent key suggestion (2+ agent consensus, high confidence).
+4b. Agent chord suggestion (single agent, high confidence).
+4c. Auto-tick dampened tempo/energy drift (0.5x factor).
 5. Hold current context and let agents evolve autonomously.
 
 ### Tempo Priority (Required Order)
@@ -111,6 +115,10 @@ When a structured decision contract is available, apply:
 2. `medium` confidence: apply with continuity bias (smaller deltas).
 3. `low` confidence: prefer `no_change` or fallback pattern, not hard reset.
 
+Auto-tick applies an additional 0.5x dampening factor on top of confidence
+scaling for tempo and energy deltas, preventing runaway drift when agents
+autonomously evolve every 30 seconds.
+
 ### Minimal Guardrails for Model-Relative Context Deltas
 
 When structured decisions are present, code applies only minimal bounds:
@@ -121,6 +129,9 @@ When structured decisions are present, code applies only minimal bounds:
 4. Final energy clamped to `1..10`.
 5. If a relative cue is present but no usable decision is returned, preserve
    current tempo/energy (no synthetic fallback delta).
+6. `suggested_key` must match `/^[A-Ga-g][bB#]?\s+(major|minor)$/i` and
+   produce a valid scale via `deriveScale()` to be accepted.
+7. `suggested_chords` must be a non-empty array of strings.
 
 ## Examples of Allowed Model Latitude
 
@@ -135,6 +146,11 @@ These examples are intentionally model-owned and should not be hardcoded:
 3. Boss: "GLITCH, add texture but stay out of ARIA's register."
    Code guarantee: deterministic targeted routing and safe composition.
    Model latitude: GLITCH picks effect type, motion curve, and rhythmic placement.
+4. Auto-tick round (no boss directive):
+   ARIA suggests "Eb major" with high confidence, GLITCH also suggests "Eb major"
+   with high confidence → 2+ agents agree, key changes to Eb major, scale and chords
+   auto-derived. BEAT suggests "G minor" with low confidence alone → ignored
+   (requires high confidence and 2+ agent consensus).
 
 ## Architecture Invariants Preserved
 

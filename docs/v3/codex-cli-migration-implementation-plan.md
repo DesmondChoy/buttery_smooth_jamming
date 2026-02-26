@@ -1,7 +1,7 @@
 # V3 Implementation Plan: Migrate to Codex CLI + OpenAI Subagents
 
-> Status: Execution in progress (Workstreams A-F closed on February 25, 2026; G open)
-> Last updated: February 25, 2026 (jam-agent resume reasoning + auto-tick hardening)
+> Status: Execution in progress (Workstreams A-F closed; G open). Post-migration musical enhancements (bsj-bx1 epic, 8 issues) shipped.
+> Last updated: February 26, 2026 (bsj-bx1 epic documentation update)
 > Scope: Repository-level migration plan only (no code changes in this document)
 
 ## Terminology
@@ -363,6 +363,23 @@ Hardening implemented:
 2. Jam manager uses jam-profile defaults; normal mode uses normal-profile defaults.
 3. Auto-tick targets only currently available agents, preserving crashed-agent `error` status until genuine recovery.
 4. Jam logs now surface parsed `turn.failed` details for faster diagnosis.
+
+## Post-Migration Musical Enhancements (bsj-bx1)
+
+After the v3 runtime migration, the bsj-bx1 epic (8 issues, all closed) delivered
+musical capability enhancements on top of the Codex-backed architecture:
+
+1. **Randomized starting context** (bsj-bx1.1): Each jam starts with a random key/BPM/genre/energy from curated presets.
+2. **Expanded sound palettes** (bsj-bx1.2): Agent prompts broadened to include genre-diverse sound sources.
+3. **Relaxed register constraints** (bsj-bx1.3): Removed rigid register boundaries that limited melodic range.
+4. **Genre-aware energy guidance** (bsj-bx1.4): Dynamic energy guidance injection based on genre context.
+5. **Agent prompt refinements** (bsj-bx1.5): BPM in example headers, diversified examples beyond C minor EDM.
+6. **Expanded Strudel reference** (bsj-bx1.6): Added soundfonts, FM synthesis, wavetables, scales, and chords to `lib/strudel-reference.md`.
+7. **Chord progression parsing** (bsj-bx1.7): `deriveChordProgression()` in musical-context-parser for automatic chord derivation from key.
+8. **Agent context suggestions** (bsj-bx1.8): Auto-tick decision aggregation with 0.5x dampening, `suggested_key`/`suggested_chords` fields, consensus rules for harmonic evolution.
+
+See [Model Policy Boundary](./model-policy-boundary.md) for the full creative-autonomy
+contract including agent suggestion precedence and consensus rules.
 
 ## Source Links (Corroboration)
 
