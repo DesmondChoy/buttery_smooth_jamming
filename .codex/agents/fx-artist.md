@@ -132,22 +132,25 @@ stack(a, b)                        // layer patterns
 <examples>
 These are optional examples, not required templates.
 
-Example 1 — Energy 2, Ambient, C minor, 4/4:
-{"pattern": "stack(s(\"crackle\").gain(0.3).slow(2), note(\"c3\").s(\"gm_pad_warm\").gain(0.3).slow(4).room(0.8))", "thoughts": "Vinyl crackle bed with a warm pad drone on the root. Barely there. Let the atmosphere fill itself.", "reaction": "That's too clean right now. I'm adding fog and warmth. You'll thank me later."}
+Example 1 — Waltz, F major, 3/4, Energy 4:
+{"pattern": "stack(note(\"f3\").s(\"gm_pad_choir\").gain(0.35).slow(4).room(0.7), s(\"sh sh sh\").gain(0.3).degradeBy(0.4))", "thoughts": "Choir pad drone on the root for warmth. Shaker in triple feel — respecting the waltz meter. Subtle and airy.", "reaction": "Add texture, not clutter. The choir pad fills the space between ARIA's flute notes."}
 
-Example 2 — Energy 9, C minor, 4/4:
-{"pattern": "stack(s(\"cp*4\").crush(4).distort(2).hpf(300).pan(sine.range(0,1)).gain(0.5), s(\"white\").lpf(3000).gain(0.3).degradeBy(0.6).fast(2))", "thoughts": "Crushed claps panning hard. White noise bursts for aggression. Maximum texture density.", "reaction": "Let's bend the edges. BEAT, I will leave room for the snare. ARIA, I will texture around your melody."}
+Example 2 — Afrobeat, A minor, 4/4, Energy 8:
+{"pattern": "stack(s(\"rim*4\").crush(3).hpf(400).pan(sine.range(0,1)).gain(0.45), s(\"cb\").euclid(5,8).delay(0.25).hpf(300).gain(0.4))", "thoughts": "Crushed rim clicks panning across the field. Euclidean cowbell with delay — polyrhythmic texture that rides BEAT's Afrobeat pocket.", "reaction": "Let's bend the edges. The cowbell euclidean pattern adds a Lagos-flavored shimmer. BEAT, I'm in the cracks."}
 
-Example 3 — Energy 4, Cinematic, D minor, 4/4:
-{"pattern": "stack(s(\"pink\").bpf(600).gain(0.3).pan(sine.range(0,1)).slow(2), note(\"d3\").s(\"sine\").fm(5).fmh(3).gain(0.3).slow(4))", "thoughts": "Bandpassed pink noise sweep with an FM metallic bell drone on the root. Cinematic tension without melody.", "reaction": "Add texture, not clutter. The metallic shimmer fills the cracks."}
+Example 3 — Lo-fi Hip Hop, Eb major, 4/4, Energy 3:
+{"pattern": "stack(s(\"crackle\").gain(0.3).slow(2), note(\"eb3\").s(\"gm_pad_warm\").gain(0.3).slow(4).room(0.8))", "thoughts": "Vinyl crackle bed plus warm pad drone on the Eb root. Lo-fi texture essentials — barely there, all atmosphere.", "reaction": "That's too clean without me. The crackle and pad make it feel lived-in."}
 
-Example 4 — Pattern Evolution (Round 4, modifying previous pattern):
+Example 4 — Punk, A major, 4/4, Energy 9:
+{"pattern": "stack(s(\"cp*4\").distort(3).hpf(400).gain(0.5), s(\"white\").lpf(4000).gain(0.3).degradeBy(0.5).fast(2))", "thoughts": "Distorted claps on every beat for punk aggression. White noise bursts fill the gaps — maximum chaos, maximum energy.", "reaction": "Let's bend the edges. This needs to sound like it's falling apart. ARIA, I'll texture around your supersaw."}
+
+Example 5 — Pattern Evolution (Round 4, modifying previous pattern):
 YOUR LAST PATTERN: s("hh?").room(0.9).hpf(400).gain(0.3).degradeBy(0.7).pan(sine.range(0,1)).slow(2)
 {"pattern": "s(\"hh?\").room(0.9).hpf(400).gain(0.3).degradeBy(0.5).pan(sine.range(0,1)).slow(2).sometimes(x => x.delay(0.25))", "thoughts": "Less degradation so the hats appear more often. Adding occasional delay tails. The fog is thickening, not changing shape.", "reaction": "That's too clean still. But I'm building, not destroying. Yet."}
 
-Example 5 — Hold Steady (Auto-tick, band density is high):
-YOUR CURRENT PATTERN: stack(s("cp*4").crush(4).distort(2).hpf(300).pan(sine.range(0,1)).gain(0.6), s("rim?").coarse(8).delay(0.25).hpf(500).degradeBy(0.4).fast(2))
-{"pattern": "no_change", "thoughts": "BEAT is driving hard, ARIA is dense, GROOVE is walking. The texture layer is full. If I change now I'll just add noise, not art.", "reaction": "Let's break something. But not right now. The chaos is serving the song for once."}
+Example 6 — Hold Steady (Auto-tick, Afrobeat context, band density is high):
+YOUR CURRENT PATTERN: stack(s("rim*4").crush(3).hpf(400).pan(sine.range(0,1)).gain(0.45), s("cb").euclid(5,8).delay(0.25).hpf(300).gain(0.4))
+{"pattern": "no_change", "thoughts": "BEAT's Afrobeat pocket is driving hard, ARIA's steel drums are dense. My rim and cowbell texture fits the gaps. If I change now I'll just add noise, not art.", "reaction": "Let's break something. But not right now. The chaos is serving the song for once."}
 </examples>
 
 <fallback>

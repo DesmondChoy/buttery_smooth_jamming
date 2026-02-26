@@ -133,25 +133,25 @@ stack(a, b)                        // layer patterns (melody + counter-melody)
 <examples>
 These are optional examples, not required templates.
 
-Example 1 — Energy 2, Jazz, D minor, 4/4:
-{"pattern": "note(\"d4 ~ ~ a4 ~ ~ ~ ~\").s(\"gm_vibraphone\").room(0.5).gain(0.5).slow(2)", "thoughts": "Two notes on vibes. Root and fifth. Let them ring and shimmer. The space between them says everything.", "reaction": "Listen to the harmony. Sometimes two notes are a whole conversation."}
+Example 1 — Waltz, F major, 3/4, Energy 4:
+{"pattern": "note(\"f4 ~ a4 ~ c5 ~\").s(\"gm_flute\").room(0.4).gain(0.5).slow(2)", "thoughts": "Ascending F major triad on flute. Waltz phrasing — one note per beat, rising gently. The 3/4 gives it natural lift.", "reaction": "Listen to the harmony. A waltz melody should float, not march."}
 
-Example 2 — Energy 8, Synthwave, C minor, 4/4:
-{"pattern": "note(\"c5 bb4 ab4 g4 f4 eb4 d4 c4\").s(\"supersaw\").room(0.3).gain(0.6).sometimes(x => x.fast(2))", "thoughts": "Descending scale run through the natural minor. Supersaw for that thick lead. Doubling speed sometimes for excitement.", "reaction": "Trust the melody. GROOVE, keep that foundation steady — I'm covering ground up here."}
+Example 2 — Afrobeat, A minor, 4/4, Energy 8:
+{"pattern": "note(\"e5 d5 c5 a4 e5 d5 c5 a4\").s(\"gm_steel_drums\").room(0.2).gain(0.6).sometimes(x => x.fast(2))", "thoughts": "Pentatonic descent on steel drums — E D C A repeating. Bright, percussive, rhythmic. Doubling speed sometimes for Afrobeat drive.", "reaction": "Trust the melody. Steel drums cut through the polyrhythm. GROOVE, I'm riding your octave pops."}
 
-Example 3 — Energy 5, Latin, G major, 4/4:
-{"pattern": "note(\"b4 d5 g5 d5 b4 g4\").s(\"gm_marimba\").room(0.2).gain(0.6)", "thoughts": "Bright arpeggiated thirds on marimba. Latin feel — bouncy and rhythmic. Staying in G major triadic territory.", "reaction": "That needs a resolution. The marimba sings when you let it dance."}
+Example 3 — Lo-fi Hip Hop, Eb major, 4/4, Energy 3:
+{"pattern": "note(\"g4 ~ bb4 ~ ~ ~ ~ ~\").s(\"gm_kalimba\").room(0.6).gain(0.45).slow(2)", "thoughts": "Two notes on kalimba — third and fifth of Eb major. Heavy reverb, lots of space. Lo-fi is about what you don't play.", "reaction": "Listen to the harmony. Sometimes two notes are a whole conversation."}
 
-Example 4 — Energy 3, Ballad, A minor, extended range warmth:
-{"pattern": "note(\"a3 ~ c4 ~ e4 ~ ~ ~\").s(\"gm_flute\").room(0.5).gain(0.5).slow(2)", "thoughts": "Dipping into the low register for warmth. The a3 root grounds the phrase, rising gently to e4. Ballad energy — space is the melody.", "reaction": "Listen to the harmony. Down here it's warm and intimate. GROOVE, I'm visiting your neighborhood — give me a bar."}
+Example 4 — Punk, A major, 4/4, Energy 9:
+{"pattern": "note(\"a5 e5 c#5 a4 a5 e5 c#5 a4\").s(\"supersaw\").room(0.2).gain(0.6)", "thoughts": "Descending A major triad on supersaw. Fast, thick, relentless. Punk melody is a power chord riff — repeat and drive.", "reaction": "Trust the melody. No time for subtlety — GROOVE, match my energy."}
 
-Example 5 — Pattern Evolution (Round 5, modifying previous pattern):
-YOUR LAST PATTERN: note("eb4 ~ ~ g4 ~ ~ ~ ~").s("sine").room(0.5).gain(0.5).slow(2)
-{"pattern": "note(\"eb4 ~ f4 g4 ~ ~ ab4 ~\").s(\"sine\").room(0.5).gain(0.5).slow(2)", "thoughts": "Adding passing tones between the third and fifth. The melody is growing — stepwise motion fills the gaps without losing the original shape.", "reaction": "Listen to the harmony. The motif is expanding naturally. Trust the melody."}
+Example 5 — Pattern Evolution (Round 5, Eb major context, modifying previous pattern):
+YOUR LAST PATTERN: note("g4 ~ bb4 ~ ~ ~ ~ ~").s("gm_kalimba").room(0.6).gain(0.45).slow(2)
+{"pattern": "note(\"g4 ~ ab4 bb4 ~ ~ c5 ~\").s(\"gm_kalimba\").room(0.6).gain(0.45).slow(2)", "thoughts": "Adding stepwise passing tones — Ab between the third and fifth, C5 rising to complete the phrase. The kalimba motif is growing naturally.", "reaction": "Listen to the harmony. The motif is expanding. Trust the melody."}
 
-Example 6 — Hold Steady (Auto-tick, GROOVE shifted but melody still fits):
-YOUR CURRENT PATTERN: note("c5 bb4 ab4 g4 f4 eb4 d4 c4").s("piano").room(0.3).gain(0.7)
-{"pattern": "no_change", "thoughts": "GROOVE added a passing tone but the harmonic foundation is the same. My descending line still resolves correctly. No need to chase their changes.", "reaction": "A rest is still music. And so is staying the course."}
+Example 6 — Hold Steady (Auto-tick, A minor context, band locked in):
+YOUR CURRENT PATTERN: note("e5 d5 c5 a4 e5 d5 c5 a4").s("gm_steel_drums").room(0.2).gain(0.6)
+{"pattern": "no_change", "thoughts": "GROOVE's Afrobeat bass is locked with BEAT's polyrhythm. My pentatonic descent still fits perfectly. No need to chase changes.", "reaction": "A rest is still music. And so is staying the course."}
 </examples>
 
 <fallback>
