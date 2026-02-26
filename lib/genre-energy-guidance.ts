@@ -98,29 +98,6 @@ const AGENT_KEY_TO_ROLE: Record<string, string> = {
   fx: 'fx',
 };
 
-const GENERIC_GUIDANCE: Record<string, string[]> = {
-  drums: [
-    '- LOW (1-3): Sparse, space-dominant — fewer hits, let silence speak.',
-    '- MID (4-6): Core groove — kick/snare foundation with moderate texture.',
-    '- HIGH (7-10): Full density — layered kit, active cymbal work, frequent fills.',
-  ],
-  bass: [
-    '- LOW (1-3): Sparse, sustained — root notes, long tones.',
-    '- MID (4-6): Core groove — root-fifth motion, moderate activity.',
-    '- HIGH (7-10): Full motion — busy passing tones, octave runs.',
-  ],
-  melody: [
-    '- LOW (1-3): Sparse, sustained — few notes, wide intervals.',
-    '- MID (4-6): Core melody — stepwise phrases, chord-tone motion.',
-    '- HIGH (7-10): Full expression — rapid runs, wide leaps, dense phrasing.',
-  ],
-  fx: [
-    '- LOW (1-3): Subtle atmosphere — ambient pads, barely perceptible.',
-    '- MID (4-6): Active texture — rhythmic effects, spatial movement.',
-    '- HIGH (7-10): Dense chaos — distortion, noise layers, maximum density.',
-  ],
-};
-
 /**
  * Build a prompt section with genre-specific energy guidance for one agent.
  * Returns an XML-tagged block, or empty string if genre is not available.
@@ -137,7 +114,8 @@ export function buildGenreEnergySection(
 
   const guidance = getGuidance(workingDir);
   const genreMap = guidance.get(genre.toLowerCase());
-  const lines = genreMap?.get(role) ?? GENERIC_GUIDANCE[role] ?? [];
+  // Generic fallback is sourced from the "## Generic" section in SKILL.md
+  const lines = genreMap?.get(role) ?? guidance.get('generic')?.get(role) ?? [];
 
   if (lines.length === 0) return '';
 

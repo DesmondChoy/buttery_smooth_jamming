@@ -296,3 +296,21 @@ Guidance is descriptive musical intent — agents realize it through their sound
 - LOW (1-3): Amp hum and feedback drone. Raw atmosphere.
 - MID (4-6): Distorted noise textures, feedback swells between phrases. Gritty.
 - HIGH (7-10): Maximum distortion, noise bursts, feedback squeals, chaotic layering. Destruction.
+
+## Generic
+### drums
+- LOW (1-3): Sparse, space-dominant — fewer hits, let silence speak.
+- MID (4-6): Core groove — kick/snare foundation with moderate texture.
+- HIGH (7-10): Full density — layered kit, active cymbal work, frequent fills.
+### bass
+- LOW (1-3): Sparse, sustained — root notes, long tones.
+- MID (4-6): Core groove — root-fifth motion, moderate activity.
+- HIGH (7-10): Full motion — busy passing tones, octave runs.
+### melody
+- LOW (1-3): Sparse, sustained — few notes, wide intervals.
+- MID (4-6): Core melody — stepwise phrases, chord-tone motion.
+- HIGH (7-10): Full expression — rapid runs, wide leaps, dense phrasing.
+### fx
+- LOW (1-3): Subtle atmosphere — ambient pads, barely perceptible.
+- MID (4-6): Active texture — rhythmic effects, spatial movement.
+- HIGH (7-10): Dense chaos — distortion, noise layers, maximum density.
