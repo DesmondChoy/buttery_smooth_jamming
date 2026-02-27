@@ -155,6 +155,7 @@ export function useRuntimeTerminal(
           case 'agent_status':
           case 'execute':
           case 'jam_state_update':
+          case 'auto_tick_timing_update':
           case 'directive_error':
             onJamBroadcastRef.current?.(message);
             break;

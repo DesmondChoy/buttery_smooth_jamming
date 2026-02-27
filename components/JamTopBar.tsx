@@ -1,6 +1,7 @@
 'use client';
 
-import type { MusicalContext } from '@/lib/types';
+import { useEffect, useMemo, useState } from 'react';
+import type { AutoTickTiming, MusicalContext } from '@/lib/types';
 import type { JamPreset } from '@/lib/musical-context-presets';
 import { presetToMusicalContext } from '@/lib/musical-context-presets';
 
@@ -15,6 +16,8 @@ interface JamTopBarProps {
   isAudioReady: boolean;
   isJamReady: boolean;
   isPresetApplying: boolean;
+  autoTickTiming?: AutoTickTiming | null;
+  showAutoTickCountdown?: boolean;
   errorMessage?: string | null;
   onSelectPreset: (presetId: string | null) => void;
   onPlayJam: () => void;
@@ -32,14 +35,20 @@ export function JamTopBar({
   isAudioReady,
   isJamReady,
   isPresetApplying,
+  autoTickTiming,
+  showAutoTickCountdown = false,
   errorMessage,
   onSelectPreset,
   onPlayJam,
   onStopJam,
 }: JamTopBarProps) {
-  const selectedPreset = selectedPresetId
-    ? presets.find((preset) => preset.id === selectedPresetId) ?? null
-    : null;
+  const [clockNowMs, setClockNowMs] = useState<number>(() => Date.now());
+  const [localAutoTickDeadlineMs, setLocalAutoTickDeadlineMs] = useState<number | null>(null);
+
+  const selectedPreset = useMemo(
+    () => (selectedPresetId ? presets.find((preset) => preset.id === selectedPresetId) ?? null : null),
+    [presets, selectedPresetId]
+  );
 
   const presetContext = selectedPreset ? presetToMusicalContext(selectedPreset) : null;
   const displayContext = showPresetPreview
@@ -47,6 +56,52 @@ export function JamTopBar({
     : musicalContext.genre
       ? musicalContext
       : presetContext;
+
+  useEffect(() => {
+    const rafId = window.requestAnimationFrame(() => {
+      if (!showAutoTickCountdown || !autoTickTiming?.nextTickAtMs) {
+        setLocalAutoTickDeadlineMs(null);
+        return;
+      }
+
+      // Anchor server timing to the local clock at message receipt time.
+      const millisUntilTick = Math.max(0, autoTickTiming.nextTickAtMs - autoTickTiming.serverNowMs);
+      const now = Date.now();
+      setClockNowMs(now);
+      setLocalAutoTickDeadlineMs(now + millisUntilTick);
+    });
+
+    return () => window.cancelAnimationFrame(rafId);
+  }, [
+    showAutoTickCountdown,
+    autoTickTiming?.nextTickAtMs,
+    autoTickTiming?.serverNowMs,
+  ]);
+
+  useEffect(() => {
+    if (!showAutoTickCountdown || localAutoTickDeadlineMs === null) {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      setClockNowMs(Date.now());
+    }, 200);
+
+    return () => window.clearInterval(intervalId);
+  }, [showAutoTickCountdown, localAutoTickDeadlineMs]);
+
+  const autoTickRemainingMs = localAutoTickDeadlineMs === null
+    ? null
+    : Math.max(0, localAutoTickDeadlineMs - clockNowMs);
+
+  const autoTickIntervalMs = autoTickTiming?.intervalMs ?? 15_000;
+  const autoTickSecondsRemaining = autoTickRemainingMs === null
+    ? null
+    : Math.ceil(autoTickRemainingMs / 1000);
+  const autoTickProgressPct = autoTickRemainingMs === null || autoTickIntervalMs <= 0
+    ? 0
+    : Math.min(100, Math.max(0, ((autoTickIntervalMs - autoTickRemainingMs) / autoTickIntervalMs) * 100));
+  const isAutoTickImminent = autoTickRemainingMs !== null && autoTickRemainingMs <= 3_000;
 
   return (
     <div className="flex flex-wrap items-center gap-3 px-4 py-2 bg-stage-dark border-b border-stage-border shrink-0">
@@ -106,6 +161,23 @@ export function JamTopBar({
         <span className="text-xs text-sky-300 bg-sky-500/10 border border-sky-500/30 px-2 py-1 rounded shrink-0">
           Applying preset…
         </span>
+      )}
+      {showAutoTickCountdown && autoTickSecondsRemaining !== null && (
+        <div className="flex items-center gap-2 px-2 py-1 rounded border border-stage-border bg-stage-black/60 shrink-0">
+          <span className="text-xs text-stage-muted whitespace-nowrap">Next Autotick in</span>
+          <span className={`text-sm font-mono font-semibold whitespace-nowrap ${isAutoTickImminent ? 'text-amber-300' : 'text-stage-text'}`}>
+            {autoTickSecondsRemaining}s
+          </span>
+          <div className="h-1.5 w-20 rounded-full bg-stage-mid overflow-hidden" aria-hidden="true">
+            <div
+              className={`h-full transition-[width] duration-150 ease-linear ${isAutoTickImminent ? 'bg-amber-400' : 'bg-cyan-400'}`}
+              style={{ width: `${autoTickProgressPct}%` }}
+            />
+          </div>
+        </div>
+      )}
+      {showAutoTickCountdown && autoTickSecondsRemaining === null && (
+        <span className="text-xs text-stage-text shrink-0">Syncing autotick...</span>
       )}
       {errorMessage && (
         <span className="text-xs text-red-300 bg-red-500/10 border border-red-500/30 px-2 py-1 rounded shrink-0 max-w-[420px] truncate">

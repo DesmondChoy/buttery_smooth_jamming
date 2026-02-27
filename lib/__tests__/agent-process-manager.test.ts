@@ -266,6 +266,15 @@ function getLatestJamState(
   return jamStates[jamStates.length - 1];
 }
 
+function getAutoTickTimingUpdates(
+  broadcast: ReturnType<typeof vi.fn>
+): Array<{ intervalMs: number; nextTickAtMs: number | null; serverNowMs: number }> {
+  return broadcast.mock.calls
+    .map(([msg]: unknown[]) => msg as { type: string; payload?: { autoTick?: { intervalMs: number; nextTickAtMs: number | null; serverNowMs: number } } })
+    .filter((msg) => msg.type === 'auto_tick_timing_update' && !!msg.payload?.autoTick)
+    .map((msg) => msg.payload!.autoTick!);
+}
+
 // ─── Tests ──────────────────────────────────────────────────────────
 
 describe('AgentProcessManager turn serialization', () => {
@@ -2832,6 +2841,99 @@ describe('AgentProcessManager auto-tick silence coercion', () => {
     expect(jamState).toBeDefined();
     expect((jamState!.agents.drums as { pattern: string }).pattern).toContain('bd sd bd sd');
     expect((jamState!.agents.drums as { status: string }).status).toBe('playing');
+
+    await manager.stop();
+  });
+
+  it('allows intentional auto-tick silence with high-confidence strip-back intent', async () => {
+    const { manager, broadcast, processes } = createTestManager();
+
+    const startPromise = manager.start(['drums']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const drumsProc = getProcessByKey(processes, 'drums');
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd sd bd sd").bank("RolandTR808")',
+      thoughts: 'Opening groove',
+      reaction: 'Let\'s go',
+    });
+    await startPromise;
+
+    vi.advanceTimersByTime(JAM_GOVERNANCE.AUTO_TICK_INTERVAL_MS);
+    await vi.advanceTimersByTimeAsync(0);
+
+    sendAgentResponse(drumsProc, {
+      pattern: 'silence',
+      thoughts: 'Stripping back for the breakdown',
+      decision: {
+        arrangement_intent: 'strip_back',
+        confidence: 'high',
+      },
+    });
+
+    await vi.advanceTimersByTimeAsync(0);
+
+    const jamState = getLatestJamState(broadcast);
+    expect(jamState).toBeDefined();
+    expect((jamState!.agents.drums as { pattern: string }).pattern).toBe('silence');
+    expect((jamState!.agents.drums as { status: string }).status).toBe('idle');
+
+    const executeMessages = broadcast.mock.calls
+      .map(([msg]: unknown[]) => msg as { type: string; payload?: { code?: string } })
+      .filter((msg) => msg.type === 'execute');
+    expect(executeMessages.length).toBeGreaterThan(0);
+    expect(executeMessages[executeMessages.length - 1].payload?.code).toBe('silence');
+
+    await manager.stop();
+  });
+});
+
+describe('AgentProcessManager auto-tick timing broadcasts', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.clearAllMocks();
+    vi.mocked(fs.existsSync).mockImplementation(default_exists_sync_impl);
+    setupRuntimeCheckMocks();
+  });
+
+  afterEach(async () => {
+    vi.useRealTimers();
+  });
+
+  it('broadcasts auto-tick timing immediately when scheduling each tick', async () => {
+    const { manager, broadcast, processes } = createTestManager();
+
+    const startPromise = manager.start(['drums']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const drumsProc = getProcessByKey(processes, 'drums');
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd sd")',
+      thoughts: 'Opening beat',
+      reaction: 'Ready',
+    });
+    await startPromise;
+
+    const initialTimingUpdates = getAutoTickTimingUpdates(broadcast);
+    expect(initialTimingUpdates.length).toBeGreaterThan(0);
+    const firstDeadline = initialTimingUpdates[initialTimingUpdates.length - 1].nextTickAtMs;
+    expect(firstDeadline).not.toBeNull();
+
+    vi.advanceTimersByTime(JAM_GOVERNANCE.AUTO_TICK_INTERVAL_MS);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const timingUpdatesAfterTickBoundary = getAutoTickTimingUpdates(broadcast);
+    expect(timingUpdatesAfterTickBoundary.length).toBeGreaterThan(initialTimingUpdates.length);
+    const latestDeadline = timingUpdatesAfterTickBoundary[timingUpdatesAfterTickBoundary.length - 1].nextTickAtMs;
+    expect(latestDeadline).not.toBeNull();
+    expect((latestDeadline ?? 0)).toBeGreaterThan(firstDeadline ?? 0);
+
+    sendAgentResponse(drumsProc, {
+      pattern: 'no_change',
+      thoughts: 'Holding pocket',
+      reaction: 'Steady',
+    });
+    await vi.advanceTimersByTimeAsync(0);
 
     await manager.stop();
   });

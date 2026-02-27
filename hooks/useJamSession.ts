@@ -5,6 +5,8 @@ import type {
   AgentState,
   MusicalContext,
   JamChatMessage,
+  AutoTickTiming,
+  AutoTickTimingPayload,
   AgentThoughtPayload,
   AgentCommentaryPayload,
   AgentStatusPayload,
@@ -30,6 +32,7 @@ export interface UseJamSessionReturn {
   agentStates: Record<string, AgentState>;
   musicalContext: MusicalContext;
   chatMessages: JamChatMessage[];
+  autoTickTiming: AutoTickTiming | null;
   selectedAgents: string[];
   activatedAgents: string[];
   mutedAgents: string[];
@@ -50,6 +53,7 @@ export interface UseJamSessionReturn {
   handleAgentThought: (payload: AgentThoughtPayload) => void;
   handleAgentCommentary: (payload: AgentCommentaryPayload) => void;
   handleAgentStatus: (payload: AgentStatusPayload) => void;
+  handleAutoTickTimingUpdate: (payload: AutoTickTimingPayload) => void;
   handleMusicalContextUpdate: (payload: MusicalContextPayload) => void;
   handleJamStateUpdate: (payload: JamStatePayload) => void;
 }
@@ -88,6 +92,7 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
   const [agentStates, setAgentStates] = useState<Record<string, AgentState>>(cloneDefaultAgents);
   const [musicalContext, setMusicalContext] = useState<MusicalContext>(DEFAULT_MUSICAL_CONTEXT);
   const [chatMessages, setChatMessages] = useState<JamChatMessage[]>([]);
+  const [autoTickTiming, setAutoTickTiming] = useState<AutoTickTiming | null>(null);
   const [selectedAgents, setSelectedAgents] = useState<string[]>([...ALL_AGENT_KEYS]);
   const [activatedAgents, setActivatedAgents] = useState<string[]>([]);
   const [mutedAgents, setMutedAgents] = useState<string[]>([]);
@@ -124,6 +129,7 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
     setMutedAgents([]);
     setAgentStates(cloneDefaultAgents());
     setMusicalContext(DEFAULT_MUSICAL_CONTEXT);
+    setAutoTickTiming(null);
     currentSessionIdRef.current = null;
     sendStartJam(selectedAgentsRef.current);
   }, [isRuntimeConnected, sendStartJam]);
@@ -136,6 +142,7 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
     clearChatMessages();
     setAgentStates(cloneDefaultAgents());
     setMusicalContext(DEFAULT_MUSICAL_CONTEXT);
+    setAutoTickTiming(null);
     currentSessionIdRef.current = null;
     // Tell server to kill agent processes
     sendStopJam();
@@ -155,6 +162,7 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
     setMutedAgents([]);
     setAgentStates(cloneDefaultAgents());
     setMusicalContext(DEFAULT_MUSICAL_CONTEXT);
+    setAutoTickTiming(null);
     currentSessionIdRef.current = null;
 
     // Start the jam
@@ -217,6 +225,11 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
     setMusicalContext(payload.musicalContext);
   }, []);
 
+  const handleAutoTickTimingUpdate = useCallback((payload: AutoTickTimingPayload) => {
+    if (!isJamming) return;
+    setAutoTickTiming(payload.autoTick);
+  }, [isJamming]);
+
   const handleJamStateUpdate = useCallback((payload: JamStatePayload) => {
     if (!isJamming) return;
 
@@ -235,6 +248,9 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
     setMusicalContext(jamState.musicalContext);
     setActivatedAgents(jamState.activatedAgents ?? jamState.activeAgents);
     setMutedAgents(jamState.mutedAgents ?? []);
+    if (jamState.autoTick) {
+      setAutoTickTiming(jamState.autoTick);
+    }
     setIsJamReady(true);
   }, [isJamming]);
 
@@ -243,6 +259,7 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
     agentStates,
     musicalContext,
     chatMessages,
+    autoTickTiming,
     selectedAgents,
     activatedAgents,
     mutedAgents,
@@ -261,6 +278,7 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
     handleAgentThought,
     handleAgentCommentary,
     handleAgentStatus,
+    handleAutoTickTimingUpdate,
     handleMusicalContextUpdate,
     handleJamStateUpdate,
   };

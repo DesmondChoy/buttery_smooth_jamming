@@ -9,6 +9,7 @@ export interface ChatMessage {
 export type WSMessageType =
   | 'execute' | 'stop' | 'message' | 'user_message'
   | 'jam_state_update'
+  | 'auto_tick_timing_update'
   | 'agent_thought'
   | 'agent_commentary'
   | 'musical_context_update'
@@ -49,6 +50,10 @@ export interface AgentCommentaryPayload {
 export interface JamStatePayload {
   jamState: JamState;
   combinedPattern: string;
+}
+
+export interface AutoTickTimingPayload {
+  autoTick: AutoTickTiming;
 }
 
 export interface AgentStatusPayload {
@@ -111,6 +116,13 @@ export interface JamState {
   activeAgents: string[];
   activatedAgents: string[];
   mutedAgents: string[];
+  autoTick?: AutoTickTiming;
+}
+
+export interface AutoTickTiming {
+  intervalMs: number;
+  nextTickAtMs: number | null;
+  serverNowMs: number;
 }
 
 export interface JamChatMessage {

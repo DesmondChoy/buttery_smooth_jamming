@@ -85,11 +85,13 @@ export default function Home() {
     isJamReady,
     stopJam,
     musicalContext,
+    autoTickTiming,
     agentStates,
     showAgentSelection,
     handleAgentThought,
     handleAgentCommentary,
     handleAgentStatus,
+    handleAutoTickTimingUpdate,
     handleMusicalContextUpdate,
     handleJamStateUpdate,
   } = jam;
@@ -182,6 +184,9 @@ export default function Home() {
         case 'jam_state_update':
           handleJamStateUpdate(message.payload as Parameters<typeof handleJamStateUpdate>[0]);
           break;
+        case 'auto_tick_timing_update':
+          handleAutoTickTimingUpdate(message.payload as Parameters<typeof handleAutoTickTimingUpdate>[0]);
+          break;
         case 'directive_error':
           addChatMessage({
             type: 'system',
@@ -190,7 +195,15 @@ export default function Home() {
           break;
       }
     };
-  }, [handleAgentThought, handleAgentCommentary, handleAgentStatus, handleJamStateUpdate, handleExecute, addChatMessage]);
+  }, [
+    handleAgentThought,
+    handleAgentCommentary,
+    handleAgentStatus,
+    handleAutoTickTimingUpdate,
+    handleJamStateUpdate,
+    handleExecute,
+    addChatMessage,
+  ]);
 
   // Handle incoming chat messages from MCP send_message broadcasts
   // Agent commentary/thought broadcasts flow through jam websocket events, not send_message
@@ -226,11 +239,6 @@ export default function Home() {
   const handleAudioReady = useCallback(() => {
     setAudioReady(true);
   }, []);
-
-  const handlePlay = useCallback(() => {
-    evaluate(true);
-    setIsPlaying(true);
-  }, [evaluate]);
 
   const handleConfirmStartJam = useCallback((agents: string[]) => {
     // Guarantee silence when entering jam mode, even if a prior normal-mode pattern was playing.
@@ -402,6 +410,8 @@ export default function Home() {
               isAudioReady={audioReady}
               isJamReady={isJamReady}
               isPresetApplying={isJamPresetApplying}
+              autoTickTiming={autoTickTiming}
+              showAutoTickCountdown={isJamPlayArmed && activatedAgents.length > 0}
               errorMessage={runtimeTerminalError}
               onSelectPreset={handleSelectJamPreset}
               onPlayJam={handleJamPlay}

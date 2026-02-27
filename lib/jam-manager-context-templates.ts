@@ -88,6 +88,8 @@ export function buildAutoTickManagerContext(input: AutoTickManagerContextInput):
     '',
     'Listen to the band. If the music calls for change, evolve your pattern.',
     'If your groove serves the song, respond with "no_change" as your pattern.',
+    'Avoid repeating "no_change" across many auto-ticks; introduce subtle variation when the pocket allows.',
+    'Use "silence" on auto-tick only for deliberate strip-back/breakdown moments.',
     'Include a decision block if you feel the musical context should evolve.',
   ].join('\n');
 }

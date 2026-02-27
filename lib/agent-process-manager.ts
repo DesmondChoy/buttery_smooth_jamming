@@ -6,8 +6,10 @@ import type {
   AgentState,
   MusicalContext,
   JamState,
+  AutoTickTiming,
   AgentThoughtPayload,
   AgentCommentaryPayload,
+  AutoTickTimingPayload,
   AgentStatusPayload,
   JamStatePayload,
   StructuredMusicalDecision,
@@ -142,6 +144,7 @@ export class AgentProcessManager {
   private roundNumber = 0;
   private tickTimer: NodeJS.Timeout | null = null;
   private tickScheduled = false;
+  private nextAutoTickAtMs: number | null = null;
   private turnInProgress: Promise<void> = Promise.resolve();
   private turnCounter = 0;
   private strudelReference: string = '';
@@ -217,6 +220,7 @@ export class AgentProcessManager {
     this.stopped = false;
     this.roundNumber = 0;
     this.tickScheduled = false;
+    this.nextAutoTickAtMs = null;
     this.sessionId = 'direct-' + Date.now();
     this.presetConfigured = this.jamStartMode !== 'staged_silent';
     this.musicalContext = this.jamStartMode === 'staged_silent'
@@ -257,6 +261,7 @@ export class AgentProcessManager {
       await this.sendJamStart();
     } else {
       // Staged silent mode: no opening prompts until the boss explicitly cues an agent.
+      this.resetAutoTickDeadline();
       this.broadcastJamStateOnly();
     }
 
@@ -429,11 +434,11 @@ export class AgentProcessManager {
         console.log('[AgentManager] Model-relative musical context updated:', modelRelativeContextDelta);
       }
 
-      // Compose all patterns and broadcast
-      this.composeAndBroadcast();
-
       // Restart auto-tick after directive completes
       this.startAutoTick();
+
+      // Compose all patterns and broadcast
+      this.composeAndBroadcast();
     });
   }
 
@@ -458,6 +463,7 @@ export class AgentProcessManager {
       this.tickTimer = null;
     }
     this.tickScheduled = false;
+    this.nextAutoTickAtMs = null;
 
     // Kill all active agent turns
     const killPromises = Array.from(this.agents.values()).map((agent) =>
@@ -502,6 +508,7 @@ export class AgentProcessManager {
       activeAgents: [...this.activeAgents],
       activatedAgents: [...this.activatedAgents],
       mutedAgents: this.activatedAgents.filter((key) => this.mutedAgents.has(key)),
+      autoTick: this.getAutoTickTimingSnapshot(),
     };
   }
 
@@ -1263,6 +1270,7 @@ export class AgentProcessManager {
         this.applyAgentResponse(key, response, 'jam-start');
       }
 
+      this.resetAutoTickDeadline();
       this.composeAndBroadcast();
     });
   }
@@ -1298,15 +1306,45 @@ export class AgentProcessManager {
 
   // ─── Private: Auto-Tick ─────────────────────────────────────────
 
+  private resetAutoTickDeadline(): void {
+    this.nextAutoTickAtMs = Date.now() + JAM_GOVERNANCE.AUTO_TICK_INTERVAL_MS;
+  }
+
+  private getAutoTickTimingSnapshot(): AutoTickTiming {
+    return {
+      intervalMs: JAM_GOVERNANCE.AUTO_TICK_INTERVAL_MS,
+      nextTickAtMs: this.nextAutoTickAtMs,
+      serverNowMs: Date.now(),
+    };
+  }
+
+  private broadcastAutoTickTiming(): void {
+    this.broadcastWs<AutoTickTimingPayload>('auto_tick_timing_update', {
+      autoTick: this.getAutoTickTimingSnapshot(),
+    });
+  }
+
   private startAutoTick(): void {
     if (this.tickTimer) {
       clearInterval(this.tickTimer);
       this.tickTimer = null;
     }
-    if (this.stopped) return;
+    if (this.stopped) {
+      this.nextAutoTickAtMs = null;
+      return;
+    }
+
+    this.resetAutoTickDeadline();
+    this.broadcastAutoTickTiming();
 
     this.tickTimer = setInterval(() => {
-      if (this.stopped || this.tickScheduled) return;
+      if (this.stopped) {
+        this.nextAutoTickAtMs = null;
+        return;
+      }
+      this.resetAutoTickDeadline();
+      this.broadcastAutoTickTiming();
+      if (this.tickScheduled) return;
       this.tickScheduled = true;
       this.sendAutoTick()
         .catch((err) => {
@@ -1447,12 +1485,24 @@ export class AgentProcessManager {
 
       // Auto-tick silence guard: agents should not spontaneously go silent
       // during autonomous evolution. Only boss directives can silence an agent.
+      const autoTickSilenceIntent = safeResponse.decision?.arrangement_intent;
+      const autoTickSilenceConfidence = safeResponse.decision?.confidence;
+      const allowsIntentionalAutoTickSilence = (
+        autoTickSilenceConfidence === 'high'
+        && (
+          autoTickSilenceIntent === 'breakdown'
+          || autoTickSilenceIntent === 'strip_back'
+          || autoTickSilenceIntent === 'transition'
+        )
+      );
+
       if (
         turnSource === 'auto-tick' &&
         pattern === 'silence' &&
         this.agentPatterns[key] &&
         this.agentPatterns[key] !== '' &&
-        this.agentPatterns[key] !== 'silence'
+        this.agentPatterns[key] !== 'silence' &&
+        !allowsIntentionalAutoTickSilence
       ) {
         console.warn(`[AgentManager] Auto-tick silence coerced to no_change for ${key}`);
         this.agentStates[key] = {
