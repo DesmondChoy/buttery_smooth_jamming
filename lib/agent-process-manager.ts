@@ -145,6 +145,7 @@ export class AgentProcessManager {
   private tickTimer: NodeJS.Timeout | null = null;
   private tickScheduled = false;
   private nextAutoTickAtMs: number | null = null;
+  private cacheTtlWarnedAgents = new Set<string>();
   private turnInProgress: Promise<void> = Promise.resolve();
   private turnCounter = 0;
   private strudelReference: string = '';
@@ -221,6 +222,7 @@ export class AgentProcessManager {
     this.roundNumber = 0;
     this.tickScheduled = false;
     this.nextAutoTickAtMs = null;
+    this.cacheTtlWarnedAgents.clear();
     this.sessionId = 'direct-' + Date.now();
     this.presetConfigured = this.jamStartMode !== 'staged_silent';
     this.musicalContext = this.jamStartMode === 'staged_silent'
@@ -408,21 +410,30 @@ export class AgentProcessManager {
       });
 
       const responses = await Promise.all(responsePromises);
+      const recoveredResponses = await Promise.all(targets.map(async (key, index) => {
+        const rawResponse = responses[index];
+        if (forceMuteTarget && targetAgent === key) {
+          return this.coerceResponseToForcedSilence(rawResponse);
+        }
+        return this.recoverDirectiveResponseIfNeeded({
+          key,
+          response: rawResponse,
+          directive: text,
+          targetAgent,
+        });
+      }));
 
       // Process responses and update state
       for (let i = 0; i < targets.length; i++) {
         const key = targets[i];
-        const rawResponse = responses[i];
-        const response = (forceMuteTarget && targetAgent === key)
-          ? this.coerceResponseToForcedSilence(rawResponse)
-          : rawResponse;
+        const response = recoveredResponses[i];
 
         if (forceMuteTarget && targetAgent === key) {
           this.mutedAgents.add(key);
         }
 
-        responses[i] = response;
-        this.applyAgentResponse(key, response, 'directive');
+        const acceptedResponse = this.applyAgentResponse(key, response, 'directive');
+        responses[i] = acceptedResponse;
       }
 
       const modelRelativeContextDelta = this.applyModelRelativeContextDeltaForDirectiveTurn({
@@ -788,6 +799,13 @@ export class AgentProcessManager {
       proc.stderr?.on('data', (data) => {
         const text = data.toString().trim();
         if (!text) return;
+        if (this.isNonFatalCodexCacheTtlWarning(text)) {
+          if (!this.cacheTtlWarnedAgents.has(key)) {
+            this.cacheTtlWarnedAgents.add(key);
+            console.warn(`[Agent:${key}] Non-fatal Codex cache warning: ${text}`);
+          }
+          return;
+        }
         console.error(`[Agent:${key} stderr]:`, text);
       });
 
@@ -1236,6 +1254,10 @@ export class AgentProcessManager {
     return null;
   }
 
+  private isNonFatalCodexCacheTtlWarning(text: string): boolean {
+    return /failed to renew cache TTL: EOF while parsing a value at line 1 column 0/i.test(text);
+  }
+
   // ─── Private: Jam Flow ───────────────────────────────────────────
 
   private async sendJamStart(): Promise<void> {
@@ -1302,6 +1324,69 @@ export class AgentProcessManager {
       currentPattern: this.agentPatterns[key] || 'silence',
       bandStateLines,
     });
+  }
+
+  private getPatternValidationFailureReason(pattern: string): string | null {
+    if (!pattern || pattern === 'silence' || pattern === 'no_change') return null;
+
+    const validation = validatePatternForJam(pattern);
+    if (validation.valid) return null;
+    return validation.reason || 'invalid pattern syntax';
+  }
+
+  private getResponseRejectReasonForRetry(response: AgentResponse | null): string | null {
+    if (!response) {
+      return 'empty, timed-out, or unparseable response';
+    }
+
+    const proposedPattern = response.pattern || 'silence';
+    const patternFailure = this.getPatternValidationFailureReason(proposedPattern);
+    if (!patternFailure) return null;
+    return `invalid pattern (${patternFailure})`;
+  }
+
+  private buildDirectiveRepairContext(
+    key: string,
+    directive: string,
+    targetAgent: string | undefined,
+    rejectReason: string
+  ): string {
+    const base = this.buildDirectiveContext(key, directive, targetAgent);
+    return [
+      base,
+      '',
+      'RETRY NOTICE: Your previous response was rejected by runtime validation.',
+      `Rejection reason: ${rejectReason}`,
+      'Output only one JSON object with required keys pattern and thoughts.',
+      'Ensure valid Strudel syntax (balanced mini delimiters and closed method chains).',
+      'If syntax confidence is low, return "no_change" for pattern.',
+    ].join('\n');
+  }
+
+  private async recoverDirectiveResponseIfNeeded(params: {
+    key: string;
+    response: AgentResponse | null;
+    directive: string;
+    targetAgent: string | undefined;
+  }): Promise<AgentResponse | null> {
+    const { key, response, directive, targetAgent } = params;
+    const rejectReason = this.getResponseRejectReasonForRetry(response);
+    if (!rejectReason) return response;
+
+    console.warn(`[Agent:${key}] Directive response rejected (${rejectReason}). Retrying once.`);
+    this.setAgentStatus(key, 'thinking');
+    const retryContext = this.buildDirectiveRepairContext(
+      key,
+      directive,
+      targetAgent,
+      rejectReason
+    );
+    const retryResponse = await this.sendToAgentAndCollect(key, retryContext);
+    const retryRejectReason = this.getResponseRejectReasonForRetry(retryResponse);
+    if (!retryRejectReason) return retryResponse;
+
+    console.warn(`[Agent:${key}] Directive retry rejected (${retryRejectReason}). Keeping previous groove.`);
+    return retryResponse;
   }
 
   // ─── Private: Auto-Tick ─────────────────────────────────────────
@@ -1397,7 +1482,8 @@ export class AgentProcessManager {
       for (let i = 0; i < activeTargets.length; i++) {
         const key = activeTargets[i];
         const response = responses[i];
-        this.applyAgentResponse(key, response, 'auto-tick');
+        const acceptedResponse = this.applyAgentResponse(key, response, 'auto-tick');
+        responses[i] = acceptedResponse;
       }
 
       // Aggregate autonomous context drift from agent decisions
@@ -1445,9 +1531,9 @@ export class AgentProcessManager {
     key: string,
     response: AgentResponse | null,
     turnSource: AgentTurnSource
-  ): void {
+  ): AgentResponse | null {
     const state = this.agentStates[key];
-    if (!state) return;
+    if (!state) return null;
 
     let safeResponse = response;
     if (safeResponse) {
@@ -1480,7 +1566,7 @@ export class AgentProcessManager {
         this.broadcastAgentThought(key, safeResponse);
         this.maybeBroadcastAgentCommentary(key, safeResponse, turnSource);
         this.setAgentStatus(key, this.agentStates[key].status);
-        return;
+        return safeResponse;
       }
 
       // Auto-tick silence guard: agents should not spontaneously go silent
@@ -1514,7 +1600,7 @@ export class AgentProcessManager {
         this.broadcastAgentThought(key, safeResponse);
         this.maybeBroadcastAgentCommentary(key, safeResponse, turnSource);
         this.setAgentStatus(key, this.agentStates[key].status);
-        return;
+        return safeResponse;
       }
 
       this.agentPatterns[key] = pattern;
@@ -1543,6 +1629,7 @@ export class AgentProcessManager {
     }
 
     this.setAgentStatus(key, this.agentStates[key].status);
+    return safeResponse;
   }
 
   private getAgentCommentaryRuntimeState(key: string): AgentCommentaryRuntimeState {

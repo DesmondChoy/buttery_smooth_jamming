@@ -566,6 +566,12 @@ describe('AgentProcessManager turn serialization', () => {
       thoughts: 'Switched to halftime',
       reaction: 'Pulled it back',
     });
+    await vi.advanceTimersByTimeAsync(0);
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd > sd")',
+      thoughts: 'Retry still malformed',
+      reaction: 'Need another pass',
+    });
     await directivePromise;
 
     const executeMessages = broadcast.mock.calls
@@ -589,6 +595,199 @@ describe('AgentProcessManager turn serialization', () => {
     expect(snapshot.agents.drums?.pattern).toBe('s("bd sd")');
     expect(snapshot.agents.drums?.status).toBe('playing');
 
+    await manager.stop();
+  });
+
+  it('retries a rejected directive response once and applies the repaired groove', async () => {
+    const { manager, broadcast, processes } = createTestManager();
+
+    const startPromise = manager.start(['drums']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const drumsProc = getNthProcess(processes, 0);
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd sd")',
+      thoughts: 'Opening beat',
+      reaction: 'Locked',
+    });
+    await startPromise;
+
+    broadcast.mockClear();
+
+    const directivePromise = manager.handleDirective(
+      'tighten the groove',
+      'drums',
+      ['drums']
+    );
+    await vi.advanceTimersByTimeAsync(0);
+
+    // First directive response is rejected and should trigger one retry.
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd > sd")',
+      thoughts: 'Tightened',
+      reaction: 'Punchier',
+    });
+
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Retry response is valid and should be accepted.
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd cp sd cp")',
+      thoughts: 'Repaired pattern after validation feedback',
+      reaction: 'Locked back in',
+    });
+
+    await directivePromise;
+
+    const executeMessages = broadcast.mock.calls
+      .map(([msg]: unknown[]) => msg as { type: string; payload?: { code?: string } })
+      .filter((msg) => msg.type === 'execute');
+    expect(executeMessages).toHaveLength(1);
+    expect(executeMessages[0].payload?.code).toBe('s("bd cp sd cp")');
+
+    const directiveErrors = broadcast.mock.calls
+      .map(([msg]: unknown[]) => msg as { type: string })
+      .filter((msg) => msg.type === 'directive_error');
+    expect(directiveErrors).toHaveLength(0);
+
+    const snapshot = manager.getJamStateSnapshot();
+    expect(snapshot.agents.drums?.pattern).toBe('s("bd cp sd cp")');
+    expect(snapshot.agents.drums?.status).toBe('playing');
+
+    await manager.stop();
+  });
+
+  it('ignores rejected directive decisions when applying relative context deltas', async () => {
+    const { manager, processes } = createTestManager();
+
+    const startPromise = manager.start(['drums']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const drumsProc = getNthProcess(processes, 0);
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd sd")',
+      thoughts: 'Opening beat',
+      reaction: 'Ready',
+    });
+    await startPromise;
+
+    const before = manager.getJamStateSnapshot().musicalContext;
+    expect(before.bpm).toBe(120);
+    expect(before.energy).toBe(5);
+
+    const directivePromise = manager.handleDirective(
+      'a bit faster with extra intensity',
+      'drums',
+      ['drums']
+    );
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Rejected response tries to push huge deltas.
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd > sd")',
+      thoughts: 'Push tempo and energy',
+      decision: {
+        tempo_delta_pct: 50,
+        energy_delta: 3,
+        confidence: 'high',
+      },
+    });
+
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Retry response is valid but intentionally does not provide deltas.
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd cp sd cp")',
+      thoughts: 'Keep context stable while tightening groove',
+    });
+
+    await directivePromise;
+
+    const after = manager.getJamStateSnapshot().musicalContext;
+    expect(after.bpm).toBe(before.bpm);
+    expect(after.energy).toBe(before.energy);
+
+    await manager.stop();
+  });
+
+  it('ignores rejected auto-tick decisions when aggregating context drift', async () => {
+    const { manager, processes } = createTestManager();
+
+    const startPromise = manager.start(['drums']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const drumsProc = getNthProcess(processes, 0);
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd sd")',
+      thoughts: 'Opening beat',
+      reaction: 'Ready',
+    });
+    await startPromise;
+
+    const before = manager.getJamStateSnapshot().musicalContext;
+    expect(before.bpm).toBe(120);
+    expect(before.energy).toBe(5);
+
+    vi.advanceTimersByTime(JAM_GOVERNANCE.AUTO_TICK_INTERVAL_MS);
+    await vi.advanceTimersByTimeAsync(0);
+
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd > sd")',
+      thoughts: 'Aggressive drift suggestion on invalid pattern',
+      decision: {
+        tempo_delta_pct: 50,
+        energy_delta: 3,
+        confidence: 'high',
+      },
+    });
+    await vi.advanceTimersByTimeAsync(0);
+
+    const after = manager.getJamStateSnapshot().musicalContext;
+    expect(after.bpm).toBe(before.bpm);
+    expect(after.energy).toBe(before.energy);
+    expect(manager.getJamStateSnapshot().agents.drums?.pattern).toBe('s("bd sd")');
+
+    await manager.stop();
+  });
+
+  it('throttles non-fatal Codex cache TTL stderr warnings per agent', async () => {
+    const warnSpy = vi.spyOn(console, 'warn');
+    const errorSpy = vi.spyOn(console, 'error');
+    const { manager, processes } = createTestManager();
+
+    const startPromise = manager.start(['drums']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const drumsProc = getNthProcess(processes, 0);
+    const ttlWarning =
+      '2026-02-27T10:26:25.988374Z ERROR codex_core::models_manager::manager: ' +
+      'failed to renew cache TTL: EOF while parsing a value at line 1 column 0';
+    drumsProc.stderr.write(ttlWarning + '\n');
+    drumsProc.stderr.write(ttlWarning + '\n');
+
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd sd")',
+      thoughts: 'Opening beat',
+      reaction: 'Ready',
+    });
+    await startPromise;
+
+    const ttlWarnCalls = warnSpy.mock.calls.filter(
+      (call) =>
+        String(call[0]).includes('[Agent:drums] Non-fatal Codex cache warning:')
+        && String(call[0]).includes('failed to renew cache TTL')
+    );
+    expect(ttlWarnCalls).toHaveLength(1);
+
+    const ttlErrorCalls = errorSpy.mock.calls.filter(
+      (call) =>
+        String(call[0]).includes('[Agent:drums stderr]:')
+        && String(call[1] ?? '').includes('failed to renew cache TTL')
+    );
+    expect(ttlErrorCalls).toHaveLength(0);
+
+    warnSpy.mockRestore();
+    errorSpy.mockRestore();
     await manager.stop();
   });
 
