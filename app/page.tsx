@@ -21,8 +21,8 @@ const StrudelPanel = dynamic(
 const SILENT_JAM_PATTERN = 'silence';
 
 const AGENT_HINTS: Record<string, string> = {
-  drums: 'Syncopation-obsessed veteran with high ego',
-  bass: 'Selfless minimalist who locks with the kick',
+  drums: 'Syncopation-obsessed, provides the rhythmic foundation',
+  bass: 'Selfless minimalist who locks in with the kick drum',
   melody: 'Classically trained, insists on harmonic correctness',
   chords: 'Comping specialist, fills the harmonic middle',
 };
@@ -365,18 +365,14 @@ export default function Home() {
 
       if (e.ctrlKey || e.metaKey) {
         if (e.key === 'Enter') {
-          e.preventDefault();
           if (isJamming) {
+            e.preventDefault();
             handleJamPlay();
-          } else if (audioReady) {
-            handlePlay();
           }
         } else if (e.key === '.') {
-          e.preventDefault();
           if (isJamming) {
+            e.preventDefault();
             handleStopJamAndAudio();
-          } else if (audioReady && isPlaying) {
-            handleStop();
           }
         }
       }
@@ -384,7 +380,7 @@ export default function Home() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [audioReady, isPlaying, isJamming, handlePlay, handleStop, handleJamPlay, handleStopJamAndAudio]);
+  }, [isJamming, handleJamPlay, handleStopJamAndAudio]);
 
   const agentKeys = Object.keys(AGENT_META);
 
@@ -456,6 +452,44 @@ export default function Home() {
 
             {/* Hero landing page */}
             <div className="flex-1 flex flex-col items-center justify-center p-8 relative overflow-y-auto">
+              {/* Undulating sound waves background */}
+              <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden="true">
+                <svg className="absolute inset-0 w-full h-full" preserveAspectRatio="none" viewBox="0 0 1440 800">
+                  {/* Wave cluster — top 30% of the screen */}
+                  <g style={{ animation: 'wave-drift-1 8s ease-in-out infinite' }}>
+                    <path
+                      d="M-200,100 C40,40 280,160 520,100 C760,40 1000,160 1240,100 C1480,40 1640,120 1640,100"
+                      fill="none"
+                      stroke="rgba(245,158,11,0.18)"
+                      strokeWidth="2.5"
+                    />
+                  </g>
+                  <g style={{ animation: 'wave-drift-2 10s ease-in-out infinite' }}>
+                    <path
+                      d="M-200,140 C100,80 340,200 600,140 C860,80 1100,200 1400,140 C1540,100 1640,160 1640,140"
+                      fill="none"
+                      stroke="rgba(245,158,11,0.13)"
+                      strokeWidth="2"
+                    />
+                  </g>
+                  <g style={{ animation: 'wave-drift-3 12s ease-in-out infinite' }}>
+                    <path
+                      d="M-200,180 C-20,120 160,240 340,180 C520,120 700,240 880,180 C1060,120 1240,240 1420,180 C1600,120 1640,200 1640,180"
+                      fill="none"
+                      stroke="rgba(217,119,6,0.12)"
+                      strokeWidth="1.5"
+                    />
+                  </g>
+                  <g style={{ animation: 'wave-drift-2 11s ease-in-out infinite', animationDelay: '-4s' }}>
+                    <path
+                      d="M-200,210 C80,150 320,270 600,210 C880,150 1120,270 1440,210 C1540,190 1640,230 1640,210"
+                      fill="none"
+                      stroke="rgba(196,184,168,0.10)"
+                      strokeWidth="1.5"
+                    />
+                  </g>
+                </svg>
+              </div>
               <h1 className="text-5xl md:text-6xl font-display font-bold mb-4 bg-gradient-to-r from-amber-500 to-amber-300 bg-clip-text text-transparent">
                 Buttery Smooth Jamming
               </h1>
@@ -483,28 +517,65 @@ export default function Home() {
                 Start a Jam Session
               </button>
 
-              {/* Band member cards */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 w-full max-w-3xl mb-10">
-                {agentKeys.map((key, i) => {
-                  const meta = AGENT_META[key];
-                  return (
-                    <div
-                      key={key}
-                      className="bg-stage-dark border border-stage-border rounded-xl p-4 text-center hover:scale-[1.03] transition-transform duration-200 animate-fade-in-up"
-                      style={{ animationDelay: `${i * 100}ms` }}
-                    >
-                      <span className="text-3xl block mb-2">{meta.emoji}</span>
-                      <span className={`font-display font-bold text-sm ${meta.colors.accent}`}>{meta.name}</span>
-                      <p className="text-xs text-stage-text mt-1">{AGENT_HINTS[key]}</p>
-                    </div>
-                  );
-                })}
+              {/* Stage plot — the band lineup */}
+              <div className="w-full max-w-3xl mb-10">
+                {/* Stage floor */}
+                <div className="relative rounded-xl bg-gradient-to-b from-stage-dark to-stage-black border border-stage-border/60 overflow-hidden px-4 py-8 md:py-10">
+                  {/* Subtle stage edge highlight */}
+                  <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-amber-500/30 to-transparent" />
+
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-6 md:gap-4">
+                    {agentKeys.map((key, i) => {
+                      const meta = AGENT_META[key];
+                      return (
+                        <div
+                          key={key}
+                          className="flex flex-col items-center gap-3 animate-fade-in-up"
+                          style={{ animationDelay: `${i * 100}ms` }}
+                        >
+                          {/* Spotlight cone — overhead light pool */}
+                          <div className="relative flex items-center justify-center w-36 h-36">
+                            {/* Outer glow */}
+                            <div
+                              className="absolute inset-0 rounded-full animate-spotlight-breathe"
+                              style={{
+                                background: `radial-gradient(circle, currentColor 0%, transparent 70%)`,
+                                animationDelay: `${i * 1.1}s`,
+                                opacity: 0.12,
+                              }}
+                            />
+                            {/* Inner glow */}
+                            <div
+                              className="absolute inset-5 rounded-full"
+                              style={{
+                                background: `radial-gradient(circle, currentColor 0%, transparent 70%)`,
+                                opacity: 0.08,
+                              }}
+                            />
+                            {/* Emoji — the instrument on stage */}
+                            <span className="relative text-7xl select-none">{meta.emoji}</span>
+                          </div>
+
+                          {/* Gaffer-tape nameplate */}
+                          <div className="flex flex-col items-center gap-1">
+                            <span className={`font-mono text-sm font-bold tracking-[0.2em] uppercase ${meta.colors.accent}`}>
+                              {meta.name}
+                            </span>
+                            <span className="text-stage-muted text-sm text-center leading-snug max-w-[180px]">
+                              {AGENT_HINTS[key]}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Stage front edge — a subtle "lip" */}
+                  <div className="absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-stage-border to-transparent" />
+                </div>
               </div>
 
-              {/* Keyboard shortcut hint */}
-              <span className="text-stage-muted text-sm">
-                Ctrl+Enter to play · Ctrl+. to stop
-              </span>
+
             </div>
           </>
         )}

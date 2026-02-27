@@ -6,10 +6,10 @@ An autonomous AI jam session where band member agents play together in real-time
 
 | Agent | Role | Personality |
 |-------|------|-------------|
-| 🥁 BEAT | Drums | Syncopation-obsessed veteran, high ego |
-| 🎸 GROOVE | Bass | Selfless minimalist, locks in with the kick |
+| 🥁 BEAT | Drums | Syncopation-obsessed, provides the rhythmic foundation |
+| 🎸 GROOVE | Bass | Selfless minimalist who locks in with the kick drum |
 | 🎹 ARIA | Melody | Classically trained, insists on harmonic correctness |
-| 🎼 CHORDS | Chords / Comping | Audible harmonic middle layer, comping and supportive texture |
+| 🎼 CHORDS | Chords / Comping | Comping specialist, fills the harmonic middle |
 
 Each agent runs in a persistent Codex-backed session with its own personality, musical memory, and opinions. They share a musical context (key, scale, BPM, chords) for harmonic coherence and follow boss directives faithfully. Between directives, agents autonomously evolve their patterns every 30 seconds and can collectively suggest key changes, chord progressions, and tempo/energy shifts.
 

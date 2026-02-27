@@ -12,10 +12,10 @@ interface AgentSelectionModalProps {
 const AGENT_KEYS = Object.keys(AGENT_META);
 
 const AGENT_HINTS: Record<string, string> = {
-  drums: 'Syncopation-obsessed veteran',
-  bass: 'Selfless minimalist',
-  melody: 'Classically trained perfectionist',
-  chords: 'Comping specialist',
+  drums: 'Syncopation-obsessed, provides the rhythmic foundation',
+  bass: 'Selfless minimalist who locks in with the kick drum',
+  melody: 'Classically trained, insists on harmonic correctness',
+  chords: 'Comping specialist, fills the harmonic middle',
 };
 
 export function AgentSelectionModal({

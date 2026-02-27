@@ -40,11 +40,16 @@ const config: Config = {
           '0%': { opacity: '0', transform: 'translateY(12px)' },
           '100%': { opacity: '1', transform: 'translateY(0)' },
         },
+        'spotlight-breathe': {
+          '0%, 100%': { opacity: '0.5' },
+          '50%': { opacity: '0.8' },
+        },
       },
       animation: {
         'pulse-gentle': 'pulse-gentle 3s ease-in-out infinite',
         'glow-pulse': 'glow-pulse 2s ease-in-out infinite',
         'fade-in-up': 'fade-in-up 0.5s ease-out forwards',
+        'spotlight-breathe': 'spotlight-breathe 4s ease-in-out infinite',
       },
     },
   },

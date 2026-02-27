@@ -22,6 +22,24 @@ body::before {
   background: radial-gradient(ellipse 80% 50% at 50% 0%, rgba(245, 158, 11, 0.04) 0%, transparent 70%);
 }
 
+/* Sound wave background animations */
+@keyframes wave-drift-1 {
+  0% { transform: translateX(0) translateY(0); }
+  50% { transform: translateX(-40px) translateY(-12px); }
+  100% { transform: translateX(0) translateY(0); }
+}
+@keyframes wave-drift-2 {
+  0% { transform: translateX(0) translateY(0); }
+  50% { transform: translateX(30px) translateY(10px); }
+  100% { transform: translateX(0) translateY(0); }
+}
+@keyframes wave-drift-3 {
+  0% { transform: translateX(0) translateY(0); }
+  33% { transform: translateX(-20px) translateY(-8px); }
+  66% { transform: translateX(20px) translateY(8px); }
+  100% { transform: translateX(0) translateY(0); }
+}
+
 /* Contain Strudel editor visualizations */
 .strudel-container {
   position: relative;
