@@ -104,7 +104,7 @@ export const JAM_GOVERNANCE = {
    *
    * See: docs/v3/model-policy-playbook.md § 2 — Auto-tick interval
    */
-  AUTO_TICK_INTERVAL_MS: 30_000,
+  AUTO_TICK_INTERVAL_MS: 15_000,
 
   // ─── Commentary (Display-Only) ─────────────────────────────────────
   /**

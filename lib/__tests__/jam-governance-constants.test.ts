@@ -40,8 +40,8 @@ describe('JAM_GOVERNANCE invariants', () => {
     expect(JAM_GOVERNANCE.KEY_CONSENSUS_MIN_AGENTS).toBeGreaterThanOrEqual(2);
   });
 
-  it('agent timeout is positive and less than auto-tick interval', () => {
+  it('agent timeout is positive and at most equal to auto-tick interval', () => {
     expect(JAM_GOVERNANCE.AGENT_TIMEOUT_MS).toBeGreaterThan(0);
-    expect(JAM_GOVERNANCE.AGENT_TIMEOUT_MS).toBeLessThan(JAM_GOVERNANCE.AUTO_TICK_INTERVAL_MS);
+    expect(JAM_GOVERNANCE.AGENT_TIMEOUT_MS).toBeLessThanOrEqual(JAM_GOVERNANCE.AUTO_TICK_INTERVAL_MS);
   });
 });

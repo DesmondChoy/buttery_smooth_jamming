@@ -2780,3 +2780,59 @@ describe('AgentProcessManager context suggestions', () => {
     await manager.stop();
   });
 });
+
+describe('AgentProcessManager auto-tick silence coercion', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.clearAllMocks();
+    vi.mocked(fs.existsSync).mockImplementation(default_exists_sync_impl);
+    setupRuntimeCheckMocks();
+  });
+
+  afterEach(async () => {
+    vi.useRealTimers();
+  });
+
+  it('auto-tick coerces silence to no_change when agent has existing pattern', async () => {
+    const { manager, broadcast, processes } = createTestManager();
+
+    const startPromise = manager.start(['drums']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Agent gets a pattern from jam-start
+    const drumsProc = getProcessByKey(processes, 'drums');
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd sd bd sd").bank("RolandTR808")',
+      thoughts: 'Opening groove',
+      reaction: 'Let\'s go',
+    });
+    await startPromise;
+
+    // Verify initial pattern is playing
+    let jamState = getLatestJamState(broadcast);
+    expect(jamState).toBeDefined();
+    expect((jamState!.agents.drums as { pattern: string }).pattern).toContain('bd sd bd sd');
+    expect((jamState!.agents.drums as { status: string }).status).toBe('playing');
+
+    // Trigger auto-tick
+    vi.advanceTimersByTime(JAM_GOVERNANCE.AUTO_TICK_INTERVAL_MS);
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Agent spontaneously returns silence during auto-tick
+    sendAgentResponse(drumsProc, {
+      pattern: 'silence',
+      thoughts: 'Feeling like a break',
+      reaction: 'Stepping back',
+    });
+
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Pattern should be preserved (not overwritten to silence)
+    jamState = getLatestJamState(broadcast);
+    expect(jamState).toBeDefined();
+    expect((jamState!.agents.drums as { pattern: string }).pattern).toContain('bd sd bd sd');
+    expect((jamState!.agents.drums as { status: string }).status).toBe('playing');
+
+    await manager.stop();
+  });
+});

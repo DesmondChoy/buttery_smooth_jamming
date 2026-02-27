@@ -1445,6 +1445,28 @@ export class AgentProcessManager {
         return;
       }
 
+      // Auto-tick silence guard: agents should not spontaneously go silent
+      // during autonomous evolution. Only boss directives can silence an agent.
+      if (
+        turnSource === 'auto-tick' &&
+        pattern === 'silence' &&
+        this.agentPatterns[key] &&
+        this.agentPatterns[key] !== '' &&
+        this.agentPatterns[key] !== 'silence'
+      ) {
+        console.warn(`[AgentManager] Auto-tick silence coerced to no_change for ${key}`);
+        this.agentStates[key] = {
+          ...state,
+          thoughts: safeResponse.thoughts || '',
+          status: 'playing',
+          lastUpdated: new Date().toISOString(),
+        };
+        this.broadcastAgentThought(key, safeResponse);
+        this.maybeBroadcastAgentCommentary(key, safeResponse, turnSource);
+        this.setAgentStatus(key, this.agentStates[key].status);
+        return;
+      }
+
       this.agentPatterns[key] = pattern;
       this.agentStates[key] = {
         ...state,
