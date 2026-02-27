@@ -77,6 +77,10 @@ interface AgentCommentaryRuntimeState {
   recentSignatures: string[];
 }
 
+interface AgentTurnContext {
+  directiveTargetAgent?: string;
+}
+
 // Per-agent Codex-backed session handle
 interface AgentProcess {
   key: string;
@@ -122,6 +126,7 @@ const ARRANGEMENT_INTENT_MAP: Record<string, ArrangementIntent> = {
 };
 const DECISION_CONFIDENCE_SET = new Set<DecisionConfidence>(['low', 'medium', 'high']);
 type RelativeCueDirection = ReturnType<typeof detectRelativeMusicalContextCues>['tempo'];
+const TARGETED_DIRECTIVE_EMPTY_COMMENTARY = 'Locking in your cue.';
 
 /**
  * Manages per-agent Codex-backed sessions for jam mode.
@@ -443,7 +448,9 @@ export class AgentProcessManager {
           this.resetThreadCompactionState(key);
         }
 
-        const acceptedResponse = this.applyAgentResponse(key, response, 'directive');
+        const acceptedResponse = this.applyAgentResponse(key, response, 'directive', {
+          directiveTargetAgent: targetAgent,
+        });
         responses[i] = acceptedResponse;
       }
 
@@ -1622,7 +1629,8 @@ export class AgentProcessManager {
   private applyAgentResponse(
     key: string,
     response: AgentResponse | null,
-    turnSource: AgentTurnSource
+    turnSource: AgentTurnSource,
+    turnContext: AgentTurnContext = {}
   ): AgentResponse | null {
     const state = this.agentStates[key];
     if (!state) return null;
@@ -1651,12 +1659,13 @@ export class AgentProcessManager {
         // Don't update agentPatterns — keep existing pattern playing
         this.agentStates[key] = {
           ...state,
+          pattern: this.agentPatterns[key],
           thoughts: safeResponse.thoughts || '',
-          status: this.agentPatterns[key] !== 'silence' ? 'playing' : state.status,
+          status: this.agentPatterns[key] !== 'silence' ? 'playing' : 'idle',
           lastUpdated: new Date().toISOString(),
         };
         this.broadcastAgentThought(key, safeResponse);
-        this.maybeBroadcastAgentCommentary(key, safeResponse, turnSource);
+        this.maybeBroadcastAgentCommentaryForTurn(key, safeResponse, turnSource, turnContext);
         this.setAgentStatus(key, this.agentStates[key].status);
         return safeResponse;
       }
@@ -1690,7 +1699,7 @@ export class AgentProcessManager {
           lastUpdated: new Date().toISOString(),
         };
         this.broadcastAgentThought(key, safeResponse);
-        this.maybeBroadcastAgentCommentary(key, safeResponse, turnSource);
+        this.maybeBroadcastAgentCommentaryForTurn(key, safeResponse, turnSource, turnContext);
         this.setAgentStatus(key, this.agentStates[key].status);
         return safeResponse;
       }
@@ -1707,7 +1716,7 @@ export class AgentProcessManager {
 
       // Broadcast agent thought
       this.broadcastAgentThought(key, safeResponse);
-      this.maybeBroadcastAgentCommentary(key, safeResponse, turnSource);
+      this.maybeBroadcastAgentCommentaryForTurn(key, safeResponse, turnSource, turnContext);
     } else {
       // APM-14 contract: when an agent times out (null response), the runtime
       // falls back to its last known good pattern (fallbackPattern) to maintain
@@ -1718,10 +1727,53 @@ export class AgentProcessManager {
         status: (state.fallbackPattern && state.fallbackPattern !== 'silence') ? 'playing' : 'timeout',
         lastUpdated: new Date().toISOString(),
       };
+      if (
+        turnSource === 'directive'
+        && turnContext.directiveTargetAgent === key
+      ) {
+        this.broadcastGuaranteedDirectiveCommentary(key);
+      }
     }
 
     this.setAgentStatus(key, this.agentStates[key].status);
     return safeResponse;
+  }
+
+  private maybeBroadcastAgentCommentaryForTurn(
+    key: string,
+    response: AgentResponse,
+    turnSource: AgentTurnSource,
+    turnContext: AgentTurnContext
+  ): void {
+    const targetedDirective = (
+      turnSource === 'directive'
+      && turnContext.directiveTargetAgent === key
+    );
+    if (targetedDirective) {
+      this.broadcastGuaranteedDirectiveCommentary(key, response);
+      return;
+    }
+    this.maybeBroadcastAgentCommentary(key, response, turnSource);
+  }
+
+  private broadcastGuaranteedDirectiveCommentary(
+    key: string,
+    response?: AgentResponse
+  ): void {
+    const commentary = this.sanitizeOptionalCommentary(response?.commentary)
+      ?? this.sanitizeOptionalCommentary(response?.thoughts)
+      ?? TARGETED_DIRECTIVE_EMPTY_COMMENTARY;
+    const commentarySignature = this.buildCommentarySignature(commentary);
+    const runtimeState = this.getAgentCommentaryRuntimeState(key);
+
+    this.broadcastAgentCommentary(key, commentary);
+    runtimeState.lastRound = this.roundNumber;
+    if (commentarySignature) {
+      runtimeState.recentSignatures = [
+        ...runtimeState.recentSignatures,
+        commentarySignature,
+      ].slice(-JAM_GOVERNANCE.COMMENTARY_RECENT_SIGNATURE_WINDOW);
+    }
   }
 
   private getAgentCommentaryRuntimeState(key: string): AgentCommentaryRuntimeState {

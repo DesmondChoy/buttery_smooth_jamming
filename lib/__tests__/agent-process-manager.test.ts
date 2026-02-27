@@ -275,6 +275,17 @@ function getAutoTickTimingUpdates(
     .map((msg) => msg.payload!.autoTick!);
 }
 
+function getAgentCommentaryTexts(
+  broadcast: ReturnType<typeof vi.fn>,
+  agent?: string
+): string[] {
+  return broadcast.mock.calls
+    .map(([msg]: unknown[]) => msg as { type: string; payload?: { agent?: string; text?: string } })
+    .filter((msg) => msg.type === 'agent_commentary' && typeof msg.payload?.text === 'string')
+    .filter((msg) => !agent || msg.payload?.agent === agent)
+    .map((msg) => msg.payload!.text!);
+}
+
 // ─── Tests ──────────────────────────────────────────────────────────
 
 describe('AgentProcessManager turn serialization', () => {
@@ -1986,6 +1997,261 @@ describe('AgentProcessManager directive targeting', () => {
     await manager.stop();
   });
 
+  it('targeted directive broadcasts thoughts fallback when commentary is missing', async () => {
+    const { manager, broadcast, processes } = createTestManager();
+
+    const startPromise = manager.start(['bass']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const bassProc = getProcessByKey(processes, 'bass');
+    sendAgentResponse(bassProc, {
+      pattern: 'note("c2 g1")',
+      thoughts: 'Opening bass pocket',
+    });
+    await startPromise;
+
+    broadcast.mockClear();
+
+    const directivePromise = manager.handleDirective(
+      'go deeper with the low-end',
+      'bass',
+      ['bass']
+    );
+    await vi.advanceTimersByTimeAsync(0);
+
+    sendAgentResponse(bassProc, {
+      pattern: 'note("c1 g1")',
+      thoughts: 'Dropping lower to lock with kick.',
+    });
+    await directivePromise;
+
+    expect(getAgentCommentaryTexts(broadcast, 'bass'))
+      .toEqual(['Dropping lower to lock with kick.']);
+
+    await manager.stop();
+  });
+
+  it('targeted directive emits deterministic ack when thoughts and commentary are empty', async () => {
+    const { manager, broadcast, processes } = createTestManager();
+
+    const startPromise = manager.start(['bass']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const bassProc = getProcessByKey(processes, 'bass');
+    sendAgentResponse(bassProc, {
+      pattern: 'note("c2 g1")',
+      thoughts: 'Opening bass pocket',
+    });
+    await startPromise;
+
+    broadcast.mockClear();
+
+    const directivePromise = manager.handleDirective(
+      'hold this lane',
+      'bass',
+      ['bass']
+    );
+    await vi.advanceTimersByTimeAsync(0);
+
+    sendAgentResponse(bassProc, {
+      pattern: 'no_change',
+      thoughts: '',
+      commentary: '',
+    });
+    await directivePromise;
+
+    expect(getAgentCommentaryTexts(broadcast, 'bass'))
+      .toEqual(['Locking in your cue.']);
+
+    await manager.stop();
+  });
+
+  it('targeted directive emits deterministic ack when response is rejected as null', async () => {
+    const { manager, broadcast, processes } = createTestManager();
+
+    const startPromise = manager.start(['bass']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const bassProc = getProcessByKey(processes, 'bass');
+    sendAgentResponse(bassProc, {
+      pattern: 'note("c2 g1")',
+      thoughts: 'Opening bass pocket',
+    });
+    await startPromise;
+
+    broadcast.mockClear();
+
+    const directivePromise = manager.handleDirective(
+      'hold this lane',
+      'bass',
+      ['bass']
+    );
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Initial directive response: invalid schema (missing thoughts) => retry once.
+    sendRawAgentText(
+      bassProc,
+      '{"pattern":"note(\\"c1 g1\\")","commentary":"Missing required thoughts"}'
+    );
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Retry response: still invalid schema => safeResponse null fallback branch.
+    sendRawAgentText(
+      bassProc,
+      '{"pattern":"note(\\"c1 g1\\")","commentary":"Still missing required thoughts"}'
+    );
+    await directivePromise;
+
+    expect(getAgentCommentaryTexts(broadcast, 'bass'))
+      .toEqual(['Locking in your cue.']);
+
+    await manager.stop();
+  });
+
+  it('targeted directive bypasses same-as-thought commentary suppression', async () => {
+    const { manager, broadcast, processes } = createTestManager();
+
+    const startPromise = manager.start(['bass']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const bassProc = getProcessByKey(processes, 'bass');
+    sendAgentResponse(bassProc, {
+      pattern: 'note("c2 g1")',
+      thoughts: 'Opening bass pocket',
+    });
+    await startPromise;
+
+    broadcast.mockClear();
+
+    const directivePromise = manager.handleDirective(
+      'stay rooted',
+      'bass',
+      ['bass']
+    );
+    await vi.advanceTimersByTimeAsync(0);
+
+    sendAgentResponse(bassProc, {
+      pattern: 'no_change',
+      thoughts: 'Holding the root tight.',
+      commentary: 'Holding the root tight.',
+    });
+    await directivePromise;
+
+    expect(getAgentCommentaryTexts(broadcast, 'bass'))
+      .toEqual(['Holding the root tight.']);
+
+    await manager.stop();
+  });
+
+  it('targeted directive re-emits repeated commentary across consecutive cues', async () => {
+    const { manager, broadcast, processes } = createTestManager();
+
+    const startPromise = manager.start(['bass']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const bassProc = getProcessByKey(processes, 'bass');
+    sendAgentResponse(bassProc, {
+      pattern: 'note("c2 g1")',
+      thoughts: 'Opening bass pocket',
+    });
+    await startPromise;
+
+    broadcast.mockClear();
+
+    const firstDirective = manager.handleDirective(
+      'stay deep',
+      'bass',
+      ['bass']
+    );
+    await vi.advanceTimersByTimeAsync(0);
+    sendAgentResponse(bassProc, {
+      pattern: 'no_change',
+      thoughts: 'Staying deep in pocket.',
+      commentary: 'Staying deep in pocket.',
+    });
+    await firstDirective;
+
+    const secondDirective = manager.handleDirective(
+      'keep it locked',
+      'bass',
+      ['bass']
+    );
+    await vi.advanceTimersByTimeAsync(0);
+    sendAgentResponse(bassProc, {
+      pattern: 'no_change',
+      thoughts: 'Staying deep in pocket.',
+      commentary: 'Staying deep in pocket.',
+    });
+    await secondDirective;
+
+    expect(getAgentCommentaryTexts(broadcast, 'bass'))
+      .toEqual(['Staying deep in pocket.', 'Staying deep in pocket.']);
+
+    await manager.stop();
+  });
+
+  it('broadcast directive keeps same-as-thought commentary suppression', async () => {
+    const { manager, broadcast, processes } = createTestManager();
+
+    const startPromise = manager.start(['drums']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const drumsProc = getProcessByKey(processes, 'drums');
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd sd")',
+      thoughts: 'Opening drums',
+    });
+    await startPromise;
+
+    broadcast.mockClear();
+
+    const directivePromise = manager.handleDirective(
+      'keep the groove steady',
+      undefined,
+      ['drums']
+    );
+    await vi.advanceTimersByTimeAsync(0);
+    sendAgentResponse(drumsProc, {
+      pattern: 'no_change',
+      thoughts: 'Holding steady.',
+      commentary: 'Holding steady.',
+    });
+    await directivePromise;
+
+    expect(getAgentCommentaryTexts(broadcast, 'drums')).toEqual([]);
+
+    await manager.stop();
+  });
+
+  it('auto-tick keeps same-as-thought commentary suppression', async () => {
+    const { manager, broadcast, processes } = createTestManager();
+
+    const startPromise = manager.start(['drums']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const drumsProc = getProcessByKey(processes, 'drums');
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd sd")',
+      thoughts: 'Opening drums',
+    });
+    await startPromise;
+
+    broadcast.mockClear();
+
+    vi.advanceTimersByTime(JAM_GOVERNANCE.AUTO_TICK_INTERVAL_MS);
+    await vi.advanceTimersByTimeAsync(0);
+    sendAgentResponse(drumsProc, {
+      pattern: 'no_change',
+      thoughts: 'Holding steady.',
+      commentary: 'Holding steady.',
+    });
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(getAgentCommentaryTexts(broadcast, 'drums')).toEqual([]);
+
+    await manager.stop();
+  });
+
   it('auto-tick resumes after failed directive', async () => {
     const { manager, broadcast, processes } = createTestManager();
 
@@ -2197,6 +2463,33 @@ describe('AgentProcessManager staged_silent mode', () => {
     await expect(manager.setJamPreset('jazz')).rejects.toThrow(
       'Preset is locked after the first agent joins.'
     );
+
+    await manager.stop();
+  });
+
+  it('first targeted no_change in staged_silent syncs to silence/idle state', async () => {
+    const { manager, processes } = createTestManager();
+
+    await manager.start(['bass'], { mode: 'staged_silent' });
+    await manager.setJamPreset('funk');
+
+    const directivePromise = manager.handleDirective(
+      '@GROOVE hold for now',
+      'bass',
+      ['bass']
+    );
+    await vi.advanceTimersByTimeAsync(0);
+
+    const bassProc = getProcessByKey(processes, 'bass');
+    sendAgentResponse(bassProc, {
+      pattern: 'no_change',
+      thoughts: 'Holding until cue.',
+    });
+    await directivePromise;
+
+    const snapshot = manager.getJamStateSnapshot();
+    expect(snapshot.agents.bass?.pattern).toBe('silence');
+    expect(snapshot.agents.bass?.status).toBe('idle');
 
     await manager.stop();
   });
