@@ -1036,7 +1036,7 @@ export class AgentProcessManager {
   /**
    * Aggregate tempo/energy decisions from auto-tick responses.
    * Simpler than directive-turn version: no boss cue direction to match.
-   * Applies 0.5x dampening to prevent runaway drift (auto-ticks fire every 30s).
+   * Applies 0.5x dampening to prevent runaway drift across frequent auto-ticks.
    */
   private applyModelRelativeContextDeltaForAutoTick(
     responses: Array<AgentResponse | null>
