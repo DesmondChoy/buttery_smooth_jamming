@@ -15,7 +15,7 @@ import type {
   ArrangementIntent,
 } from './types';
 import { AGENT_META } from './types';
-import { formatBandStateLine } from './pattern-parser';
+import { formatBandStateLine, validatePatternForJam } from './pattern-parser';
 import {
   deriveChordProgression,
   deriveScale,
@@ -1378,6 +1378,31 @@ export class AgentProcessManager {
 
   // ─── Private: State Management ───────────────────────────────────
 
+  private maybeRejectInvalidPattern(
+    key: string,
+    pattern: string,
+    turnSource: AgentTurnSource
+  ): boolean {
+    if (pattern === 'silence' || pattern === 'no_change') return false;
+
+    const validation = validatePatternForJam(pattern);
+    if (validation.valid) return false;
+
+    const reason = validation.reason || 'invalid pattern syntax';
+    const compactPattern = pattern.replace(/\s+/g, ' ').trim().slice(0, 200);
+    console.warn(`[Agent:${key}] Invalid pattern rejected: ${reason}. Pattern: ${compactPattern}`);
+
+    if (turnSource === 'directive') {
+      const agentName = AGENT_META[key]?.name ?? key;
+      this.broadcastWs('directive_error', {
+        message: `${agentName} returned an invalid pattern (${reason}). Keeping the previous groove.`,
+        targetAgent: key,
+      });
+    }
+
+    return true;
+  }
+
   private applyAgentResponse(
     key: string,
     response: AgentResponse | null,
@@ -1386,9 +1411,17 @@ export class AgentProcessManager {
     const state = this.agentStates[key];
     if (!state) return;
 
-    if (response) {
-      this.agentDecisions[key] = response.decision;
-      const pattern = response.pattern || 'silence';
+    let safeResponse = response;
+    if (safeResponse) {
+      const proposedPattern = safeResponse.pattern || 'silence';
+      if (this.maybeRejectInvalidPattern(key, proposedPattern, turnSource)) {
+        safeResponse = null;
+      }
+    }
+
+    if (safeResponse) {
+      this.agentDecisions[key] = safeResponse.decision;
+      const pattern = safeResponse.pattern || 'silence';
 
       // APM-14 contract: 'no_change' is a sentinel value meaning "keep my current
       // pattern playing". The agent's thoughts/commentary may still update, but
@@ -1402,12 +1435,12 @@ export class AgentProcessManager {
         // Don't update agentPatterns — keep existing pattern playing
         this.agentStates[key] = {
           ...state,
-          thoughts: response.thoughts || '',
+          thoughts: safeResponse.thoughts || '',
           status: this.agentPatterns[key] !== 'silence' ? 'playing' : state.status,
           lastUpdated: new Date().toISOString(),
         };
-        this.broadcastAgentThought(key, response);
-        this.maybeBroadcastAgentCommentary(key, response, turnSource);
+        this.broadcastAgentThought(key, safeResponse);
+        this.maybeBroadcastAgentCommentary(key, safeResponse, turnSource);
         this.setAgentStatus(key, this.agentStates[key].status);
         return;
       }
@@ -1417,14 +1450,14 @@ export class AgentProcessManager {
         ...state,
         pattern,
         fallbackPattern: pattern !== 'silence' ? pattern : state.fallbackPattern,
-        thoughts: response.thoughts || '',
+        thoughts: safeResponse.thoughts || '',
         status: pattern !== 'silence' ? 'playing' : 'idle',
         lastUpdated: new Date().toISOString(),
       };
 
       // Broadcast agent thought
-      this.broadcastAgentThought(key, response);
-      this.maybeBroadcastAgentCommentary(key, response, turnSource);
+      this.broadcastAgentThought(key, safeResponse);
+      this.maybeBroadcastAgentCommentary(key, safeResponse, turnSource);
     } else {
       // APM-14 contract: when an agent times out (null response), the runtime
       // falls back to its last known good pattern (fallbackPattern) to maintain

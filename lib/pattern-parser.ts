@@ -15,6 +15,12 @@ import { AGENT_META } from './types';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type ASTNode = any;
+type MiniDelimiter = '<' | '>' | '[' | ']' | '{' | '}' | '(' | ')';
+
+export interface PatternValidationResult {
+  valid: boolean;
+  reason?: string;
+}
 
 // Known effect methods (value-bearing — we capture the first argument)
 // Includes .s() which sets the sound source on note() patterns
@@ -28,6 +34,140 @@ const MODIFIER_METHODS = new Set([
   'sometimes', 'rarely', 'every', 'fast', 'slow',
   'degradeBy', 'palindrome', 'euclid',
 ]);
+
+const MINI_SOURCE_METHODS = new Set(['s', 'sound', 'note']);
+const MINI_OPEN_TO_CLOSE: Record<string, string> = {
+  '[': ']',
+  '<': '>',
+  '{': '}',
+  '(': ')',
+};
+const MINI_CLOSE_TO_OPEN: Record<string, string> = {
+  ']': '[',
+  '>': '<',
+  '}': '{',
+  ')': '(',
+};
+
+function parsePatternExpression(code: string): ASTNode | null {
+  const wrapped = `const __expr = ${code}`;
+  const ast = parse(wrapped, {
+    ecmaVersion: 2022,
+    sourceType: 'module',
+  });
+
+  const decl = (ast as ASTNode).body[0]?.declarations?.[0];
+  return decl?.init ?? null;
+}
+
+function getCallName(node: ASTNode): string | null {
+  const callee = node?.callee;
+  if (!callee) return null;
+  if (callee.type === 'Identifier' && typeof callee.name === 'string') {
+    return callee.name;
+  }
+  if (
+    callee.type === 'MemberExpression'
+    && callee.property?.type === 'Identifier'
+    && typeof callee.property.name === 'string'
+  ) {
+    return callee.property.name;
+  }
+  return null;
+}
+
+function validateMiniDelimiterBalance(miniStr: string): string | null {
+  const expectedClosers: string[] = [];
+
+  for (let i = 0; i < miniStr.length; i++) {
+    const ch = miniStr[i] as MiniDelimiter;
+    if (ch in MINI_OPEN_TO_CLOSE) {
+      expectedClosers.push(MINI_OPEN_TO_CLOSE[ch]);
+      continue;
+    }
+    if (!(ch in MINI_CLOSE_TO_OPEN)) continue;
+
+    const expected = expectedClosers.pop();
+    if (!expected) {
+      return `unmatched "${ch}" in mini string`;
+    }
+    if (ch !== expected) {
+      return `mismatched mini delimiter: expected "${expected}" but found "${ch}"`;
+    }
+  }
+
+  if (expectedClosers.length > 0) {
+    const lastUnclosed = MINI_CLOSE_TO_OPEN[
+      expectedClosers[expectedClosers.length - 1] as MiniDelimiter
+    ];
+    return `unclosed "${lastUnclosed}" in mini string`;
+  }
+
+  return null;
+}
+
+function findMiniDelimiterIssue(node: ASTNode): string | null {
+  const stack: ASTNode[] = [node];
+
+  while (stack.length > 0) {
+    const current = stack.pop();
+    if (!current || typeof current !== 'object') continue;
+
+    if (current.type === 'CallExpression') {
+      const callName = getCallName(current);
+      if (callName && MINI_SOURCE_METHODS.has(callName)) {
+        const arg = current.arguments?.[0];
+        if (arg?.type === 'Literal' && typeof arg.value === 'string') {
+          const delimiterIssue = validateMiniDelimiterBalance(arg.value);
+          if (delimiterIssue) {
+            return `${callName}(): ${delimiterIssue}`;
+          }
+        }
+      }
+    }
+
+    for (const value of Object.values(current)) {
+      if (Array.isArray(value)) {
+        for (const item of value) {
+          if (item && typeof item === 'object') {
+            stack.push(item as ASTNode);
+          }
+        }
+      } else if (value && typeof value === 'object') {
+        stack.push(value as ASTNode);
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Lightweight server-safe validator for jam pattern outputs.
+ * This intentionally avoids browser-only Strudel parser dependencies.
+ */
+export function validatePatternForJam(code: string): PatternValidationResult {
+  if (!code || code === 'silence' || code === 'no_change') {
+    return { valid: true };
+  }
+
+  let expr: ASTNode | null;
+  try {
+    expr = parsePatternExpression(code);
+  } catch {
+    return { valid: false, reason: 'not a valid expression' };
+  }
+  if (!expr) {
+    return { valid: false, reason: 'missing expression' };
+  }
+
+  const delimiterIssue = findMiniDelimiterIssue(expr);
+  if (delimiterIssue) {
+    return { valid: false, reason: delimiterIssue };
+  }
+
+  return { valid: true };
+}
 
 /**
  * Extract leaf values from a mini notation string using regex.
@@ -132,17 +272,8 @@ export function parsePattern(code: string): PatternSummary | null {
   if (!code || code === 'silence' || code === 'no_change') return null;
 
   try {
-    // Wrap as assignment expression so acorn can parse it as a statement
-    const wrapped = `const __expr = ${code}`;
-    const ast = parse(wrapped, {
-      ecmaVersion: 2022,
-      sourceType: 'module',
-    });
-
-    // The expression is the init of the variable declarator
-    const decl = (ast as ASTNode).body[0]?.declarations?.[0];
-    if (!decl) return null;
-    const expr = decl.init;
+    const expr = parsePatternExpression(code);
+    if (!expr) return null;
 
     // Check if it's a stack() call
     if (

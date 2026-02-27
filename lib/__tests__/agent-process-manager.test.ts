@@ -529,6 +529,60 @@ describe('AgentProcessManager turn serialization', () => {
     await manager.stop();
   });
 
+  it('rejects malformed mini pattern output and keeps prior groove', async () => {
+    const { manager, broadcast, processes } = createTestManager();
+
+    const startPromise = manager.start(['drums']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const drumsProc = getNthProcess(processes, 0);
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd sd")',
+      thoughts: 'Opening beat',
+      reaction: 'Locked',
+    });
+    await startPromise;
+
+    broadcast.mockClear();
+
+    const directivePromise = manager.handleDirective(
+      'half time feel, keep it punchy',
+      'drums',
+      ['drums']
+    );
+    await vi.advanceTimersByTimeAsync(0);
+
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd > sd")',
+      thoughts: 'Switched to halftime',
+      reaction: 'Pulled it back',
+    });
+    await directivePromise;
+
+    const executeMessages = broadcast.mock.calls
+      .map(([msg]: unknown[]) => msg as { type: string; payload?: { code?: string } })
+      .filter((msg) => msg.type === 'execute');
+    expect(executeMessages).toHaveLength(1);
+    expect(executeMessages[0].payload?.code).toBe('s("bd sd")');
+
+    const directiveErrors = broadcast.mock.calls
+      .map(([msg]: unknown[]) => msg as { type: string; payload?: { message?: string } })
+      .filter((msg) => msg.type === 'directive_error');
+    expect(directiveErrors).toHaveLength(1);
+    expect(directiveErrors[0].payload?.message).toContain('invalid pattern');
+
+    const agentThoughts = broadcast.mock.calls
+      .map(([msg]: unknown[]) => msg as { type: string })
+      .filter((msg) => msg.type === 'agent_thought');
+    expect(agentThoughts).toHaveLength(0);
+
+    const snapshot = manager.getJamStateSnapshot();
+    expect(snapshot.agents.drums?.pattern).toBe('s("bd sd")');
+    expect(snapshot.agents.drums?.status).toBe('playing');
+
+    await manager.stop();
+  });
+
   it('accepts legacy payload without decision block', async () => {
     const { manager, processes } = createTestManager();
     const rawManager = manager as unknown as {

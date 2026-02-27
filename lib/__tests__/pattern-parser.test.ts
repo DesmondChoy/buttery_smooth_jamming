@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { parsePattern, summarizePattern, formatBandStateLine } from '../pattern-parser';
+import {
+  parsePattern,
+  summarizePattern,
+  formatBandStateLine,
+  validatePatternForJam,
+} from '../pattern-parser';
 
 // ─── Test corpus from .codex/agents/*.md ─────────────────────────────
 
@@ -88,6 +93,24 @@ describe('parsePattern', () => {
 
   it('returns null for malformed code', () => {
     expect(parsePattern('this is not valid((')).toBeNull();
+  });
+});
+
+describe('validatePatternForJam', () => {
+  it('accepts valid drum mini patterns', () => {
+    expect(validatePatternForJam('s("bd [~ bd] sd [bd ~]").gain(0.8)')).toEqual({ valid: true });
+  });
+
+  it('rejects unmatched closing mini delimiters (stray >)', () => {
+    const result = validatePatternForJam('s("bd > sd")');
+    expect(result.valid).toBe(false);
+    expect(result.reason).toContain('unmatched ">"');
+  });
+
+  it('rejects unclosed mini delimiters', () => {
+    const result = validatePatternForJam('note("<[c3,e3,g3] [f3,a3,c4>").s("piano")');
+    expect(result.valid).toBe(false);
+    expect(result.reason).toContain('mismatched mini delimiter');
   });
 });
 
