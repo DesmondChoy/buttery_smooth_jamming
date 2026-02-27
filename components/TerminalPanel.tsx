@@ -48,7 +48,7 @@ function StatusIndicator({ status, isConnected }: { status: RuntimeStatus; isCon
   return (
     <div className="flex items-center gap-2">
       <div className={`w-2 h-2 rounded-full ${getStatusColor()}`} />
-      <span className="text-sm text-gray-400">{getStatusText()}</span>
+      <span className="text-sm text-stage-text">{getStatusText()}</span>
     </div>
   );
 }
@@ -63,7 +63,7 @@ function TerminalLineDisplay({ line }: { line: TerminalLine }) {
       case 'tool':
         return 'text-yellow-400 font-mono text-sm';
       case 'status':
-        return 'text-gray-500 italic';
+        return 'text-stage-muted italic';
       case 'error':
         return 'text-red-400';
       default:
@@ -90,7 +90,7 @@ function TerminalLineDisplay({ line }: { line: TerminalLine }) {
 
   return (
     <div className={`${getLineStyles()} whitespace-pre-wrap break-words`}>
-      <span className="text-gray-600">{getPrefix()}</span>
+      <span className="text-stage-muted">{getPrefix()}</span>
       {line.text}
     </div>
   );
@@ -148,14 +148,14 @@ export function TerminalPanel({
 
   return (
     <div
-      className={`flex flex-col h-full bg-gray-900 font-mono ${className}`}
+      className={`flex flex-col h-full bg-stage-black font-mono ${className}`}
       onClick={handleContainerClick}
     >
       {/* Header */}
-      <header className="flex items-center justify-between px-4 py-3 border-b border-gray-700 bg-gray-800">
+      <header className="flex items-center justify-between px-4 py-3 border-b border-stage-border bg-stage-dark">
         <div className="flex items-center gap-3">
           <h2 className="text-lg font-semibold text-white">Runtime Terminal</h2>
-          <span className="text-xs text-gray-500">Ctrl+L to clear</span>
+          <span className="text-xs text-stage-muted">Ctrl+L to clear</span>
         </div>
         <StatusIndicator status={status} isConnected={isConnected} />
       </header>
@@ -169,7 +169,7 @@ export function TerminalPanel({
         aria-label="Runtime terminal output"
       >
         {lines.length === 0 ? (
-          <div className="text-gray-500 italic">
+          <div className="text-stage-muted italic">
             Ask the runtime to create music patterns. Try: &quot;Make me a funky beat&quot;
           </div>
         ) : (
@@ -180,9 +180,9 @@ export function TerminalPanel({
       {/* Input area */}
       <form
         onSubmit={handleSubmit}
-        className="flex items-center border-t border-gray-700 bg-gray-800"
+        className="flex items-center border-t border-stage-border bg-stage-dark"
       >
-        <span className="text-green-400 px-4 py-3">&gt;</span>
+        <span className="text-amber-glow px-4 py-3">&gt;</span>
         <input
           ref={inputRef}
           type="text"
@@ -197,13 +197,13 @@ export function TerminalPanel({
               : 'Connecting...'
           }
           disabled={!isConnected || status === 'thinking'}
-          className="flex-1 bg-transparent text-white py-3 pr-4 outline-none placeholder-gray-500 disabled:opacity-50"
+          className="flex-1 bg-transparent text-white py-3 pr-4 outline-none placeholder-stage-muted disabled:opacity-50"
           aria-label="Chat input"
         />
         <button
           type="submit"
           disabled={!isConnected || !inputValue.trim() || status === 'thinking'}
-          className="px-4 py-3 text-blue-400 hover:text-blue-300 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="px-4 py-3 text-amber-glow hover:text-amber-warm disabled:opacity-50 disabled:cursor-not-allowed"
           aria-label="Send message"
         >
           Send

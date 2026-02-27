@@ -67,38 +67,29 @@ await page.waitForSelector('button:has-text("Playing")');
 - [ ] Page loads without errors
 - [ ] Title is correct
 
-### Layout Structure (Normal Mode — before jam starts)
-- [ ] "Buttery Smooth Jamming" heading and subtitle visible
-- [ ] Terminal panel visible on left (1/3 width)
-- [ ] Right content area with Play/Stop buttons and JamControls
-- [ ] StrudelPanel visible at bottom of page (full width, below both panels)
-- [ ] Control buttons visible (play/stop)
-- [ ] JamControls panel visible (with Start Jam button)
-- [ ] Keyboard shortcut hints visible ("Ctrl+Enter to play • Ctrl+. to stop")
-- [ ] AudioStartButton overlay shown before audio is enabled
+### Layout Structure (Landing Page — "Live Stage" aesthetic, before jam starts)
+- [ ] "Buttery Smooth Jamming" heading visible with amber gradient text (`font-display`)
+- [ ] Tagline: "AI-powered live coding music. Four AI band members. One stage. You're the boss."
+- [ ] Large amber "Start a Jam Session" CTA button (center, glowing pulse animation)
+- [ ] Band member cards in 2x2 grid (md:4-col): BEAT, GROOVE, ARIA, CHORDS — each with emoji, colored name, personality hint
+- [ ] All band member cards have uniform background (no individual highlighting)
+- [ ] Terminal drawer toggle visible on left edge (chevron icon); clicking opens slide-in drawer
+- [ ] StrudelPanel is hidden (rendered in DOM with `h-0 overflow-hidden` for audio context, not visible)
+- [ ] No Play/Stop buttons on landing page (those only appear in jam mode JamTopBar)
+- [ ] Keyboard shortcut hint visible at bottom ("Ctrl+Enter to play · Ctrl+. to stop")
+- [ ] AudioStartButton overlay shown before audio is enabled ("Ready to Jam?" title, `font-display`)
+- [ ] Warm color palette throughout: `bg-stage-black` (#1a1614) base, `stage-dark`/`stage-border` accents, amber highlights
 
 ---
 
-## Phase 2: Strudel Editor Functionality
+## Phase 2: Strudel Editor (Hidden on Landing Page)
 
-### Editor Display
-- [ ] Code editor is visible and rendered
-- [ ] Editor has syntax highlighting
-- [ ] Editor shows default/example code pattern
-- [ ] Line numbers are displayed (if configured)
+The StrudelPanel is always rendered in the DOM (for audio context continuity) but hidden on the landing page via `h-0 overflow-hidden`. It becomes visible only indirectly through jam mode audio execution.
 
-### Code Editing
-- [ ] Can click into the editor
-- [ ] Can type new code
-- [ ] Can select and delete code
-- [ ] Can use keyboard shortcuts (Ctrl+A, etc.)
-- [ ] Changes persist in editor state
-
-### Audio Controls
-- [ ] Play button is visible
-- [ ] Stop button is visible (or play toggles)
-- [ ] Buttons are clickable
-- [ ] Button states update appropriately
+### Verify Hidden State
+- [ ] No visible code editor on landing page
+- [ ] StrudelPanel element exists in DOM (not removed, just hidden)
+- [ ] Audio context still initializes correctly despite hidden editor
 
 ---
 
@@ -167,42 +158,39 @@ If step 6 or 7 fails, there's a WebSocket or ref-forwarding bug.
 
 ---
 
-## Phase 5: Terminal Panel (Normal Mode)
+## Phase 5: Terminal Drawer (Slide-In Panel)
 
-**Note:** The Terminal Panel is only visible in **normal mode** (before a jam starts). During a jam, it is replaced by the Jam Mode UI (see Phase 10).
+**Note:** The Terminal is now a slide-in drawer accessible from the landing page via a toggle tab on the left edge. It is NOT visible inline — it overlays as a fixed-position panel.
 
-### Layout
-- [ ] Terminal panel visible on left side (1/3 width, `min-w-[300px]`)
-- [ ] Right content area contains heading, Play/Stop buttons, JamControls
-- [ ] StrudelPanel renders at the bottom (visible in normal mode; hidden via `h-0 overflow-hidden` in jam mode, but still rendered so audio continues)
+### Drawer Toggle
+- [ ] Toggle button visible on left edge of screen (chevron icon, `z-50`)
+- [ ] Clicking toggle opens drawer (slides in from left, 400px wide)
+- [ ] Backdrop overlay appears behind drawer (`bg-black/40 backdrop-blur-sm`)
+- [ ] Clicking backdrop closes drawer
+- [ ] Clicking toggle again closes drawer
+- [ ] Toggle icon rotates 180° when drawer is open
 
-### Header
-- [ ] Header shows terminal title (currently `Claude Terminal` in legacy UI copy)
-- [ ] Status indicator visible (dot + text)
+### Drawer Content (TerminalPanel)
+- [ ] Header shows "Runtime Terminal" title with warm `bg-stage-dark` styling
+- [ ] Status indicator visible (dot + text) — shows "Ready" when connected
 - [ ] Ctrl+L hint displayed for clearing
-
-### Content Area
-- [ ] Empty state message appears (legacy copy may still reference Claude)
-- [ ] Messages display with proper formatting
-- [ ] User messages distinguishable from assistant responses
-- [ ] Auto-scroll to latest message
-
-### Input
-- [ ] Input field present at bottom
-- [ ] Placeholder text visible
-- [ ] Can type in input field
-- [ ] Enter key submits message (when connected)
+- [ ] Empty state message: "Ask the runtime to create music patterns..."
+- [ ] Messages display with proper formatting (warm stage colors)
+- [ ] Input field at bottom with amber `>` prompt
+- [ ] Can type and submit messages when connected
+- [ ] Send button styled with `text-amber-glow`
 
 ---
 
 ## Phase 6: Desktop Layout
 
 ### Desktop (1280px+)
-- [ ] Full layout renders correctly in normal mode
-- [ ] All controls accessible
-- [ ] StrudelPanel has adequate height at bottom
-- [ ] Terminal panel (left) and content area (right) side-by-side, StrudelPanel below
+- [ ] Landing page hero layout centered with adequate spacing
+- [ ] Band member cards display in 4-column grid on md+ breakpoint
+- [ ] "Start a Jam Session" button prominently centered with glow animation
+- [ ] Terminal drawer toggle accessible on left edge
 - [ ] Jam mode layout renders correctly: JamTopBar + Agent Columns (CSS grid) + BossInputBar + PatternDisplay (StrudelPanel hidden)
+- [ ] Warm stage color palette applied consistently (no cold grays remaining)
 
 ---
 
@@ -219,20 +207,20 @@ If step 6 or 7 fails, there's a WebSocket or ref-forwarding bug.
 
 ---
 
-## Phase 8: Jam Controls
+## Phase 8: Jam Session Start (Landing Page CTA)
 
-### Static Rendering
-- [ ] JamControls panel visible below Play/Stop buttons
-- [ ] "Start Jam" button visible
+### Start Jam CTA
+- [ ] "Start a Jam Session" button visible as large amber CTA on landing page
+- [ ] Button disabled when runtime is not connected (`disabled:opacity-50`)
+- [ ] Button enabled when runtime WebSocket connects (status "Ready" in terminal drawer)
+- [ ] Button has amber gradient + glow-pulse animation when enabled
 
-### Connection Gate
-- [ ] "Start Jam" button disabled when terminal status is NOT "Ready"
-- [ ] Helper text `Connect to Claude to start a jam` is shown when disconnected (legacy copy still acceptable until UI rename)
-- [ ] "Start Jam" button enabled when terminal shows "Ready"
-
-### Jam Session Lifecycle (requires terminal connection)
-- [ ] Clicking "Start Jam" → Agent Selection Modal appears
-- [ ] Modal shows all 4 agents (BEAT, GROOVE, ARIA, CHORDS) with emoji and checkboxes
+### Jam Session Lifecycle (requires runtime connection)
+- [ ] Clicking "Start a Jam Session" → Agent Selection Modal appears
+- [ ] Modal has warm `bg-stage-black` styling with `shadow-amber-500/5`
+- [ ] Modal title: "Start Jam Session" (`font-display`)
+- [ ] Modal shows all 4 agents (BEAT, GROOVE, ARIA, CHORDS) with emoji, name, personality hint, and checkboxes
+- [ ] All agent buttons have uniform background when selected (no individual color highlighting)
 - [ ] Can toggle individual agents on/off
 - [ ] "Start Jam (N agents)" button shows count of selected agents
 - [ ] Cannot deselect the last agent (minimum 1 required)
@@ -300,14 +288,14 @@ Every ~30 seconds, the system sends an auto-tick to all agents. This triggers th
 **Prerequisite:** Start a jam session (Phase 8 lifecycle tests must pass first). When the jam starts, the layout **switches entirely** from normal mode to jam mode.
 
 ### Layout Switch
-- [ ] Clicking "Start Jam" (after agent selection) swaps normal mode layout to jam mode layout
-- [ ] Terminal panel (left) disappears
-- [ ] Heading ("Buttery Smooth Jamming") and Play/Stop buttons disappear from right area
-- [ ] JamTopBar appears at top (Stop button, musical context, energy bar)
-- [ ] Agent Columns appear in CSS grid (one column per selected agent)
-- [ ] BossInputBar appears below the agent columns
-- [ ] PatternDisplay appears below BossInputBar (shows per-agent patterns with emoji/names)
-- [ ] StrudelPanel is **hidden** during jam mode (`h-0 overflow-hidden`) but still rendered — audio is not interrupted by layout switch
+- [ ] Clicking "Start Jam (N agents)" (after agent selection) swaps landing page to jam mode layout
+- [ ] Landing page hero (title, CTA, cards) disappears
+- [ ] Terminal drawer toggle disappears (drawer not available in jam mode)
+- [ ] JamTopBar appears at top (Play/Stop buttons, preset selector, musical context, energy bar) — warm `bg-stage-dark` styling
+- [ ] Agent Columns appear in CSS grid (one column per selected agent) — warm `bg-stage-black` styling
+- [ ] BossInputBar appears below the agent columns — warm `bg-stage-dark` styling
+- [ ] PatternDisplay appears below BossInputBar (shows per-agent patterns with emoji/names) — warm `bg-stage-black` styling
+- [ ] StrudelPanel remains **hidden** (`h-0 overflow-hidden`) but still rendered — audio is not interrupted by layout switch
 
 ### JamTopBar
 - [ ] Stop button visible at left
@@ -375,11 +363,11 @@ Verify the full transition cycle:
 - [ ] "silence" shown when agent has no pattern
 - [ ] Collapsible via "▶ Patterns" toggle
 
-### Returning to Normal Mode
-- [ ] Clicking "Stop" (JamTopBar button) → layout switches back to normal mode
-- [ ] Terminal panel reappears on left
-- [ ] Heading and Play/Stop buttons reappear on right
-- [ ] StrudelPanel reappears at bottom (was hidden during jam; audio continues if playing)
+### Returning to Landing Page
+- [ ] Clicking "Stop" (JamTopBar button) → layout switches back to landing page
+- [ ] Hero layout reappears (title, CTA, band member cards)
+- [ ] Terminal drawer toggle reappears on left edge
+- [ ] StrudelPanel remains hidden (audio continues if playing)
 
 ### Agent Context Isolation & Latency
 
@@ -402,7 +390,7 @@ These tests use `data-testid` attributes for reliable element targeting:
    ```javascript
    () => {
      const msgs = document.querySelector('[data-testid="agent-messages-drums"]');
-     const thoughts = msgs?.querySelectorAll('p.text-gray-300');
+     const thoughts = msgs?.querySelectorAll('p.text-stage-text');
      return thoughts?.length ? thoughts[thoughts.length - 1].textContent : null;
    }
    ```
@@ -530,26 +518,23 @@ async (page) => {
 
 ## Quick Smoke Test
 
-Use this 15-item checklist for rapid validation:
+Use this 12-item checklist for rapid validation:
 
-1. [ ] App loads at localhost:3000
-2. [ ] Normal mode layout: Terminal (left), content area (right), StrudelPanel (bottom)
-3. [ ] Terminal panel shows the terminal header (currently `Claude Terminal` in legacy UI copy)
-4. [ ] Terminal status shows "Ready" (not "Disconnected" or "Connecting...")
-5. [ ] No "WebSocket connection error" banner visible
-6. [ ] Strudel editor visible with code at bottom
-7. [ ] Play button clickable (after enabling audio)
-8. [ ] **AI terminal chat works: type message → assistant responds**
-9. [ ] **Assistant can execute patterns: editor updates + audio plays**
-10. [ ] No WebSocket errors in console
-11. [ ] JamControls panel visible with "Start Jam" button
-12. [ ] "Start Jam" button disabled when terminal is not connected, enabled when ready
-13. [ ] Starting a jam → agent selection modal → layout switches to jam mode (AgentColumns + BossInputBar)
-14. [ ] Agent columns show per-agent commentary while PatternDisplay shows patterns with emoji/names
-15. [ ] Stopping jam (via "Stop" button in JamTopBar) → layout reverts to normal mode
+1. [ ] App loads at localhost:3000 with warm "Live Stage" aesthetic (dark amber theme)
+2. [ ] Landing page hero: amber gradient title, tagline, "Start a Jam Session" CTA, 4 band member cards
+3. [ ] AudioStartButton overlay shows "Ready to Jam?" before audio is enabled
+4. [ ] Terminal drawer toggle on left edge — opens/closes slide-in panel
+5. [ ] Terminal drawer shows "Runtime Terminal" with "Ready" status when connected
+6. [ ] No "WebSocket connection error" banner visible
+7. [ ] "Start a Jam Session" button disabled when disconnected, enabled when runtime ready
+8. [ ] Clicking CTA → agent selection modal (warm styling, uniform agent backgrounds, personality hints)
+9. [ ] Confirming modal → layout switches to jam mode (JamTopBar + AgentColumns + BossInputBar + PatternDisplay)
+10. [ ] All jam mode components use warm stage palette (no cold gray-700/800/900 remnants)
+11. [ ] Agent columns show per-agent commentary while PatternDisplay shows patterns with emoji/names
+12. [ ] Stopping jam (via "Stop" in JamTopBar) → layout reverts to landing page hero
 
-Items 8 and 9 are the most critical - they test the complete integration.
-Items 13-15 test the jam mode UI lifecycle.
+Items 4-5 test terminal drawer integration.
+Items 7-12 test the jam mode UI lifecycle.
 
 ---
 

@@ -148,6 +148,6 @@ export const AGENT_META: Record<string, {
 }> = {
   drums:  { key: 'drums',  name: 'BEAT',   emoji: '🥁', mention: '@BEAT',   colors: { border: 'border-red-500/50',    accent: 'text-red-400',    bg: 'bg-red-500/10',    bgSolid: 'bg-red-900/50' } },
   bass:   { key: 'bass',   name: 'GROOVE', emoji: '🎸', mention: '@GROOVE', colors: { border: 'border-blue-500/50',   accent: 'text-blue-400',   bg: 'bg-blue-500/10',   bgSolid: 'bg-blue-900/50' } },
-  melody: { key: 'melody', name: 'ARIA',   emoji: '🎹', mention: '@ARIA',   colors: { border: 'border-purple-500/50', accent: 'text-purple-400', bg: 'bg-purple-500/10', bgSolid: 'bg-purple-900/50' } },
-  chords: { key: 'chords', name: 'CHORDS', emoji: '🎼', mention: '@CHORDS', colors: { border: 'border-green-500/50',  accent: 'text-green-400',  bg: 'bg-green-500/10',  bgSolid: 'bg-green-900/50' } },
+  melody: { key: 'melody', name: 'ARIA',   emoji: '🎹', mention: '@ARIA',   colors: { border: 'border-gray-400/50', accent: 'text-gray-200', bg: 'bg-gray-500/10', bgSolid: 'bg-gray-900/50' } },
+  chords: { key: 'chords', name: 'CHORDS', emoji: '🎼', mention: '@CHORDS', colors: { border: 'border-fuchsia-500/50',  accent: 'text-fuchsia-400',  bg: 'bg-fuchsia-500/10',  bgSolid: 'bg-fuchsia-900/50' } },
 };

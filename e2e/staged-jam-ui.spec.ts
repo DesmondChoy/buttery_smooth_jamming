@@ -416,7 +416,7 @@ test.describe('Staged Jam UI Flow', () => {
 
     await page.goto('/');
 
-    const startJamButton = page.getByRole('button', { name: 'Start Jam' });
+    const startJamButton = page.getByRole('button', { name: /Start.*Jam/ });
     await expect(startJamButton).toBeEnabled();
     await startJamButton.click();
 

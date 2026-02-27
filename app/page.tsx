@@ -2,8 +2,7 @@
 
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import dynamic from 'next/dynamic';
-import { TerminalPanel } from '@/components/TerminalPanel';
-import { JamControls } from '@/components/JamControls';
+import { TerminalDrawer } from '@/components/TerminalDrawer';
 import { JamTopBar } from '@/components/JamTopBar';
 import { AgentColumn } from '@/components/AgentColumn';
 import { BossInputBar } from '@/components/BossInputBar';
@@ -12,6 +11,7 @@ import { AgentSelectionModal } from '@/components/AgentSelectionModal';
 import { AudioStartButton } from '@/components/AudioStartButton';
 import { useWebSocket, useStrudel, useRuntimeTerminal, useJamSession } from '@/hooks';
 import { PRESETS } from '@/lib/musical-context-presets';
+import { AGENT_META } from '@/lib/types';
 
 const StrudelPanel = dynamic(
   () => import('@/components/StrudelPanel'),
@@ -19,6 +19,13 @@ const StrudelPanel = dynamic(
 );
 
 const SILENT_JAM_PATTERN = 'silence';
+
+const AGENT_HINTS: Record<string, string> = {
+  drums: 'Syncopation-obsessed veteran with high ego',
+  bass: 'Selfless minimalist who locks with the kick',
+  melody: 'Classically trained, insists on harmonic correctness',
+  chords: 'Comping specialist, fills the harmonic middle',
+};
 
 export default function Home() {
   const [audioReady, setAudioReady] = useState(false);
@@ -379,6 +386,8 @@ export default function Home() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [audioReady, isPlaying, isJamming, handlePlay, handleStop, handleJamPlay, handleStopJamAndAudio]);
 
+  const agentKeys = Object.keys(AGENT_META);
+
   return (
     <main className="flex flex-col h-screen overflow-hidden">
       {/* Top section: swaps based on jam mode */}
@@ -405,7 +414,7 @@ export default function Home() {
 
             {/* Agent columns grid */}
             <div
-              className="flex-1 min-h-0 grid gap-px bg-gray-700 overflow-hidden"
+              className="flex-1 min-h-0 grid gap-px bg-stage-border overflow-hidden"
               style={{ gridTemplateColumns: `repeat(${selectedAgents.length}, minmax(0, 1fr))` }}
             >
               {selectedAgents.map((key) => (
@@ -436,26 +445,27 @@ export default function Home() {
           </div>
         ) : (
           <>
-            {/* Normal mode: terminal on left */}
-            <TerminalPanel
+            {/* Terminal drawer (replaces inline terminal) */}
+            <TerminalDrawer
               lines={runtimeLines}
               status={runtimeStatus}
               isConnected={isRuntimeConnected}
               sendMessage={sendMessage}
               clearLines={clearLines}
-              className="w-1/3 min-w-[300px] border-r border-gray-700"
             />
 
-            {/* Normal mode: content on right */}
-            <div className="flex-1 flex flex-col items-center p-8 relative overflow-y-auto">
-              <h1 className="text-4xl font-bold mb-4">Buttery Smooth Jamming</h1>
-              <p className="text-gray-400 text-lg mb-8">
-                AI-assisted live coding music with Strudel
+            {/* Hero landing page */}
+            <div className="flex-1 flex flex-col items-center justify-center p-8 relative overflow-y-auto">
+              <h1 className="text-5xl md:text-6xl font-display font-bold mb-4 bg-gradient-to-r from-amber-500 to-amber-300 bg-clip-text text-transparent">
+                Buttery Smooth Jamming
+              </h1>
+              <p className="text-stage-text text-lg mb-10 text-center max-w-xl">
+                AI-powered live coding music. Four AI band members. One stage. You&apos;re the boss.
               </p>
 
               {/* Error banner */}
               {(wsError || error || !isExecutionWsConnected) && (
-                <div className="w-full max-w-4xl mb-4 bg-red-900/50 border border-red-500 rounded-lg p-3">
+                <div className="w-full max-w-4xl mb-6 bg-red-900/30 border border-red-500/50 rounded-xl p-3">
                   <p className="text-red-200 text-sm font-mono">
                     {wsError
                       || error
@@ -464,46 +474,44 @@ export default function Home() {
                 </div>
               )}
 
-              {/* Play/Stop controls */}
-              <div className="w-full max-w-4xl mb-4 flex gap-2">
-                <button
-                  onClick={handlePlay}
-                  disabled={!audioReady}
-                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                    isPlaying
-                      ? 'bg-green-600 text-white'
-                      : 'bg-gray-700 hover:bg-gray-600 text-white'
-                  } disabled:opacity-50 disabled:cursor-not-allowed`}
-                >
-                  {isPlaying ? '▶ Playing' : '▶ Play'}
-                </button>
-                <button
-                  onClick={handleStop}
-                  disabled={!audioReady || !isPlaying}
-                  className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  ◼ Stop
-                </button>
-                <span className="flex items-center text-gray-500 text-sm ml-4">
-                  Ctrl+Enter to play • Ctrl+. to stop
-                </span>
+              {/* Start Jam CTA */}
+              <button
+                onClick={requestStartJam}
+                disabled={!isRuntimeConnected}
+                className="px-10 py-5 rounded-2xl font-display font-bold text-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-stage-black transition-all duration-200 hover:scale-105 animate-glow-pulse disabled:opacity-50 disabled:cursor-not-allowed disabled:animate-none mb-10"
+              >
+                Start a Jam Session
+              </button>
+
+              {/* Band member cards */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 w-full max-w-3xl mb-10">
+                {agentKeys.map((key, i) => {
+                  const meta = AGENT_META[key];
+                  return (
+                    <div
+                      key={key}
+                      className="bg-stage-dark border border-stage-border rounded-xl p-4 text-center hover:scale-[1.03] transition-transform duration-200 animate-fade-in-up"
+                      style={{ animationDelay: `${i * 100}ms` }}
+                    >
+                      <span className="text-3xl block mb-2">{meta.emoji}</span>
+                      <span className={`font-display font-bold text-sm ${meta.colors.accent}`}>{meta.name}</span>
+                      <p className="text-xs text-stage-text mt-1">{AGENT_HINTS[key]}</p>
+                    </div>
+                  );
+                })}
               </div>
 
-              {/* Jam session controls */}
-              <JamControls
-                isJamming={isJamming}
-                isRuntimeConnected={isRuntimeConnected}
-                onStartJam={requestStartJam}
-                onStopJam={stopJam}
-                className="w-full max-w-4xl mb-4"
-              />
+              {/* Keyboard shortcut hint */}
+              <span className="text-stage-muted text-sm">
+                Ctrl+Enter to play · Ctrl+. to stop
+              </span>
             </div>
           </>
         )}
       </div>
 
-      {/* Bottom: StrudelPanel always rendered (prevents audio interruption on mode switch) */}
-      <div className={`border-t border-gray-700 shrink-0 ${isJamming ? 'h-0 overflow-hidden' : ''}`}>
+      {/* StrudelPanel always rendered but hidden (prevents audio interruption on mode switch) */}
+      <div className="h-0 overflow-hidden">
         <StrudelPanel
           ref={ref}
           initialCode={`// Welcome to Buttery Smooth Jamming!

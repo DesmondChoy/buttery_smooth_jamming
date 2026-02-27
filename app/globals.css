@@ -2,6 +2,26 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --stage-black: #1a1614;
+  --stage-dark: #231f1b;
+  --stage-mid: #2e2924;
+  --stage-border: #3d362f;
+  --stage-muted: #6b5f54;
+  --stage-text: #c4b8a8;
+  --amber-glow: #f59e0b;
+  --amber-warm: #d97706;
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background: radial-gradient(ellipse 80% 50% at 50% 0%, rgba(245, 158, 11, 0.04) 0%, transparent 70%);
+}
+
 /* Contain Strudel editor visualizations */
 .strudel-container {
   position: relative;
@@ -11,5 +31,5 @@
 .strudel-container .cm-editor {
   position: relative;
   z-index: 10;
-  background: rgba(30, 30, 30, 0.95);
+  background: rgba(26, 22, 20, 0.95);
 }

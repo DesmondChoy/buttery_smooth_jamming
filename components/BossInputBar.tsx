@@ -120,7 +120,7 @@ export function BossInputBar({
       )}
       <form
         onSubmit={handleSubmit}
-        className="flex items-center border-t border-gray-700 bg-gray-800"
+        className="flex items-center border-t border-stage-border bg-stage-dark"
       >
         <span className="text-amber-400 px-4 py-3 text-sm font-semibold shrink-0">BOSS &gt;</span>
         <input
@@ -140,7 +140,7 @@ export function BossInputBar({
                   : 'Give a directive... (@ to mention an agent)'
           }
           disabled={!isConnected || !isJamming || !canSendDirectives}
-          className="flex-1 bg-transparent text-white py-3 pr-4 outline-none placeholder-gray-500 disabled:opacity-50 text-sm font-mono"
+          className="flex-1 bg-transparent text-white py-3 pr-4 outline-none placeholder-stage-muted disabled:opacity-50 text-sm font-mono"
           aria-label="Boss directive input"
         />
         <button

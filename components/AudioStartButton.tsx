@@ -86,7 +86,7 @@ export function AudioStartButton({
       className={`
         absolute inset-0 z-50
         flex flex-col items-center justify-center
-        bg-gray-900/80 backdrop-blur-sm
+        bg-stage-black/90 backdrop-blur-sm
         transition-opacity duration-300
         ${audioState === 'ready' ? 'opacity-0' : 'opacity-100'}
         ${className}
@@ -95,10 +95,10 @@ export function AudioStartButton({
       aria-labelledby="audio-start-title"
       aria-describedby="audio-start-description"
     >
-      <h2 id="audio-start-title" className="text-2xl font-bold text-white mb-2">
-        Enable Audio
+      <h2 id="audio-start-title" className="text-2xl font-display font-bold text-white mb-2">
+        Ready to Jam?
       </h2>
-      <p id="audio-start-description" className="text-gray-400 mb-6 text-center max-w-md">
+      <p id="audio-start-description" className="text-stage-text mb-6 text-center max-w-md">
         Click below to enable audio playback. This is required by your browser before music can play.
       </p>
 
@@ -106,7 +106,7 @@ export function AudioStartButton({
         onClick={handleClick}
         disabled={audioState === 'initializing'}
         className={`
-          px-8 py-4 rounded-lg font-semibold text-lg
+          px-8 py-4 rounded-lg font-display font-semibold text-lg
           transition-all duration-200 shadow-lg hover:shadow-xl
           flex items-center gap-3 disabled:cursor-not-allowed
           ${audioState === 'idle' ? 'bg-amber-500 hover:bg-amber-400 text-gray-900' : ''}

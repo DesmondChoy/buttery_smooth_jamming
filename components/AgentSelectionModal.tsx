@@ -11,6 +11,13 @@ interface AgentSelectionModalProps {
 
 const AGENT_KEYS = Object.keys(AGENT_META);
 
+const AGENT_HINTS: Record<string, string> = {
+  drums: 'Syncopation-obsessed veteran',
+  bass: 'Selfless minimalist',
+  melody: 'Classically trained perfectionist',
+  chords: 'Comping specialist',
+};
+
 export function AgentSelectionModal({
   onConfirm,
   onCancel,
@@ -53,9 +60,9 @@ export function AgentSelectionModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="bg-gray-900 border border-gray-700 rounded-xl p-6 w-full max-w-md shadow-2xl">
-        <h2 className="text-xl font-bold text-white mb-1">Start Jam Session</h2>
-        <p className="text-sm text-gray-400 mb-5">Choose which agents join the jam</p>
+      <div className="bg-stage-black border border-stage-border rounded-xl p-6 w-full max-w-md shadow-2xl shadow-amber-500/5">
+        <h2 className="text-xl font-display font-bold text-white mb-1">Start Jam Session</h2>
+        <p className="text-sm text-stage-text mb-5">Choose which agents join the jam</p>
 
         <div className="space-y-2 mb-6">
           {AGENT_KEYS.map((key) => {
@@ -67,15 +74,18 @@ export function AgentSelectionModal({
                 onClick={() => toggle(key)}
                 className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg border transition-colors text-left ${
                   isSelected
-                    ? `${meta.colors.border} ${meta.colors.bg} ${meta.colors.accent}`
-                    : 'border-gray-700 bg-gray-800/50 text-gray-500'
+                    ? `border-stage-border bg-stage-mid/50 ${meta.colors.accent}`
+                    : 'border-stage-border bg-stage-dark/50 text-stage-muted'
                 }`}
               >
                 <span className="text-xl">{meta.emoji}</span>
-                <span className="font-semibold flex-1">{meta.name}</span>
+                <div className="flex-1">
+                  <span className="font-semibold block">{meta.name}</span>
+                  <span className="text-xs text-stage-text">{AGENT_HINTS[key]}</span>
+                </div>
                 <div
                   className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-colors ${
-                    isSelected ? 'border-current bg-current/20' : 'border-gray-600'
+                    isSelected ? 'border-current bg-current/20' : 'border-stage-muted'
                   }`}
                 >
                   {isSelected && (
@@ -96,19 +106,19 @@ export function AgentSelectionModal({
         <div className="flex gap-3">
           <button
             onClick={onCancel}
-            className="flex-1 px-4 py-2.5 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg font-medium transition-colors"
+            className="flex-1 px-4 py-2.5 bg-stage-dark hover:bg-stage-mid text-stage-text rounded-lg font-medium transition-colors"
           >
             Cancel
           </button>
           <button
             onClick={handleConfirm}
-            className="flex-1 px-4 py-2.5 bg-green-600 hover:bg-green-500 text-white rounded-lg font-medium transition-colors"
+            className="flex-1 px-4 py-2.5 bg-amber-500 hover:bg-amber-400 text-stage-black rounded-lg font-medium transition-colors"
           >
             Start Jam ({selected.size} agent{selected.size !== 1 ? 's' : ''})
           </button>
         </div>
 
-        <p className="text-xs text-gray-600 text-center mt-3">
+        <p className="text-xs text-stage-muted text-center mt-3">
           Enter to confirm / Esc to cancel
         </p>
       </div>
