@@ -28,14 +28,15 @@ npm run dev
 
 Then open http://localhost:3000:
 
-1. Click **Start Audio** to unlock browser audio
-2. Click **Start Jam** and select your agents
-3. Choose a jam preset and click **▶ Play** (jam starts in staged-silent mode)
-4. Activate the band with an `@mention` directive like `"@CHORDS add offbeat comping stabs"` or `"@BEAT double time"`
-5. Type broadcast directives like `"More energy!"` once at least one agent has joined
-6. Click **Stop** to end the session
+1. Click **Ready to Jam?** to unlock browser audio
+2. Click **Start a Jam Session** and select your agents
+3. The jam starts in **staged-silent mode** — no sound yet
+4. Activate agents with `@mention` directives like `"@BEAT lay down a groove"` or `"@CHORDS add offbeat comping stabs"`
+5. Once at least one agent is playing, use broadcast directives like `"More energy!"` to steer the whole band
+6. **Mute/unmute** individual agents from their column headers
+7. Click **Stop** to end the session
 
-Outside of jam mode, the app also works as a Strudel assistant — chat with the Codex runtime to learn and explore live coding patterns.
+Between directives, agents autonomously evolve every 30 seconds and can collectively propose key changes, chord progressions, and tempo/energy shifts via consensus.
 
 ## How It Works
 
@@ -84,7 +85,7 @@ Each agent keeps full conversational memory across the jam session. Directive-to
 buttery_smooth_jamming/
 ├── app/                          # Next.js app (pages + API routes)
 ├── components/                   # UI: JamTopBar, AgentColumn, BossInputBar, etc.
-├── hooks/                        # useJamSession, useAiTerminal, useStrudel
+├── hooks/                        # useJamSession, useRuntimeTerminal, useStrudel
 ├── lib/                          # agent-process-manager, codex-process, types
 ├── .codex/agents/                # Band member personas (drummer.md, bassist.md, etc.)
 ├── .codex/skills/                # Project-local Codex skills
