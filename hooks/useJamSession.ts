@@ -226,7 +226,6 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
 
     const currentSessionId = currentSessionIdRef.current;
     if (!currentSessionId) {
-      if (jamState.currentRound !== 0) return;
       currentSessionIdRef.current = jamState.sessionId;
     } else if (currentSessionId !== jamState.sessionId) {
       return;
