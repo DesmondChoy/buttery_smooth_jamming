@@ -148,4 +148,14 @@ export const JAM_GOVERNANCE = {
    * See: docs/v3/model-policy-playbook.md § 2 — AGENT_TIMEOUT_MS
    */
   AGENT_TIMEOUT_MS: 15_000,
+
+  /**
+   * Consecutive qualifying auto-tick `no_change` turns before scheduling
+   * thread compaction for an agent.
+   *
+   * Qualifying means: explicit `no_change` while the agent was already
+   * playing a non-silence pattern. With the default 15s auto-tick interval,
+   * 5 consecutive qualifying turns is roughly 75s of unchanged groove.
+   */
+  THREAD_COMPACTION_NO_CHANGE_STREAK: 5,
 } as const;

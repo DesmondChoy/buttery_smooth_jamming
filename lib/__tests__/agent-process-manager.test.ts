@@ -3087,6 +3087,444 @@ describe('AgentProcessManager auto-tick silence coercion', () => {
   });
 });
 
+describe('AgentProcessManager thread compaction', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.clearAllMocks();
+    vi.mocked(fs.existsSync).mockImplementation(default_exists_sync_impl);
+    setupRuntimeCheckMocks();
+  });
+
+  afterEach(async () => {
+    vi.useRealTimers();
+  });
+
+  function getSpawnArgsForAgent(agentKey: string): string[][] {
+    return mockedSpawn.mock.calls
+      .filter(([, , options]) => {
+        const env = (options as { env?: NodeJS.ProcessEnv } | undefined)?.env;
+        return env?.JAM_AGENT_KEY === agentKey;
+      })
+      .map(([, args]) => args as string[]);
+  }
+
+  function getLatestSpawnArgsForAgent(agentKey: string): string[] {
+    const calls = getSpawnArgsForAgent(agentKey);
+    if (calls.length === 0) {
+      throw new Error(`No spawn calls captured for ${agentKey}`);
+    }
+    return calls[calls.length - 1];
+  }
+
+  function isResumeCall(args: string[]): boolean {
+    return args[0] === 'exec' && args[1] === 'resume';
+  }
+
+  async function triggerAutoTickWithSingleResponse(
+    proc: ReturnType<typeof createFakeProcess>,
+    response?: { pattern: string; thoughts: string }
+  ): Promise<void> {
+    vi.advanceTimersByTime(JAM_GOVERNANCE.AUTO_TICK_INTERVAL_MS);
+    await vi.advanceTimersByTimeAsync(0);
+    if (response) {
+      sendAgentResponse(proc, response);
+    }
+    await vi.advanceTimersByTimeAsync(0);
+  }
+
+  it('schedules compaction at threshold and applies it on the next auto-tick', async () => {
+    const threshold = JAM_GOVERNANCE.THREAD_COMPACTION_NO_CHANGE_STREAK;
+    const { manager, processes } = createTestManager();
+
+    const startPromise = manager.start(['drums']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const drumsProc = getProcessByKey(processes, 'drums');
+    sendThreadStarted(drumsProc, 'thread-drums-initial');
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd sd")',
+      thoughts: 'Opening groove',
+    });
+    await startPromise;
+
+    for (let i = 0; i < threshold; i++) {
+      await triggerAutoTickWithSingleResponse(drumsProc, {
+        pattern: 'no_change',
+        thoughts: `Holding pocket ${i + 1}`,
+      });
+    }
+
+    const callsThroughThreshold = getSpawnArgsForAgent('drums');
+    const autoTickCallsThroughThreshold = callsThroughThreshold.slice(1);
+    expect(autoTickCallsThroughThreshold).toHaveLength(threshold);
+    expect(autoTickCallsThroughThreshold.every((args) => isResumeCall(args))).toBe(true);
+
+    // Threshold only schedules compaction. The next auto-tick applies it.
+    vi.advanceTimersByTime(JAM_GOVERNANCE.AUTO_TICK_INTERVAL_MS);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const compactionTickArgs = getLatestSpawnArgsForAgent('drums');
+    expect(isResumeCall(compactionTickArgs)).toBe(false);
+    expect(compactionTickArgs).toEqual(expect.arrayContaining(['--profile', 'jam_agent']));
+
+    sendThreadStarted(drumsProc, 'thread-drums-new');
+    sendAgentResponse(drumsProc, {
+      pattern: 'no_change',
+      thoughts: 'Holding after compaction',
+    });
+    await vi.advanceTimersByTimeAsync(0);
+
+    vi.advanceTimersByTime(JAM_GOVERNANCE.AUTO_TICK_INTERVAL_MS);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const resumedAfterCompactionArgs = getLatestSpawnArgsForAgent('drums');
+    expect(isResumeCall(resumedAfterCompactionArgs)).toBe(true);
+    expect(resumedAfterCompactionArgs).toContain('thread-drums-new');
+
+    sendAgentResponse(drumsProc, {
+      pattern: 'no_change',
+      thoughts: 'Resume with fresh thread',
+    });
+    await vi.advanceTimersByTimeAsync(0);
+
+    await manager.stop();
+  });
+
+  it('does not apply compaction before threshold is reached and another auto-tick begins', async () => {
+    const threshold = JAM_GOVERNANCE.THREAD_COMPACTION_NO_CHANGE_STREAK;
+    const { manager, processes } = createTestManager();
+
+    const startPromise = manager.start(['drums']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const drumsProc = getProcessByKey(processes, 'drums');
+    sendThreadStarted(drumsProc, 'thread-drums-initial');
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd sd")',
+      thoughts: 'Opening groove',
+    });
+    await startPromise;
+
+    for (let i = 0; i < threshold - 1; i++) {
+      await triggerAutoTickWithSingleResponse(drumsProc, {
+        pattern: 'no_change',
+        thoughts: `Holding ${i + 1}`,
+      });
+    }
+
+    vi.advanceTimersByTime(JAM_GOVERNANCE.AUTO_TICK_INTERVAL_MS);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const argsAtThresholdTurn = getLatestSpawnArgsForAgent('drums');
+    expect(isResumeCall(argsAtThresholdTurn)).toBe(true);
+    expect(argsAtThresholdTurn).toContain('thread-drums-initial');
+
+    sendAgentResponse(drumsProc, {
+      pattern: 'no_change',
+      thoughts: 'Threshold reached this turn',
+    });
+    await vi.advanceTimersByTimeAsync(0);
+
+    await manager.stop();
+  });
+
+  it('resets streak on pattern change so compaction is not applied early', async () => {
+    const threshold = JAM_GOVERNANCE.THREAD_COMPACTION_NO_CHANGE_STREAK;
+    const { manager, processes } = createTestManager();
+
+    const startPromise = manager.start(['drums']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const drumsProc = getProcessByKey(processes, 'drums');
+    sendThreadStarted(drumsProc, 'thread-drums-initial');
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd sd")',
+      thoughts: 'Opening groove',
+    });
+    await startPromise;
+
+    for (let i = 0; i < threshold - 1; i++) {
+      await triggerAutoTickWithSingleResponse(drumsProc, {
+        pattern: 'no_change',
+        thoughts: `Holding ${i + 1}`,
+      });
+    }
+
+    await triggerAutoTickWithSingleResponse(drumsProc, {
+      pattern: 's("bd cp sd cp")',
+      thoughts: 'Changing groove',
+    });
+
+    vi.advanceTimersByTime(JAM_GOVERNANCE.AUTO_TICK_INTERVAL_MS);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const argsAfterPatternChange = getLatestSpawnArgsForAgent('drums');
+    expect(isResumeCall(argsAfterPatternChange)).toBe(true);
+    expect(argsAfterPatternChange).toContain('thread-drums-initial');
+
+    sendAgentResponse(drumsProc, {
+      pattern: 'no_change',
+      thoughts: 'Holding changed groove',
+    });
+    await vi.advanceTimersByTimeAsync(0);
+
+    await manager.stop();
+  });
+
+  it('clears pending compaction on directive even when directive returns no_change', async () => {
+    const threshold = JAM_GOVERNANCE.THREAD_COMPACTION_NO_CHANGE_STREAK;
+    const { manager, processes } = createTestManager();
+
+    const startPromise = manager.start(['drums']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const drumsProc = getProcessByKey(processes, 'drums');
+    sendThreadStarted(drumsProc, 'thread-drums-initial');
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd sd")',
+      thoughts: 'Opening groove',
+    });
+    await startPromise;
+
+    for (let i = 0; i < threshold; i++) {
+      await triggerAutoTickWithSingleResponse(drumsProc, {
+        pattern: 'no_change',
+        thoughts: `Holding ${i + 1}`,
+      });
+    }
+
+    const directivePromise = manager.handleDirective(
+      'stay locked and keep the same groove',
+      'drums',
+      ['drums']
+    );
+    await vi.advanceTimersByTimeAsync(0);
+
+    const directiveArgs = getLatestSpawnArgsForAgent('drums');
+    expect(isResumeCall(directiveArgs)).toBe(true);
+
+    sendAgentResponse(drumsProc, {
+      pattern: 'no_change',
+      thoughts: 'Directive acknowledged',
+    });
+    await directivePromise;
+
+    vi.advanceTimersByTime(JAM_GOVERNANCE.AUTO_TICK_INTERVAL_MS);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const nextAutoTickArgs = getLatestSpawnArgsForAgent('drums');
+    expect(isResumeCall(nextAutoTickArgs)).toBe(true);
+    expect(nextAutoTickArgs).toContain('thread-drums-initial');
+
+    sendAgentResponse(drumsProc, {
+      pattern: 'no_change',
+      thoughts: 'Still holding',
+    });
+    await vi.advanceTimersByTimeAsync(0);
+
+    await manager.stop();
+  });
+
+  it('tracks compaction state independently per agent', async () => {
+    const threshold = JAM_GOVERNANCE.THREAD_COMPACTION_NO_CHANGE_STREAK;
+    const { manager, processes } = createTestManager();
+
+    const startPromise = manager.start(['drums', 'bass']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const drumsProc = getProcessByKey(processes, 'drums');
+    const bassProc = getProcessByKey(processes, 'bass');
+    sendThreadStarted(drumsProc, 'thread-drums-initial');
+    sendThreadStarted(bassProc, 'thread-bass-initial');
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd sd")',
+      thoughts: 'Drums open',
+    });
+    sendAgentResponse(bassProc, {
+      pattern: 's("bd")',
+      thoughts: 'Bass open',
+    });
+    await startPromise;
+
+    for (let i = 0; i < threshold; i++) {
+      vi.advanceTimersByTime(JAM_GOVERNANCE.AUTO_TICK_INTERVAL_MS);
+      await vi.advanceTimersByTimeAsync(0);
+      sendAgentResponse(drumsProc, {
+        pattern: 'no_change',
+        thoughts: `Drums holding ${i + 1}`,
+      });
+      sendAgentResponse(bassProc, {
+        pattern: 's("bd")',
+        thoughts: `Bass restating ${i + 1}`,
+      });
+      await vi.advanceTimersByTimeAsync(0);
+    }
+
+    vi.advanceTimersByTime(JAM_GOVERNANCE.AUTO_TICK_INTERVAL_MS);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const drumsArgs = getLatestSpawnArgsForAgent('drums');
+    const bassArgs = getLatestSpawnArgsForAgent('bass');
+    expect(isResumeCall(drumsArgs)).toBe(false);
+    expect(drumsArgs).toEqual(expect.arrayContaining(['--profile', 'jam_agent']));
+    expect(isResumeCall(bassArgs)).toBe(true);
+    expect(bassArgs).toContain('thread-bass-initial');
+
+    sendThreadStarted(drumsProc, 'thread-drums-new');
+    sendAgentResponse(drumsProc, {
+      pattern: 'no_change',
+      thoughts: 'Drums after compaction',
+    });
+    sendAgentResponse(bassProc, {
+      pattern: 's("bd")',
+      thoughts: 'Bass unchanged',
+    });
+    await vi.advanceTimersByTimeAsync(0);
+
+    await manager.stop();
+  });
+
+  it('resets compaction streak when an auto-tick returns null', async () => {
+    const threshold = JAM_GOVERNANCE.THREAD_COMPACTION_NO_CHANGE_STREAK;
+    const { manager, processes } = createTestManager();
+
+    type TestAgentResponse = {
+      pattern: string;
+      thoughts: string;
+      commentary?: string;
+      reaction?: string;
+    } | null;
+
+    const startPromise = manager.start(['drums']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const drumsProc = getProcessByKey(processes, 'drums');
+    sendThreadStarted(drumsProc, 'thread-drums-initial');
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd sd")',
+      thoughts: 'Opening groove',
+    });
+    await startPromise;
+
+    const rawManager = manager as unknown as {
+      sendToAgentAndCollect: (key: string, text: string) => Promise<TestAgentResponse>;
+    };
+    const originalSendToAgentAndCollect = rawManager.sendToAgentAndCollect.bind(manager);
+    let postStartTurnCallCount = 0;
+    rawManager.sendToAgentAndCollect = vi.fn((key: string, text: string) => {
+      postStartTurnCallCount++;
+      if (postStartTurnCallCount === 2) {
+        return Promise.resolve(null);
+      }
+      return originalSendToAgentAndCollect(key, text);
+    });
+
+    await triggerAutoTickWithSingleResponse(drumsProc, {
+      pattern: 'no_change',
+      thoughts: 'Holding 1',
+    });
+
+    // Auto-tick #2 returns null via monkeypatch and should reset streak.
+    await triggerAutoTickWithSingleResponse(drumsProc);
+
+    for (let i = 0; i < threshold - 1; i++) {
+      await triggerAutoTickWithSingleResponse(drumsProc, {
+        pattern: 'no_change',
+        thoughts: `Holding after reset ${i + 1}`,
+      });
+    }
+
+    vi.advanceTimersByTime(JAM_GOVERNANCE.AUTO_TICK_INTERVAL_MS);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const argsAfterNullReset = getLatestSpawnArgsForAgent('drums');
+    expect(isResumeCall(argsAfterNullReset)).toBe(true);
+    expect(argsAfterNullReset).toContain('thread-drums-initial');
+
+    sendAgentResponse(drumsProc, {
+      pattern: 'no_change',
+      thoughts: 'Still resumed after null',
+    });
+    await vi.advanceTimersByTimeAsync(0);
+
+    await manager.stop();
+  });
+
+  it('does not count coerced auto-tick silence toward compaction', async () => {
+    const threshold = JAM_GOVERNANCE.THREAD_COMPACTION_NO_CHANGE_STREAK;
+    const { manager, processes } = createTestManager();
+
+    const startPromise = manager.start(['drums']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const drumsProc = getProcessByKey(processes, 'drums');
+    sendThreadStarted(drumsProc, 'thread-drums-initial');
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd sd bd sd")',
+      thoughts: 'Opening groove',
+    });
+    await startPromise;
+
+    for (let i = 0; i < threshold; i++) {
+      await triggerAutoTickWithSingleResponse(drumsProc, {
+        pattern: 'silence',
+        thoughts: `Trying to drop out ${i + 1}`,
+      });
+    }
+
+    vi.advanceTimersByTime(JAM_GOVERNANCE.AUTO_TICK_INTERVAL_MS);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const argsAfterSilenceCoercions = getLatestSpawnArgsForAgent('drums');
+    expect(isResumeCall(argsAfterSilenceCoercions)).toBe(true);
+    expect(argsAfterSilenceCoercions).toContain('thread-drums-initial');
+
+    sendAgentResponse(drumsProc, {
+      pattern: 'no_change',
+      thoughts: 'Still in original thread',
+    });
+    await vi.advanceTimersByTimeAsync(0);
+
+    await manager.stop();
+  });
+
+  it('clears stale compaction state when an agent process disappears', async () => {
+    const threshold = JAM_GOVERNANCE.THREAD_COMPACTION_NO_CHANGE_STREAK;
+    const { manager, processes } = createTestManager();
+
+    const startPromise = manager.start(['drums']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const drumsProc = getProcessByKey(processes, 'drums');
+    sendThreadStarted(drumsProc, 'thread-drums-initial');
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd sd")',
+      thoughts: 'Opening groove',
+    });
+    await startPromise;
+
+    for (let i = 0; i < threshold; i++) {
+      await triggerAutoTickWithSingleResponse(drumsProc, {
+        pattern: 'no_change',
+        thoughts: `Holding ${i + 1}`,
+      });
+    }
+
+    const spawnCallsBeforeRemoval = getSpawnArgsForAgent('drums').length;
+    const rawManager = manager as unknown as {
+      agents: Map<string, unknown>;
+    };
+    rawManager.agents.delete('drums');
+
+    await triggerAutoTickWithSingleResponse(drumsProc);
+
+    const spawnCallsAfterRemoval = getSpawnArgsForAgent('drums').length;
+    expect(spawnCallsAfterRemoval).toBe(spawnCallsBeforeRemoval);
+
+    await manager.stop();
+  });
+});
+
 describe('AgentProcessManager auto-tick timing broadcasts', () => {
   beforeEach(() => {
     vi.useFakeTimers();

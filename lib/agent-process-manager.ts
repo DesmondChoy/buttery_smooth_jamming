@@ -134,6 +134,8 @@ export class AgentProcessManager {
   private agentStates: Record<string, AgentState> = {};
   private agentDecisions: Record<string, StructuredMusicalDecision | undefined> = {};
   private agentCommentaryState: Record<string, AgentCommentaryRuntimeState> = {};
+  private agentAutoTickNoChangeStreak: Record<string, number> = {};
+  private agentPendingThreadCompaction: Record<string, boolean> = {};
   private musicalContext: MusicalContext = randomMusicalContext();
   private activeAgents: string[] = [];
   private activatedAgents: string[] = [];
@@ -234,6 +236,8 @@ export class AgentProcessManager {
       : randomMusicalContext();
     this.agentDecisions = {};
     this.agentCommentaryState = {};
+    this.agentAutoTickNoChangeStreak = {};
+    this.agentPendingThreadCompaction = {};
 
     // Initialize state for each agent
     for (const key of this.activeAgents) {
@@ -253,6 +257,8 @@ export class AgentProcessManager {
         lastRound: null,
         recentSignatures: [],
       };
+      this.agentAutoTickNoChangeStreak[key] = 0;
+      this.agentPendingThreadCompaction[key] = false;
     }
 
     // Prepare one Codex-backed session per agent
@@ -354,6 +360,7 @@ export class AgentProcessManager {
       if (targetAgent && this.mutedAgents.has(targetAgent) && !forceMuteTarget) {
         // Any targeted non-mute cue counts as an explicit re-entry request.
         this.mutedAgents.delete(targetAgent);
+        this.resetThreadCompactionState(targetAgent);
       }
 
       // Apply deterministic anchors first (explicit BPM / half/double-time / explicit energy / key).
@@ -397,6 +404,9 @@ export class AgentProcessManager {
 
       // Set targeted agents to "thinking"
       for (const key of targets) {
+        // Any directive interaction makes this agent's recent context relevant
+        // again, so clear deferred compaction state.
+        this.resetThreadCompactionState(key);
         this.setAgentStatus(key, 'thinking');
       }
 
@@ -430,6 +440,7 @@ export class AgentProcessManager {
 
         if (forceMuteTarget && targetAgent === key) {
           this.mutedAgents.add(key);
+          this.resetThreadCompactionState(key);
         }
 
         const acceptedResponse = this.applyAgentResponse(key, response, 'directive');
@@ -487,6 +498,8 @@ export class AgentProcessManager {
     this.agentStates = {};
     this.agentDecisions = {};
     this.agentCommentaryState = {};
+    this.agentAutoTickNoChangeStreak = {};
+    this.agentPendingThreadCompaction = {};
     this.activeAgents = [];
     this.activatedAgents = [];
     this.mutedAgents.clear();
@@ -1258,6 +1271,70 @@ export class AgentProcessManager {
     return /failed to renew cache TTL: EOF while parsing a value at line 1 column 0/i.test(text);
   }
 
+  private resetThreadCompactionState(key: string): void {
+    this.agentAutoTickNoChangeStreak[key] = 0;
+    this.agentPendingThreadCompaction[key] = false;
+  }
+
+  private applyPendingThreadCompactionForAutoTick(key: string): void {
+    if (!this.agentPendingThreadCompaction[key]) return;
+
+    const agent = this.agents.get(key);
+    if (!agent) {
+      this.resetThreadCompactionState(key);
+      return;
+    }
+
+    const oldThreadId = agent.threadId;
+    agent.threadId = null;
+    this.agentPendingThreadCompaction[key] = false;
+    this.agentAutoTickNoChangeStreak[key] = 0;
+
+    console.log(
+      `[AgentManager] Thread compaction applied for ${key}. ` +
+      `Old thread: ${oldThreadId?.slice(0, 12) ?? 'null'}. ` +
+      'Next turn starts a fresh thread.'
+    );
+  }
+
+  private recordAutoTickCompactionSignal(params: {
+    key: string;
+    acceptedResponse: AgentResponse | null;
+    patternBeforeTurn: string;
+  }): void {
+    const { key, acceptedResponse, patternBeforeTurn } = params;
+
+    if (!this.agents.has(key)) {
+      this.resetThreadCompactionState(key);
+      return;
+    }
+
+    const qualifies =
+      !!acceptedResponse
+      && acceptedResponse.pattern === 'no_change'
+      && !!patternBeforeTurn
+      && patternBeforeTurn !== 'silence';
+
+    if (!qualifies) {
+      this.agentAutoTickNoChangeStreak[key] = 0;
+      return;
+    }
+
+    const nextCount = (this.agentAutoTickNoChangeStreak[key] || 0) + 1;
+    this.agentAutoTickNoChangeStreak[key] = nextCount;
+
+    if (nextCount < JAM_GOVERNANCE.THREAD_COMPACTION_NO_CHANGE_STREAK) {
+      return;
+    }
+
+    this.agentPendingThreadCompaction[key] = true;
+    this.agentAutoTickNoChangeStreak[key] = 0;
+    console.log(
+      `[AgentManager] Thread compaction scheduled for ${key}: ` +
+      `${nextCount} consecutive qualifying auto-tick no_change turns.`
+    );
+  }
+
   // ─── Private: Jam Flow ───────────────────────────────────────────
 
   private async sendJamStart(): Promise<void> {
@@ -1289,6 +1366,7 @@ export class AgentProcessManager {
       for (let i = 0; i < this.activeAgents.length; i++) {
         const key = this.activeAgents[i];
         const response = responses[i];
+        this.resetThreadCompactionState(key);
         this.applyAgentResponse(key, response, 'jam-start');
       }
 
@@ -1446,6 +1524,12 @@ export class AgentProcessManager {
       if (this.stopped) return;
       if (!this.presetConfigured) return;
 
+      for (const key of this.activatedAgents) {
+        if (!this.agents.has(key)) {
+          this.resetThreadCompactionState(key);
+        }
+      }
+
       const activeTargets = this.activatedAgents.filter(
         (key) => this.agents.has(key) && !this.mutedAgents.has(key)
       );
@@ -1457,6 +1541,8 @@ export class AgentProcessManager {
       console.log(`[AgentManager] Auto-tick round ${this.roundNumber}`);
 
       const responsePromises = activeTargets.map((key) => {
+        this.applyPendingThreadCompactionForAutoTick(key);
+
         const bandStateLines = this.activatedAgents
           .filter((k) => k !== key)
           .map((k) => this.formatAgentBandState(k));
@@ -1482,7 +1568,13 @@ export class AgentProcessManager {
       for (let i = 0; i < activeTargets.length; i++) {
         const key = activeTargets[i];
         const response = responses[i];
+        const patternBeforeTurn = this.agentPatterns[key] || 'silence';
         const acceptedResponse = this.applyAgentResponse(key, response, 'auto-tick');
+        this.recordAutoTickCompactionSignal({
+          key,
+          acceptedResponse,
+          patternBeforeTurn,
+        });
         responses[i] = acceptedResponse;
       }
 

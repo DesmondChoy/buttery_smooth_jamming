@@ -44,4 +44,9 @@ describe('JAM_GOVERNANCE invariants', () => {
     expect(JAM_GOVERNANCE.AGENT_TIMEOUT_MS).toBeGreaterThan(0);
     expect(JAM_GOVERNANCE.AGENT_TIMEOUT_MS).toBeLessThanOrEqual(JAM_GOVERNANCE.AUTO_TICK_INTERVAL_MS);
   });
+
+  it('thread compaction streak is an integer and at least 2', () => {
+    expect(Number.isInteger(JAM_GOVERNANCE.THREAD_COMPACTION_NO_CHANGE_STREAK)).toBe(true);
+    expect(JAM_GOVERNANCE.THREAD_COMPACTION_NO_CHANGE_STREAK).toBeGreaterThanOrEqual(2);
+  });
 });
