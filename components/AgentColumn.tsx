@@ -6,6 +6,7 @@ import type {
   AgentState,
   JamChatMessage,
   AgentContextWindow,
+  AudioContextSummary,
 } from '@/lib/types';
 import { AGENT_META } from '@/lib/types';
 import { get_agent_status_display } from '@/lib/agent-status-ui';
@@ -117,6 +118,13 @@ function compactThreadId(threadId: string | null): string {
   return `${threadId.slice(0, 6)}...${threadId.slice(-4)}`;
 }
 
+function formatAudioContextSummary(
+  summary: AudioContextSummary | undefined
+): string {
+  if (!summary) return '';
+  return `Audio context (global mix): level=${summary.level}, texture=${summary.texture}, motion=${summary.motion}, confidence=${summary.confidence}, state=${summary.state}`;
+}
+
 export function AgentColumn({
   agentKey,
   agentState,
@@ -154,17 +162,18 @@ export function AgentColumn({
         isPatternChange ? 'agent-pattern-change-glow' : ''
       }`}
       style={{ '--agent-glow-color': glowColor } as CSSProperties}
-      onMouseEnter={() => {
-        if (isContextInspectorEnabled) {
-          setInspectorOpen(true);
-        }
-      }}
       onMouseLeave={() => setInspectorOpen(false)}
     >
       {/* Header */}
-      <div className="relative shrink-0">
+      <div
+        className="relative shrink-0"
+        onMouseLeave={() => setInspectorOpen(false)}
+      >
         <div
           className={`flex items-center justify-between px-3 py-2 border-b border-stage-border ${meta.colors.bgSolid} ${isContextInspectorEnabled ? 'cursor-help' : ''}`}
+          onMouseEnter={() => {
+            if (isContextInspectorEnabled) setInspectorOpen(true);
+          }}
           onClick={() => {
             if (isContextInspectorEnabled) setInspectorOpen((prev) => !prev);
           }}
@@ -182,7 +191,7 @@ export function AgentColumn({
         </div>
 
         {isContextInspectorEnabled && inspectorOpen && (
-          <div className="absolute z-20 left-2 right-2 top-full mt-1 max-h-[55vh] overflow-y-auto rounded-md border border-stage-border bg-stage-black/95 shadow-xl backdrop-blur">
+          <div className="absolute z-20 left-2 right-2 top-full max-h-[55vh] overflow-y-auto rounded-md border border-stage-border bg-stage-black/95 shadow-xl backdrop-blur">
             <div className="px-2.5 py-2 border-b border-stage-border bg-stage-dark/90">
               <p className="text-[11px] uppercase tracking-wide text-stage-muted">
                 {meta.name} Context Window
@@ -218,7 +227,7 @@ export function AgentColumn({
                         Thread {turn.thread.invocationMode} | before {compactThreadId(turn.thread.threadIdBefore)} | after {compactThreadId(turn.thread.threadIdAfter)}
                       </p>
                       <p className="text-[11px] text-stage-muted">
-                        Compaction pending {turn.thread.pendingCompactionBefore ? 'Y' : 'N'} → {turn.thread.pendingCompactionAfter ? 'Y' : 'N'} | streak {turn.thread.noChangeStreakBefore} → {turn.thread.noChangeStreakAfter} | applied {turn.thread.compactionAppliedThisTurn ? 'Y' : 'N'}
+                        Compaction pending {turn.thread.pendingCompactionBefore ? 'Y' : 'N'}{' -> '}{turn.thread.pendingCompactionAfter ? 'Y' : 'N'} | streak {turn.thread.noChangeStreakBefore}{' -> '}{turn.thread.noChangeStreakAfter} | applied {turn.thread.compactionAppliedThisTurn ? 'Y' : 'N'}
                       </p>
                       <p className="text-[11px] text-stage-text">
                         Context: {turn.musicalContext.genre || 'N/A'} | {turn.musicalContext.key} | {turn.musicalContext.bpm} BPM | E{turn.musicalContext.energy}
@@ -231,9 +240,14 @@ export function AgentColumn({
                           Pattern summary: {turn.currentPatternSummary}
                         </p>
                       )}
-                      {turn.audioFeedback && (
+                      {turn.audioContextSummary && (
+                        <p className="text-[11px] text-stage-text">
+                          {formatAudioContextSummary(turn.audioContextSummary)}
+                        </p>
+                      )}
+                      {!turn.audioContextSummary && turn.audioFeedback && (
                         <p className="text-[11px] text-stage-muted">
-                          Audio: loudness {turn.audioFeedback.loudnessDb}, centroid {turn.audioFeedback.spectralCentroidHz}Hz, bands {turn.audioFeedback.lowBandEnergy}/{turn.audioFeedback.midBandEnergy}/{turn.audioFeedback.highBandEnergy}, flux {turn.audioFeedback.spectralFlux}, onset {turn.audioFeedback.onsetDensity}
+                          Audio (global mix): loudness {turn.audioFeedback.loudnessDb}, centroid {turn.audioFeedback.spectralCentroidHz}Hz, bands {turn.audioFeedback.lowBandEnergy}/{turn.audioFeedback.midBandEnergy}/{turn.audioFeedback.highBandEnergy}, flux {turn.audioFeedback.spectralFlux}, onset {turn.audioFeedback.onsetDensity}
                         </p>
                       )}
                       <div>

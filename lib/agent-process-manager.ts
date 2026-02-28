@@ -6,6 +6,7 @@ import * as path from 'path';
 import type {
   AgentState,
   AudioFeatureSnapshot,
+  AudioContextSummary,
   AgentContextBandStateEntry,
   AgentContextWindow,
   AgentThreadCompactionEvent,
@@ -59,6 +60,7 @@ import {
   buildDirectiveManagerContext,
   buildJamStartManagerContext,
 } from './jam-manager-context-templates';
+import { deriveAudioContextSummary } from './audio-context';
 
 // Callback type for broadcasting messages to browser clients
 export type BroadcastFn = (message: { type: string; payload: unknown }) => void;
@@ -124,6 +126,7 @@ interface AgentContextTurnRecordInput {
   currentPattern: string;
   bandState: AgentContextBandStateEntry[];
   audioFeedback?: AudioFeatureSnapshot;
+  audioContextSummary?: AudioContextSummary;
   directive?: string;
   targetAgent?: string;
   isBroadcastDirective?: boolean;
@@ -422,6 +425,13 @@ export class AgentProcessManager {
     return this.latestAudioFeedback;
   }
 
+  private getFreshAudioContextSummarySection(contextNowMs = Date.now()): AudioContextSummary {
+    return deriveAudioContextSummary(this.latestAudioFeedback, {
+      nowMs: contextNowMs,
+      staleThresholdMs: AUDIO_FEEDBACK_TTL_MS,
+    });
+  }
+
   private normalizeAudioFeedback(payload: AudioFeatureSnapshot): AudioFeatureSnapshot | null {
     if (
       typeof payload.capturedAtMs !== 'number'
@@ -578,6 +588,7 @@ export class AgentProcessManager {
       // Increment round once for the entire directive
       this.roundNumber++;
       const directiveAudioFeedback = this.getFreshAudioFeedbackSection();
+      const directiveAudioContextSummary = this.getFreshAudioContextSummarySection();
 
       // Build and send directive context to each targeted agent
       const directiveInputs = targets.map((key) => {
@@ -585,7 +596,8 @@ export class AgentProcessManager {
           key,
           text,
           targetAgent,
-          directiveAudioFeedback
+          directiveAudioFeedback,
+          directiveAudioContextSummary
         );
         const fullPrompt = this.buildPromptForAgent(key, context);
         const bandState = this.activatedAgents
@@ -602,6 +614,7 @@ export class AgentProcessManager {
           bandState,
           currentPattern: this.agentPatterns[key] || 'silence',
           audioFeedback: directiveAudioFeedback,
+          audioContextSummary: directiveAudioContextSummary,
           pendingCompactionBefore: this.agentPendingThreadCompaction[key] ?? false,
           noChangeStreakBefore: this.agentAutoTickNoChangeStreak[key] ?? 0,
         };
@@ -661,6 +674,7 @@ export class AgentProcessManager {
           currentPattern: input.currentPattern,
           bandState: input.bandState,
           audioFeedback: input.audioFeedback,
+          audioContextSummary: input.audioContextSummary,
           directive: text,
           targetAgent,
           isBroadcastDirective: !targetAgent,
@@ -784,6 +798,11 @@ export class AgentProcessManager {
     return { ...snapshot };
   }
 
+  private cloneAudioContextSummary(summary?: AudioContextSummary): AudioContextSummary | undefined {
+    if (!summary) return undefined;
+    return { ...summary };
+  }
+
   private buildBandStateEntryFromPattern(key: string, pattern: string): AgentContextBandStateEntry {
     return {
       agent: key,
@@ -821,6 +840,7 @@ export class AgentProcessManager {
         musicalContext: this.cloneMusicalContext(turn.musicalContext),
         bandState: turn.bandState.map((entry) => ({ ...entry })),
         audioFeedback: this.cloneAudioFeedback(turn.audioFeedback),
+        audioContextSummary: this.cloneAudioContextSummary(turn.audioContextSummary),
         rawPrompt: { ...turn.rawPrompt },
         thread: { ...turn.thread },
       })),
@@ -874,6 +894,9 @@ export class AgentProcessManager {
       currentPatternSummary: summarizePattern(input.currentPattern),
       bandState: input.bandState.map((entry) => ({ ...entry })),
       ...(input.audioFeedback ? { audioFeedback: this.cloneAudioFeedback(input.audioFeedback)! } : {}),
+      ...(input.audioContextSummary
+        ? { audioContextSummary: this.cloneAudioContextSummary(input.audioContextSummary) }
+        : {}),
       managerContext: input.managerContext,
       rawPrompt: this.buildRawPromptSnapshot(input.fullPrompt),
       outcome: this.determineTurnOutcome({
@@ -1772,6 +1795,7 @@ export class AgentProcessManager {
       this.roundNumber++;
       const ctx = this.musicalContext;
       const audioFeedback = this.getFreshAudioFeedbackSection();
+      const audioContextSummary = this.getFreshAudioContextSummarySection();
       const patternsBeforeTurn = { ...this.agentPatterns };
 
       const openingBandState = this.activeAgents.map((k) => {
@@ -1808,6 +1832,7 @@ export class AgentProcessManager {
           musicalContext: ctx,
           bandStateLines: openingBandState.map((entry) => entry.line),
           audioFeedback,
+          audioContextSummary,
         });
 
         const fullPrompt = this.buildPromptForAgent(key, context);
@@ -1846,6 +1871,7 @@ export class AgentProcessManager {
           currentPattern: 'None yet — this is your first round.',
           bandState: openingBandState.map((entry) => ({ ...entry })),
           audioFeedback,
+          audioContextSummary,
           pendingCompactionBefore: input.pendingCompactionBefore,
           noChangeStreakBefore: input.noChangeStreakBefore,
           compactionAppliedThisTurn: false,
@@ -1871,11 +1897,14 @@ export class AgentProcessManager {
     key: string,
     directive: string,
     targetAgent: string | undefined,
-    audioFeedbackOverride?: AudioFeatureSnapshot
+    audioFeedbackOverride?: AudioFeatureSnapshot,
+    audioContextSummaryOverride?: AudioContextSummary
   ): string {
     const ctx = this.musicalContext;
     const isBroadcast = !targetAgent;
     const audioFeedback = audioFeedbackOverride ?? this.getFreshAudioFeedbackSection();
+    const audioContextSummary = audioContextSummaryOverride
+      ?? this.getFreshAudioContextSummarySection();
 
     const bandStateLines = this.activatedAgents
       .filter((k) => k !== key)
@@ -1889,6 +1918,7 @@ export class AgentProcessManager {
       currentPattern: this.agentPatterns[key] || 'silence',
       bandStateLines,
       audioFeedback,
+      audioContextSummary,
     });
   }
 
@@ -2078,6 +2108,7 @@ export class AgentProcessManager {
       this.roundNumber++;
       const ctx = this.musicalContext;
       const audioFeedback = this.getFreshAudioFeedbackSection();
+      const audioContextSummary = this.getFreshAudioContextSummarySection();
 
       console.log(`[AgentManager] Auto-tick round ${this.roundNumber}`);
 
@@ -2100,6 +2131,7 @@ export class AgentProcessManager {
           currentPattern: myPattern,
           bandStateLines: bandState.map((entry) => entry.line),
           audioFeedback,
+          audioContextSummary,
         });
 
         const fullPrompt = this.buildPromptForAgent(key, context);
@@ -2113,6 +2145,7 @@ export class AgentProcessManager {
           pendingCompactionBefore,
           noChangeStreakBefore,
           compactionAppliedThisTurn,
+          audioContextSummary,
         };
       });
 
@@ -2149,6 +2182,7 @@ export class AgentProcessManager {
           currentPattern: input.currentPattern,
           bandState: input.bandState,
           audioFeedback,
+          audioContextSummary: input.audioContextSummary,
           pendingCompactionBefore: input.pendingCompactionBefore,
           noChangeStreakBefore: input.noChangeStreakBefore,
           compactionAppliedThisTurn: input.compactionAppliedThisTurn,

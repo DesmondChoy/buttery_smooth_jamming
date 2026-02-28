@@ -169,6 +169,24 @@ export interface AudioFeatureSnapshot {
   onsetDensity: number;
 }
 
+export type AudioContextLevel = 'low' | 'medium' | 'high';
+
+export type AudioContextTexture = 'dark' | 'neutral' | 'bright';
+
+export type AudioContextMotion = 'static' | 'moving';
+
+export type AudioContextConfidence = 'high' | 'medium' | 'low';
+
+export type AudioContextState = 'analysis available' | 'fallback: music context only';
+
+export interface AudioContextSummary {
+  level: AudioContextLevel;
+  texture: AudioContextTexture;
+  motion: AudioContextMotion;
+  confidence: AudioContextConfidence;
+  state: AudioContextState;
+}
+
 export type AgentTurnOutcome =
   | 'accepted'
   | 'rejected_or_failed'
@@ -214,6 +232,7 @@ export interface AgentContextTurnSnapshot {
   currentPatternSummary: string | null;
   bandState: AgentContextBandStateEntry[];
   audioFeedback?: AudioFeatureSnapshot;
+  audioContextSummary?: AudioContextSummary;
   managerContext: string;
   rawPrompt: AgentRawPromptSnapshot;
   outcome: AgentTurnOutcome;

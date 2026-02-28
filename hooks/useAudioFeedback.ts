@@ -6,10 +6,12 @@ import type { AudioFeatureSnapshot } from '@/lib/types';
 interface AudioAnalysisState {
   context: AudioContext;
   analyser: AnalyserNode;
+  silentSink: GainNode;
   timeData: Float32Array;
   freqData: Uint8Array;
   prevFreqData: Float32Array | null;
   windowMs: number;
+  zeroSignalStreak: number;
 }
 
 export interface UseAudioFeedbackOptions {
@@ -179,19 +181,28 @@ export function useAudioFeedback(options: UseAudioFeedbackOptions): void {
         const analyser = context.createAnalyser();
         analyser.fftSize = 1024;
         analyser.smoothingTimeConstant = 0.7;
+        const silentSink = context.createGain();
+        // Keep analyser processing in an active graph branch without duplicating audible output.
+        silentSink.gain.value = 0;
+        analyser.connect(silentSink);
+        silentSink.connect(context.destination);
 
         analysisState = {
           context,
           analyser,
+          silentSink,
           timeData: new Float32Array(analyser.fftSize),
           freqData: new Uint8Array(analyser.frequencyBinCount),
           prevFreqData: null,
           windowMs: analysisIntervalMs,
+          zeroSignalStreak: 0,
         };
 
         const attached = await attachAnalyserToStrudelOutput(analyser);
         if (!attached) {
           console.warn('[AudioFeedback] No output source available for analysis.');
+          analyser.disconnect();
+          silentSink.disconnect();
           analysisState = null;
           return;
         }
@@ -219,9 +230,31 @@ export function useAudioFeedback(options: UseAudioFeedbackOptions): void {
           prevFreqData,
           windowMs: analysisState.windowMs,
         });
+        const isLikelySilentFrame = snapshot.loudnessDb === 0
+          && snapshot.spectralCentroidHz === 0
+          && snapshot.lowBandEnergy === 0
+          && snapshot.midBandEnergy === 0
+          && snapshot.highBandEnergy === 0
+          && snapshot.spectralFlux === 0
+          && snapshot.onsetDensity === 0;
 
-        analysisState.prevFreqData = new Float32Array(freqData.length);
-        analysisState.prevFreqData.set(freqData.map((value) => value / 255));
+        if (isLikelySilentFrame) {
+          analysisState.zeroSignalStreak += 1;
+          if (process.env.NODE_ENV === 'development' && analysisState.zeroSignalStreak === 3) {
+            console.warn('[AudioFeedback] Received 3 consecutive zeroed analysis frames while playback is running.', {
+              windowMs: analysisState.windowMs,
+              contextState: analysisState.context.state,
+            });
+          }
+        } else {
+          analysisState.zeroSignalStreak = 0;
+        }
+
+        const normalizedPrev = new Float32Array(freqData.length);
+        for (let i = 0; i < freqData.length; i++) {
+          normalizedPrev[i] = freqData[i] / 255;
+        }
+        analysisState.prevFreqData = normalizedPrev;
 
         onFeedback(snapshot);
       };
@@ -239,6 +272,7 @@ export function useAudioFeedback(options: UseAudioFeedbackOptions): void {
       }
       if (analysisState) {
         analysisState.analyser.disconnect();
+        analysisState.silentSink.disconnect();
       }
     };
   }, [enabled, isAudioRunning, onFeedback, analysisIntervalMs]);

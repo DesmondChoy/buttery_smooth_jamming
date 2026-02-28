@@ -110,10 +110,8 @@ export default function Home() {
   });
 
   useEffect(() => {
-    if (!isRuntimeConnected) return;
     setContextInspectorEnabled(isJamming && isContextInspectorEnabled);
   }, [
-    isRuntimeConnected,
     isJamming,
     isContextInspectorEnabled,
     setContextInspectorEnabled,

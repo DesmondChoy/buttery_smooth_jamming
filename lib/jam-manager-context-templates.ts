@@ -1,11 +1,12 @@
-import type { MusicalContext } from './types';
-import type { AudioFeatureSnapshot } from './types';
+import type { AudioContextSummary, AudioFeatureSnapshot, MusicalContext } from './types';
+import { deriveAudioContextSummary, formatAudioContextForPrompt } from './audio-context';
 
 export interface JamStartManagerContextInput {
   roundNumber: number;
   musicalContext: MusicalContext;
   bandStateLines: string[];
   audioFeedback?: AudioFeatureSnapshot;
+  audioContextSummary?: AudioContextSummary;
 }
 
 export interface DirectiveManagerContextInput {
@@ -16,6 +17,7 @@ export interface DirectiveManagerContextInput {
   currentPattern: string;
   bandStateLines: string[];
   audioFeedback?: AudioFeatureSnapshot;
+  audioContextSummary?: AudioContextSummary;
 }
 
 export interface AutoTickManagerContextInput {
@@ -24,6 +26,7 @@ export interface AutoTickManagerContextInput {
   currentPattern: string;
   bandStateLines: string[];
   audioFeedback?: AudioFeatureSnapshot;
+  audioContextSummary?: AudioContextSummary;
 }
 
 function buildMusicalContextLines(musicalContext: MusicalContext): [string, string, string] {
@@ -34,25 +37,24 @@ function buildMusicalContextLines(musicalContext: MusicalContext): [string, stri
   ];
 }
 
-function buildAudioFeedbackLines(audioFeedback: AudioFeatureSnapshot): string[] {
-  const ageSeconds = Math.max(
-    0,
-    Math.round((Date.now() - audioFeedback.capturedAtMs) / 1000)
-  );
+function buildAudioContextLines(
+  audioFeedback: AudioFeatureSnapshot | undefined,
+  audioContextSummary?: AudioContextSummary
+): string[] {
+  const summary = audioContextSummary
+    ?? deriveAudioContextSummary(audioFeedback, { nowMs: Date.now() });
 
-  return [
-    `AUDIO SNAPSHOT (${ageSeconds}s old):`,
-    `- loudness=${audioFeedback.loudnessDb}/100 (approx loudness score)`,
-    `- centroid=${audioFeedback.spectralCentroidHz}Hz`,
-    `- band_energy: low=${audioFeedback.lowBandEnergy}, mid=${audioFeedback.midBandEnergy}, high=${audioFeedback.highBandEnergy}`,
-    `- spectral_flux=${audioFeedback.spectralFlux}`,
-    `- onset_density=${audioFeedback.onsetDensity}`,
-  ];
+  const ageMs = audioFeedback ? Date.now() - audioFeedback.capturedAtMs : undefined;
+
+  return formatAudioContextForPrompt(summary, {
+    ageMs,
+    includeScopeLine: true,
+  });
 }
 
 export function buildJamStartManagerContext(input: JamStartManagerContextInput): string {
   const [genreLine, contextLine, chordLine] = buildMusicalContextLines(input.musicalContext);
-  const audioLines = input.audioFeedback ? buildAudioFeedbackLines(input.audioFeedback) : [];
+  const audioLines = buildAudioContextLines(input.audioFeedback, input.audioContextSummary);
 
   return [
     'JAM START — CONTEXT',
@@ -74,7 +76,7 @@ export function buildJamStartManagerContext(input: JamStartManagerContextInput):
 
 export function buildDirectiveManagerContext(input: DirectiveManagerContextInput): string {
   const { musicalContext } = input;
-  const audioLines = input.audioFeedback ? buildAudioFeedbackLines(input.audioFeedback) : [];
+  const audioLines = buildAudioContextLines(input.audioFeedback, input.audioContextSummary);
 
   return [
     'DIRECTIVE from the boss.',
@@ -99,7 +101,7 @@ export function buildDirectiveManagerContext(input: DirectiveManagerContextInput
 
 export function buildAutoTickManagerContext(input: AutoTickManagerContextInput): string {
   const [genreLine, contextLine, chordLine] = buildMusicalContextLines(input.musicalContext);
-  const audioLines = input.audioFeedback ? buildAudioFeedbackLines(input.audioFeedback) : [];
+  const audioLines = buildAudioContextLines(input.audioFeedback, input.audioContextSummary);
 
   return [
     'AUTO-TICK — LISTEN AND EVOLVE',
