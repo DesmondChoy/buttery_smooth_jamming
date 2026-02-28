@@ -18,7 +18,10 @@ function parseTargetFromText(text: string): { targetAgent?: string; cleanText: s
   for (const [key, meta] of Object.entries(AGENT_META)) {
     const mention = meta.mention.toLowerCase();
     if (lower.startsWith(mention) && (lower.length === mention.length || lower[mention.length] === ' ')) {
-      return { targetAgent: key, cleanText: text };
+      return {
+        targetAgent: key,
+        cleanText: text.slice(mention.length).trim(),
+      };
     }
   }
   return { cleanText: text };
@@ -103,11 +106,16 @@ export function BossInputBar({
     const trimmed = inputValue.trim();
     if (!trimmed) return;
 
-    const { targetAgent } = parseTargetFromText(trimmed);
-    onSendDirective(trimmed, targetAgent);
+    const { targetAgent, cleanText } = parseTargetFromText(trimmed);
+    const directiveText = cleanText.trim();
+    if (!directiveText) return;
+    onSendDirective(directiveText, targetAgent);
     setInputValue('');
     setShowSuggestions(false);
   }, [inputValue, onSendDirective]);
+
+  const parsedInput = parseTargetFromText(inputValue.trim());
+  const hasDirectiveText = Boolean(parsedInput.cleanText.trim());
 
   return (
     <div className="relative shrink-0">
@@ -145,7 +153,12 @@ export function BossInputBar({
         />
         <button
           type="submit"
-          disabled={!isConnected || !isJamming || !canSendDirectives || !inputValue.trim()}
+          disabled={
+            !isConnected
+            || !isJamming
+            || !canSendDirectives
+            || !hasDirectiveText
+          }
           className="px-4 py-3 text-amber-400 hover:text-amber-300 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium shrink-0"
           aria-label="Send directive"
         >

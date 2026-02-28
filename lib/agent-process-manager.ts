@@ -286,10 +286,15 @@ export class AgentProcessManager {
    * then either free-jam immediately or wait silently for boss cues.
    */
   async start(activeAgents: string[], options: StartJamOptions = {}): Promise<void> {
+    if (this.stopped) return;
+
     await assert_codex_runtime_ready({
       working_dir: this.workingDir,
     });
+    if (this.stopped) return;
+
     const codexConfig = load_project_codex_config(this.workingDir);
+    if (this.stopped) return;
     this.codexConfigOverrides = build_codex_overrides(codexConfig, CODEX_JAM_PROFILE);
     this.codexJamDefaultModel = codexConfig.jam_agent_model;
     this.jamStartMode = options.mode ?? 'autonomous_opening';
@@ -355,8 +360,10 @@ export class AgentProcessManager {
 
     // Prepare one Codex-backed session per agent
     await Promise.all(this.activeAgents.map((key) => this.spawnAgent(key)));
+    if (this.stopped) return;
 
     if (this.jamStartMode === 'autonomous_opening') {
+      if (this.stopped) return;
       // Send initial jam context to each agent and collect responses
       await this.sendJamStart();
     } else {
@@ -366,6 +373,7 @@ export class AgentProcessManager {
     }
 
     // Start autonomous evolution ticks
+    if (this.stopped) return;
     this.startAutoTick();
   }
 
@@ -1792,6 +1800,7 @@ export class AgentProcessManager {
 
   private async sendJamStart(): Promise<void> {
     return this.enqueueTurn('jam-start', async () => {
+      if (this.stopped) return;
       this.roundNumber++;
       const ctx = this.musicalContext;
       const audioFeedback = this.getFreshAudioFeedbackSection();
@@ -1852,6 +1861,8 @@ export class AgentProcessManager {
           return this.sendToAgentAndCollect(input.key, input.context, input.fullPrompt);
         })
       );
+
+      if (this.stopped) return;
 
       for (let i = 0; i < this.activeAgents.length; i++) {
         const key = this.activeAgents[i];
