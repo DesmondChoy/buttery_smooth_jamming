@@ -1,4 +1,5 @@
 import type { IncomingMessage } from 'http';
+import { TLSSocket } from 'tls';
 import { NextResponse } from 'next/server';
 import type { WebSocket, WebSocketServer } from 'ws';
 import { AgentProcessManager } from '@/lib/agent-process-manager';
@@ -119,7 +120,7 @@ function getIncomingRequestWsProtocol(request: IncomingMessage): 'ws' | 'wss' {
     if (lower.startsWith('http')) return 'ws';
   }
 
-  return request.socket?.encrypted ? 'wss' : 'ws';
+  return request.socket instanceof TLSSocket ? 'wss' : 'ws';
 }
 
 function getActiveAgentCount(manager: AgentProcessManager): number {
