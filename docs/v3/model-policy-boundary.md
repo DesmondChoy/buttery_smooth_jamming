@@ -226,10 +226,13 @@ runtime boundary:
 - `interpretCameraDirective` runs a strict schema-backed Codex call (timeout
   `15_000 ms`) and enforces minimum confidence
   (`CAMERA_INTERPRETATION_MIN_CONFIDENCE`, default `0.55`).
-- Only accepted interpretations are converted into boss directives and sent through
-  existing deterministic directive targeting; all rejected interpretations are
-  reported as `conductor_intent` reason codes (for example
-  `below_confidence_threshold`, `stale_sample`, `model_parse_failure`) with zero
+- Camera conductor directives are broadcast-only at runtime (no per-agent camera
+  targeting), and route scope is all selected jam agents.
+- Runtime blocks camera cues until at least one agent has been manually activated;
+  blocked cues are surfaced as `activation_required`.
+- Accepted/blocked interpretations are reported as `conductor_intent` reason codes
+  (for example `below_confidence_threshold`, `stale_sample`,
+  `activation_required`, `model_parse_failure`) with zero unintended
   musical-state side effects.
 
 ## Scope Note

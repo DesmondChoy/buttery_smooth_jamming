@@ -247,6 +247,10 @@ directives: browser audio feedback and camera conductor intent payloads.
   - Only interpretations with `confidence >= CAMERA_INTERPRETATION_MIN_CONFIDENCE`
     pass (default `0.55`); stale or low-confidence samples are rejected and
     surfaced as `conductor_intent` diagnostics.
+  - Camera directives are runtime broadcast-only (all selected session agents);
+    per-agent camera targeting is intentionally ignored by routing.
+  - Camera directives are blocked until at least one agent is manually activated;
+    blocked cues emit `reason: activation_required`.
   - Diagnostics include threshold and sample-signal context (`sample_motion_score`,
     `sample_face_motion`, `sample_is_stale`) to explain skipped cues.
   - Accepted visions are translated into normal boss directives and routed through

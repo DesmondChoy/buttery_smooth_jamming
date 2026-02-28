@@ -589,18 +589,50 @@ export function SOCKET(
               'interpreted',
               interpretation.diagnostics
             );
-            sendToClient(client, { type: 'conductor_intent', payload: interpreted });
             if (!interpreted.accepted || !interpreted.interpretation?.directive.trim()) {
+              sendToClient(client, { type: 'conductor_intent', payload: interpreted });
               endTimer(client);
               sendToClient(client, { type: 'status', status: 'done' });
               break;
             }
 
-            const explicitTarget = interpreted.explicit_target ?? interpreted.interpretation?.target_agent ?? undefined;
+            const jamState = manager.getJamStateSnapshot();
+            if (jamState.activatedAgents.length === 0) {
+              sendToClient(client, {
+                type: 'conductor_intent',
+                payload: {
+                  accepted: false,
+                  confidence: interpreted.confidence,
+                  reason: 'activation_required',
+                  explicit_target: null,
+                  interpretation: interpreted.interpretation,
+                  rejected_reason: 'Camera cue blocked: activate at least one agent with a boss @mention first.',
+                  diagnostics: interpreted.diagnostics,
+                } satisfies ConductorInterpreterResult,
+              });
+              endTimer(client);
+              sendToClient(client, { type: 'status', status: 'done' });
+              break;
+            }
+
+            const broadcastConductorIntent: ConductorInterpreterResult = {
+              ...interpreted,
+              explicit_target: null,
+              interpretation: interpreted.interpretation
+                ? {
+                    directive: interpreted.interpretation.directive,
+                    ...(interpreted.interpretation.rationale
+                      ? { rationale: interpreted.interpretation.rationale }
+                      : {}),
+                  }
+                : interpreted.interpretation,
+            };
+            sendToClient(client, { type: 'conductor_intent', payload: broadcastConductorIntent });
             await manager.handleDirective(
               interpreted.interpretation.directive,
-              explicitTarget ?? undefined,
-              message.activeAgents || []
+              undefined,
+              message.activeAgents || [],
+              { routingScope: 'all_selected' }
             );
             endTimer(client);
             sendToClient(client, { type: 'status', status: 'done' });

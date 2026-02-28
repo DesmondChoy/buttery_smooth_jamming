@@ -78,6 +78,14 @@ export default function Home() {
       return;
     }
 
+    if (result.reason === 'activation_required') {
+      setLastConductorIntentSummary(
+        result.rejected_reason
+          || 'Camera cue blocked: activate at least one agent with a boss @mention first.'
+      );
+      return;
+    }
+
     const minThreshold = result.diagnostics?.min_confidence_threshold;
     const thresholdPct = (typeof minThreshold === 'number' && Number.isFinite(minThreshold))
       ? Math.round(Math.max(0, Math.min(1, minThreshold)) * 100)

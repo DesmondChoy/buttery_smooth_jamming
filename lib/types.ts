@@ -135,6 +135,7 @@ export interface InterpretedVisionDirective {
 export type ConductorInterpreterReason =
   | 'interpreted'
   | 'below_confidence_threshold'
+  | 'activation_required'
   | 'stale_sample'
   | 'model_parse_failure'
   | 'model_execution_failure'

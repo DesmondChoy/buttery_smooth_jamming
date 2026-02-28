@@ -2693,6 +2693,101 @@ describe('AgentProcessManager staged_silent mode', () => {
     await manager.stop();
   });
 
+  it('default broadcast routing still targets only activated agents', async () => {
+    const { manager, broadcast, processes } = createTestManager();
+
+    await manager.start(['bass', 'melody'], { mode: 'staged_silent' });
+    await manager.setJamPreset('funk');
+
+    const joinPromise = manager.handleDirective(
+      '@GROOVE start with a slow riff',
+      'bass',
+      ['bass', 'melody']
+    );
+    await vi.advanceTimersByTimeAsync(0);
+    const bassProc = getProcessByKey(processes, 'bass');
+    sendAgentResponse(bassProc, {
+      pattern: 'note("d2 a2").s("sawtooth").slow(2)',
+      thoughts: 'Starting sparse',
+      reaction: 'Holding it down',
+    });
+    await joinPromise;
+
+    broadcast.mockClear();
+
+    const broadcastPromise = manager.handleDirective(
+      'layer variation across the band',
+      undefined,
+      ['bass', 'melody']
+    );
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(processes.has('melody')).toBe(false);
+
+    sendAgentResponse(bassProc, {
+      pattern: 'note("d2 a2 f2 a2").s("sawtooth")',
+      thoughts: 'Adding motion',
+      reaction: 'Still carrying the lane',
+    });
+    await broadcastPromise;
+
+    const latestJamState = getLatestJamState(broadcast);
+    expect(latestJamState?.activatedAgents).toEqual(['bass']);
+
+    await manager.stop();
+  });
+
+  it('routingScope=all_selected broadcasts to all selected session agents', async () => {
+    const { manager, broadcast, processes } = createTestManager();
+
+    await manager.start(['bass', 'melody'], { mode: 'staged_silent' });
+    await manager.setJamPreset('funk');
+
+    const joinPromise = manager.handleDirective(
+      '@GROOVE start with a slow riff',
+      'bass',
+      ['bass', 'melody']
+    );
+    await vi.advanceTimersByTimeAsync(0);
+    const bassProc = getProcessByKey(processes, 'bass');
+    sendAgentResponse(bassProc, {
+      pattern: 'note("d2 a2").s("sawtooth").slow(2)',
+      thoughts: 'Starting sparse',
+      reaction: 'Holding it down',
+    });
+    await joinPromise;
+
+    broadcast.mockClear();
+
+    const broadcastPromise = manager.handleDirective(
+      'open the arrangement and answer each other',
+      undefined,
+      ['bass', 'melody'],
+      { routingScope: 'all_selected' }
+    );
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(processes.has('melody')).toBe(true);
+    const melodyProc = getProcessByKey(processes, 'melody');
+
+    sendAgentResponse(bassProc, {
+      pattern: 'note("d2 f2 a2 c3").s("sawtooth")',
+      thoughts: 'Expanding harmony support',
+      reaction: 'Opening with melody',
+    });
+    sendAgentResponse(melodyProc, {
+      pattern: 'note("a4 c5 d5 f5").s("triangle")',
+      thoughts: 'Answering the bass motion',
+      reaction: 'Joining broadcast cue',
+    });
+    await broadcastPromise;
+
+    const latestJamState = getLatestJamState(broadcast);
+    expect(latestJamState?.activatedAgents).toEqual(['bass', 'melody']);
+
+    await manager.stop();
+  });
+
   it('first targeted no_change in staged_silent syncs to silence/idle state', async () => {
     const { manager, processes } = createTestManager();
 

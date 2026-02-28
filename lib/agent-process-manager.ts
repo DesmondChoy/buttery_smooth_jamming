@@ -154,6 +154,12 @@ interface StartJamOptions {
   mode?: JamStartMode;
 }
 
+type DirectiveRoutingScope = 'activated' | 'all_selected';
+
+interface HandleDirectiveOptions {
+  routingScope?: DirectiveRoutingScope;
+}
+
 // Codex CLI `exec` no longer accepts legacy `--tools/--strict-mcp-config` flags.
 // Jam agents remain isolated via the dedicated `jam_agent` profile (MCP disabled)
 // plus prompt-level policy; keep this empty for CLI compatibility.
@@ -498,9 +504,11 @@ export class AgentProcessManager {
   async handleDirective(
     text: string,
     targetAgent: string | undefined,
-    activeAgents: string[]
+    activeAgents: string[],
+    options: HandleDirectiveOptions = {}
   ): Promise<void> {
     void activeAgents; // routing uses manager-owned session membership, not client input
+    const routingScope = options.routingScope ?? 'activated';
 
     return this.enqueueTurn('directive', async () => {
       if (this.stopped) return;
@@ -568,11 +576,21 @@ export class AgentProcessManager {
         }
         targets = [targetAgent];
       } else {
-        targets = this.activatedAgents.filter(
+        const routingBase =
+          routingScope === 'all_selected'
+            ? this.activeAgents
+            : this.activatedAgents;
+        targets = routingBase.filter(
           (k) => this.agents.has(k) && !this.mutedAgents.has(k)
         );
+        if (routingScope === 'all_selected' && targets.length > 0) {
+          // Broadcast-to-all-selected routing explicitly activates all participating agents.
+          this.activatedAgents = this.activeAgents.filter((key) =>
+            this.activatedAgents.includes(key) || targets.includes(key)
+          );
+        }
         if (targets.length === 0) {
-          const hasMutedActives = this.activatedAgents.some(
+          const hasMutedActives = routingBase.some(
             (k) => this.agents.has(k) && this.mutedAgents.has(k)
           );
           this.broadcastWs('directive_error', {
