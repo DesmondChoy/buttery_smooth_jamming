@@ -4,6 +4,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import type {
   AgentState,
   MusicalContext,
+  ExecutePayload,
   JamChatMessage,
   AutoTickTiming,
   AutoTickTimingPayload,
@@ -55,6 +56,7 @@ export interface UseJamSessionReturn {
   handleAgentThought: (payload: AgentThoughtPayload) => void;
   handleAgentCommentary: (payload: AgentCommentaryPayload) => void;
   handleAgentStatus: (payload: AgentStatusPayload) => void;
+  handleExecute: (payload: ExecutePayload) => void;
   handleAutoTickTimingUpdate: (payload: AutoTickTimingPayload) => void;
   handleMusicalContextUpdate: (payload: MusicalContextPayload) => void;
   handleJamStateUpdate: (payload: JamStatePayload) => void;
@@ -104,9 +106,7 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
 
   const selectedAgentsRef = useRef(selectedAgents);
   const currentSessionIdRef = useRef<string | null>(null);
-  const lastJamRoundRef = useRef<number | null>(null);
   const patternGlowTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
-  const jamStateAgentPatternRef = useRef<Record<string, string>>({});
 
   const clearAllPatternGlows = useCallback(() => {
     Object.values(patternGlowTimersRef.current).forEach(clearTimeout);
@@ -170,8 +170,6 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
     setMusicalContext(DEFAULT_MUSICAL_CONTEXT);
     setAutoTickTiming(null);
     currentSessionIdRef.current = null;
-    lastJamRoundRef.current = null;
-    jamStateAgentPatternRef.current = {};
     clearAllPatternGlows();
     sendStartJam(selectedAgentsRef.current);
   }, [clearAllPatternGlows, isRuntimeConnected, sendStartJam]);
@@ -186,8 +184,6 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
     setMusicalContext(DEFAULT_MUSICAL_CONTEXT);
     setAutoTickTiming(null);
     currentSessionIdRef.current = null;
-    lastJamRoundRef.current = null;
-    jamStateAgentPatternRef.current = {};
     clearAllPatternGlows();
     // Tell server to kill agent processes
     sendStopJam();
@@ -209,8 +205,6 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
     setMusicalContext(DEFAULT_MUSICAL_CONTEXT);
     setAutoTickTiming(null);
     currentSessionIdRef.current = null;
-    lastJamRoundRef.current = null;
-    jamStateAgentPatternRef.current = {};
     clearAllPatternGlows();
 
     // Start the jam
@@ -269,6 +263,12 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
     });
   }, []);
 
+  const handleExecute = useCallback((payload: ExecutePayload) => {
+    if (!isJamming) return;
+    if (!payload.changedAgents || payload.changedAgents.length === 0) return;
+    triggerPatternGlow(payload.changedAgents);
+  }, [isJamming, triggerPatternGlow]);
+
   const handleMusicalContextUpdate = useCallback((payload: MusicalContextPayload) => {
     setMusicalContext(payload.musicalContext);
   }, []);
@@ -292,34 +292,6 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
       return;
     }
 
-    const isNewJamRound = (
-      lastJamRoundRef.current === null
-      || payload.jamState.currentRound > lastJamRoundRef.current
-    );
-
-    if (isNewJamRound) {
-      const changedAgents = Object.entries(jamState.agents)
-        .filter(
-          ([agentKey, nextAgentState]) => {
-            const nextPattern = nextAgentState?.pattern ?? '';
-            const previousPattern = jamStateAgentPatternRef.current[agentKey] ?? '';
-            return previousPattern !== nextPattern;
-          }
-        )
-        .map(([agentKey]) => agentKey);
-      if (changedAgents.length > 0) {
-        triggerPatternGlow(changedAgents);
-      }
-    }
-
-    lastJamRoundRef.current = jamState.currentRound;
-    jamStateAgentPatternRef.current = Object.fromEntries(
-      Object.entries(jamState.agents).map(([agentKey, nextAgentState]) => [
-        agentKey,
-        nextAgentState?.pattern ?? '',
-      ])
-    );
-
     setAgentStates(jamState.agents);
     setMusicalContext(jamState.musicalContext);
     setActivatedAgents(jamState.activatedAgents ?? jamState.activeAgents);
@@ -328,7 +300,7 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
       setAutoTickTiming(jamState.autoTick);
     }
     setIsJamReady(true);
-  }, [isJamming, triggerPatternGlow]);
+  }, [isJamming]);
 
   useEffect(() => {
     return () => {
@@ -361,6 +333,7 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
     handleAgentThought,
     handleAgentCommentary,
     handleAgentStatus,
+    handleExecute,
     handleAutoTickTimingUpdate,
     handleMusicalContextUpdate,
     handleJamStateUpdate,

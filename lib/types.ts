@@ -25,6 +25,12 @@ export interface WSMessage<T = unknown> {
 
 export interface ExecutePayload {
   code: string;
+  sessionId?: string;
+  round?: number;
+  turnSource?: JamTurnSource;
+  changedAgents?: string[];
+  changed?: boolean;
+  issuedAtMs?: number;
 }
 
 export interface MessagePayload {

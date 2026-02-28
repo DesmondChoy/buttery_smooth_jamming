@@ -15,7 +15,7 @@ import type {
 
 export interface UseWebSocketOptions {
   url?: string;
-  onExecute?: (code: string) => void;
+  onExecute?: (payload: ExecutePayload) => void;
   onStop?: () => void;
   onMessage?: (message: ChatMessage) => void;
   // Jam session callbacks
@@ -66,6 +66,21 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
   const onMusicalContextUpdateRef = useRef(onMusicalContextUpdate);
   const onJamStateUpdateRef = useRef(onJamStateUpdate);
 
+  const normalizeExecutePayload = useCallback((rawPayload: unknown): ExecutePayload | null => {
+    if (typeof rawPayload === 'string') {
+      return { code: rawPayload };
+    }
+
+    if (rawPayload && typeof rawPayload === 'object' && 'code' in rawPayload) {
+      const maybeCode = (rawPayload as { code?: unknown }).code;
+      if (typeof maybeCode === 'string') {
+        return rawPayload as ExecutePayload;
+      }
+    }
+
+    return null;
+  }, []);
+
   useEffect(() => {
     onExecuteRef.current = onExecute;
     onStopRef.current = onStop;
@@ -83,8 +98,11 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
 
       switch (message.type) {
         case 'execute': {
-          const payload = message.payload as ExecutePayload;
-          onExecuteRef.current?.(payload.code);
+          const rawPayload = message.payload as unknown;
+          const payload = normalizeExecutePayload(rawPayload);
+          if (payload) {
+            onExecuteRef.current?.(payload);
+          }
           break;
         }
         case 'stop': {
@@ -137,7 +155,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     } catch (err) {
       console.error('Failed to parse WebSocket message:', err);
     }
-  }, []);
+  }, [normalizeExecutePayload]);
 
   const connect = useCallback(() => {
     if (!shouldReconnectRef.current) return;

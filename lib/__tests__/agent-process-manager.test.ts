@@ -65,7 +65,7 @@ import { spawn } from 'child_process';
 import * as fs from 'fs';
 import { AgentProcessManager, BroadcastFn } from '../agent-process-manager';
 import { JAM_GOVERNANCE } from '../jam-governance-constants';
-import type { MusicalContext, JamTurnSource } from '../types';
+import type { MusicalContext, JamTurnSource, ExecutePayload } from '../types';
 
 const mockedSpawn = vi.mocked(spawn);
 
@@ -250,6 +250,21 @@ interface BroadcastJamStatePayload {
   turnSource?: JamTurnSource;
 }
 
+interface BroadcastExecutePayload {
+  code: string;
+  sessionId?: string;
+  round?: number;
+  turnSource?: JamTurnSource;
+  changedAgents?: string[];
+  changed?: boolean;
+  issuedAtMs?: number;
+}
+
+interface BroadcastExecuteMessage {
+  type: string;
+  payload?: BroadcastExecutePayload;
+}
+
 function getJamStateForRound(
   broadcast: ReturnType<typeof vi.fn>,
   round: number
@@ -294,6 +309,23 @@ function getAutoTickFiredEvents(
       sessionId: msg.payload!.sessionId!,
       round: msg.payload!.round!,
       activeAgents: msg.payload!.activeAgents!,
+    }));
+}
+
+function getExecutePayloads(
+  broadcast: ReturnType<typeof vi.fn>
+): ExecutePayload[] {
+  return broadcast.mock.calls
+    .map(([msg]: unknown[]) => msg as BroadcastExecuteMessage)
+    .filter((msg): msg is BroadcastExecuteMessage => msg.type === 'execute' && !!msg.payload)
+    .map((msg) => ({
+      code: msg.payload!.code,
+      sessionId: msg.payload!.sessionId,
+      round: msg.payload!.round,
+      turnSource: msg.payload!.turnSource,
+      changedAgents: msg.payload!.changedAgents,
+      changed: msg.payload!.changed,
+      issuedAtMs: msg.payload!.issuedAtMs,
     }));
 }
 
@@ -466,6 +498,52 @@ describe('AgentProcessManager turn serialization', () => {
     const jamStateUpdates = getJamStateUpdatePayloads(broadcast);
     const autoTickPayload = jamStateUpdates.find((item) => item.jamState.currentRound === 2);
     expect(autoTickPayload?.turnSource).toBe('auto-tick');
+  });
+
+  it('broadcasts execute payload with changedAgents metadata', async () => {
+    const { manager, broadcast, processes } = createTestManager();
+
+    const startPromise = manager.start(['drums', 'bass']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const drumsProc = getNthProcess(processes, 0);
+    const bassProc = getNthProcess(processes, 1);
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd sd")',
+      thoughts: 'Opening beat',
+      reaction: 'Kickoff',
+    });
+    sendAgentResponse(bassProc, {
+      pattern: 'note("c4 e4 g4")',
+      thoughts: 'Harmony start',
+      reaction: 'Foundation',
+    });
+    await startPromise;
+
+    broadcast.mockClear();
+
+    const directivePromise = manager.handleDirective('Layer with variation', undefined, ['drums', 'bass']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd sd cp sd")',
+      thoughts: 'Evolving drums',
+      reaction: 'Added variation',
+    });
+    sendAgentResponse(bassProc, {
+      pattern: 'no_change',
+      thoughts: 'Holding harmony',
+      reaction: 'Keep it simple',
+    });
+    await directivePromise;
+
+    const executePayloads = getExecutePayloads(broadcast);
+    expect(executePayloads.length).toBe(1);
+
+    const payload = executePayloads[0];
+    expect(payload.changedAgents).toEqual(['drums']);
+    expect(payload.changed).toBe(true);
+    expect(payload.turnSource).toBe('directive');
   });
 
   it('loads personas from .codex/agents when available', async () => {

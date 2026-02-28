@@ -438,6 +438,8 @@ export class AgentProcessManager {
         });
       }));
 
+      const patternsBeforeTurn = { ...this.agentPatterns };
+
       // Process responses and update state
       for (let i = 0; i < targets.length; i++) {
         const key = targets[i];
@@ -467,7 +469,8 @@ export class AgentProcessManager {
       this.startAutoTick();
 
       // Compose all patterns and broadcast
-      this.composeAndBroadcast('directive');
+      const changedAgents = this.computeChangedAgents(patternsBeforeTurn);
+      this.composeAndBroadcast('directive', changedAgents);
     });
   }
 
@@ -1348,6 +1351,7 @@ export class AgentProcessManager {
     return this.enqueueTurn('jam-start', async () => {
       this.roundNumber++;
       const ctx = this.musicalContext;
+      const patternsBeforeTurn = { ...this.agentPatterns };
 
       const responsePromises = this.activeAgents.map((key) => {
         if (!this.agents.has(key)) return Promise.resolve(null);
@@ -1378,7 +1382,8 @@ export class AgentProcessManager {
       }
 
       this.resetAutoTickDeadline();
-      this.composeAndBroadcast('jam-start');
+      const changedAgents = this.computeChangedAgents(patternsBeforeTurn);
+      this.composeAndBroadcast('jam-start', changedAgents);
     });
   }
 
@@ -1586,6 +1591,7 @@ export class AgentProcessManager {
       });
 
       const responses = await Promise.all(responsePromises);
+      const patternsBeforeTurn = { ...this.agentPatterns };
 
       // If stopped during await, don't apply stale responses
       if (this.stopped) return;
@@ -1613,7 +1619,8 @@ export class AgentProcessManager {
         console.log('[AgentManager] Agent context suggestions applied:', suggestionDelta);
       }
 
-      this.composeAndBroadcast('auto-tick');
+      const changedAgents = this.computeChangedAgents(patternsBeforeTurn);
+      this.composeAndBroadcast('auto-tick', changedAgents);
     });
   }
 
@@ -1879,16 +1886,54 @@ export class AgentProcessManager {
     return `stack(${patterns.join(', ')})`;
   }
 
+  private normalizePatternForChangeDiff(pattern: string | undefined): string {
+    return pattern && pattern.length > 0 ? pattern : 'silence';
+  }
+
+  private computeChangedAgents(previousPatterns: Record<string, string>): string[] {
+    const candidateMap: Record<string, true> = {};
+    for (const key of Object.keys(this.agentPatterns)) {
+      candidateMap[key] = true;
+    }
+    for (const key of Object.keys(previousPatterns)) {
+      candidateMap[key] = true;
+    }
+
+    const candidates = Object.keys(candidateMap);
+    const changedAgents: string[] = [];
+
+    for (const key of candidates) {
+      const previousPattern = this.normalizePatternForChangeDiff(previousPatterns[key]);
+      const nextPattern = this.normalizePatternForChangeDiff(this.agentPatterns[key]);
+      if (previousPattern !== nextPattern) {
+        changedAgents.push(key);
+      }
+    }
+
+    return changedAgents;
+  }
+
   private broadcastJamStateOnly(turnSource: JamTurnSource = 'staged-silent'): void {
     const combinedPattern = this.composePatterns();
     this.broadcastJamStatePayload(combinedPattern, turnSource);
   }
 
-  private composeAndBroadcast(turnSource: JamTurnSource): void {
+  private composeAndBroadcast(
+    turnSource: JamTurnSource,
+    changedAgents: string[] = []
+  ): void {
     const combinedPattern = this.composePatterns();
 
     // Execute the composed pattern
-    this.broadcastWs('execute', { code: combinedPattern });
+    this.broadcastWs('execute', {
+      code: combinedPattern,
+      sessionId: this.sessionId,
+      round: this.roundNumber,
+      turnSource,
+      changedAgents,
+      changed: changedAgents.length > 0,
+      issuedAtMs: Date.now(),
+    });
 
     this.broadcastJamStatePayload(combinedPattern, turnSource);
   }

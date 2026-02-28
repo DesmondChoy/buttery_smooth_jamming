@@ -11,7 +11,7 @@ import { AgentSelectionModal } from '@/components/AgentSelectionModal';
 import { AudioStartButton } from '@/components/AudioStartButton';
 import { useWebSocket, useStrudel, useRuntimeTerminal, useJamSession } from '@/hooks';
 import { PRESETS } from '@/lib/musical-context-presets';
-import { AGENT_META } from '@/lib/types';
+import { AGENT_META, type ExecutePayload } from '@/lib/types';
 
 const StrudelPanel = dynamic(
   () => import('@/components/StrudelPanel'),
@@ -88,6 +88,7 @@ export default function Home() {
     autoTickTiming,
     agentStates,
     agentPatternChangeGlows,
+    handleExecute: handleJamExecute,
     showAgentSelection,
     handleAgentThought,
     handleAgentCommentary,
@@ -140,7 +141,25 @@ export default function Home() {
     setIsPlaying(playing);
   }, []);
 
-  const handleExecute = useCallback((code: string) => {
+  const normalizeExecutePayload = useCallback((payload: unknown): ExecutePayload | null => {
+    if (typeof payload === 'string') {
+      return { code: payload };
+    }
+
+    if (payload && typeof payload === 'object' && 'code' in payload) {
+      const maybeCode = (payload as { code?: unknown }).code;
+      if (typeof maybeCode === 'string') {
+        return { code: maybeCode };
+      }
+    }
+
+    return null;
+  }, []);
+
+  const handleExecute = useCallback((payload: ExecutePayload) => {
+    handleJamExecute(payload);
+
+    const code = payload.code;
     setCode(code);
     setError(null);
 
@@ -154,7 +173,7 @@ export default function Home() {
       setIsPlaying(true);
       pendingExecuteFrameRef.current = null;
     });
-  }, [setCode, evaluate]);
+  }, [evaluate, handleJamExecute, setCode]);
 
   const handleStop = useCallback(() => {
     if (pendingExecuteFrameRef.current !== null) {
@@ -180,7 +199,12 @@ export default function Home() {
           handleAgentStatus(message.payload as Parameters<typeof handleAgentStatus>[0]);
           break;
         case 'execute':
-          handleExecute((message.payload as { code: string }).code);
+          {
+            const executePayload = normalizeExecutePayload(message.payload);
+            if (executePayload) {
+              handleExecute(executePayload);
+            }
+          }
           break;
         case 'jam_state_update':
           handleJamStateUpdate(message.payload as Parameters<typeof handleJamStateUpdate>[0]);
@@ -202,6 +226,7 @@ export default function Home() {
     handleAgentStatus,
     handleAutoTickTimingUpdate,
     handleJamStateUpdate,
+    normalizeExecutePayload,
     handleExecute,
     addChatMessage,
   ]);
@@ -285,7 +310,7 @@ export default function Home() {
 
     if (!jamPlayRequested) {
       setJamPlayRequested(true);
-      handleExecute(SILENT_JAM_PATTERN);
+      handleExecute({ code: SILENT_JAM_PATTERN });
     }
 
     // Allow retries and resends until the server confirms the preset in jam state.
@@ -296,7 +321,7 @@ export default function Home() {
 
     // If transport stopped for any reason before we finished arming the jam, restart silence.
     if (jamPlayRequested && !isPlaying) {
-      handleExecute(SILENT_JAM_PATTERN);
+      handleExecute({ code: SILENT_JAM_PATTERN });
     }
   }, [
     isJamming,
