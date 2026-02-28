@@ -67,6 +67,7 @@ export function useRuntimeTerminal(
   const reconnectAttemptsRef = useRef(0);
   const handleMessageRef = useRef<((event: MessageEvent) => void) | null>(null);
   const contextInspectorEnabledRef = useRef(false);
+  const shouldReconnectRef = useRef(true);
   const MAX_RECONNECT_ATTEMPTS = 5;
 
   useEffect(() => {
@@ -183,6 +184,7 @@ export function useRuntimeTerminal(
   const connectRef = useRef<() => void>();
 
   const connect = useCallback(() => {
+    if (!shouldReconnectRef.current) return;
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       return;
     }
@@ -191,6 +193,11 @@ export function useRuntimeTerminal(
     wsRef.current = ws;
 
     ws.onopen = () => {
+      if (!shouldReconnectRef.current) return;
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
+      }
       setIsConnected(true);
       setError(null);
       setStatus('connecting');
@@ -203,6 +210,7 @@ export function useRuntimeTerminal(
     };
 
     ws.onclose = () => {
+      if (!shouldReconnectRef.current) return;
       setIsConnected(false);
       setStatus('error');
       currentAssistantLineRef.current = null;
@@ -220,6 +228,7 @@ export function useRuntimeTerminal(
     };
 
     ws.onerror = () => {
+      if (!shouldReconnectRef.current) return;
       setError('WebSocket connection error');
       setIsConnected(false);
     };
@@ -238,8 +247,11 @@ export function useRuntimeTerminal(
     connect();
 
     return () => {
+      shouldReconnectRef.current = false;
+
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
       }
       wsRef.current?.close();
       wsRef.current = null;

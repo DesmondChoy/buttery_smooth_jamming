@@ -173,6 +173,11 @@ async function startRuntimeForClient(
   });
 
   await runtimeProcess.start();
+  if (client.readyState !== 1) {
+    await runtimeProcess.stop();
+    return runtimeProcess;
+  }
+
   clientProcesses.set(client, runtimeProcess);
   return runtimeProcess;
 }
