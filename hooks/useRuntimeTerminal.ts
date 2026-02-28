@@ -85,6 +85,7 @@ export function useRuntimeTerminal(
   const handleMessageRef = useRef<((event: MessageEvent) => void) | null>(null);
   const contextInspectorEnabledRef = useRef(false);
   const shouldReconnectRef = useRef(true);
+  const queuedStartJamAgentsRef = useRef<string[] | null>(null);
   const MAX_RECONNECT_ATTEMPTS = 5;
 
   useEffect(() => {
@@ -259,6 +260,12 @@ export function useRuntimeTerminal(
         type: 'set_context_inspector',
         enabled: contextInspectorEnabledRef.current,
       }));
+
+      const queuedAgents = queuedStartJamAgentsRef.current;
+      if (queuedAgents) {
+        ws.send(JSON.stringify({ type: 'start_jam', activeAgents: queuedAgents }));
+        queuedStartJamAgentsRef.current = null;
+      }
     };
 
     ws.onclose = () => {
@@ -340,8 +347,14 @@ export function useRuntimeTerminal(
   const sendStartJam = useCallback((activeAgents: string[]) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: 'start_jam', activeAgents }));
+      queuedStartJamAgentsRef.current = null;
+      return;
     }
-  }, []);
+
+    queuedStartJamAgentsRef.current = activeAgents;
+    setError('Runtime is not connected yet. Reconnecting to start jam...');
+    connect();
+  }, [connect, setError]);
 
   const sendBossDirective = useCallback((text: string, targetAgent?: string, activeAgents?: string[]) => {
     const trimmedText = text.trim();

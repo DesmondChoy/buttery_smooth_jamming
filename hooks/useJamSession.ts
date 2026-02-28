@@ -195,9 +195,8 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
   }, [clearAllPatternGlows, clearChatMessages, sendStopJam]);
 
   const requestStartJam = useCallback(() => {
-    if (!isRuntimeConnected) return;
     setShowAgentSelection(true);
-  }, [isRuntimeConnected]);
+  }, []);
 
   const confirmStartJam = useCallback((agents: string[]) => {
     setSelectedAgents(agents);

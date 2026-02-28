@@ -670,8 +670,7 @@ export default function Home() {
               {/* Start Jam CTA */}
               <button
                 onClick={requestStartJam}
-                disabled={!isRuntimeConnected}
-                className="px-10 py-5 rounded-2xl font-display font-bold text-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-stage-black transition-all duration-200 hover:scale-105 animate-glow-pulse disabled:opacity-50 disabled:cursor-not-allowed disabled:animate-none mb-10"
+                className="px-10 py-5 rounded-2xl font-display font-bold text-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-stage-black transition-all duration-200 hover:scale-105 animate-glow-pulse mb-10"
               >
                 Start a Jam Session
               </button>

@@ -33,13 +33,13 @@ export function AudioStartButton({
       return;
     }
 
-    const checkExistingAudio = async () => {
+      const checkExistingAudio = async () => {
       try {
         const { getAudioContext } = await import('@strudel/webaudio');
         const ctx = getAudioContext();
         if (ctx.state === 'running') {
           setAudioState('ready');
-          setTimeout(() => setIsVisible(false), 300);
+          setIsVisible(false);
           onAudioReady?.();
         }
       } catch {
@@ -67,7 +67,7 @@ export function AudioStartButton({
       if (ctx.state === 'running') {
         setAudioState('ready');
         onAudioReady?.();
-        setTimeout(() => setIsVisible(false), 500);
+        setIsVisible(false);
       } else {
         throw new Error('Could not start audio. Please try again.');
       }
@@ -88,7 +88,7 @@ export function AudioStartButton({
         flex flex-col items-center justify-center
         bg-stage-black/90 backdrop-blur-sm
         transition-opacity duration-300
-        ${audioState === 'ready' ? 'opacity-0' : 'opacity-100'}
+        ${audioState === 'ready' ? 'opacity-0 pointer-events-none' : 'opacity-100 pointer-events-auto'}
         ${className}
       `}
       role="dialog"
