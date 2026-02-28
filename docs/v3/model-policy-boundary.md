@@ -38,10 +38,12 @@ is routable, bounded, schema-valid, and safely composable.
 | Texture/timbre | Chooses synthesis choices, effect movement, and texture transitions. | Enforces output schema validity and safe fallback behavior when output is invalid or missing. |
 | Arrangement evolution | Decides when to hold, vary, build, or simplify over rounds. | Owns turn serialization, session lifecycle, timeout handling, and no-overlap guarantees. |
 | Inter-agent musical adaptation | Reacts to band state and evolves in context. | Preserves canonical jam state server-side and broadcasts authoritative updates. |
+| Audio context interpretation | Listens to aggregate spectral context and folds texture/motion cues into pattern strategy where relevant. | Browser-side feature capture + manager-side TTL/fallback summary injection; model receives only prompt-level summary text. |
 | Pattern output content | Emits Strudel pattern + thoughts + commentary with agent personality. | Validates JSON shape, handles invalid output deterministically, and preserves prior valid pattern as fallback. |
 | Harmonic context evolution | Agents suggest key changes (`suggested_key`) and chord progressions (`suggested_chords`) via structured decision blocks. | Code enforces consensus rules: key changes require 2+ agents with high confidence suggesting the same key; chord changes require a single agent with high confidence. Validated via `normalizeSuggestedKey()` and `deriveScale()`. On key change, `deriveChordProgression()` auto-derives a minimal diatonic fallback (I-vi-IV-V major, i-VI-III-VII minor) so the jam has valid chords immediately; agents may override with genre-specific chords via `suggested_chords` on subsequent turns [C hybrid, MCP-04 / bsj-7k4.15]. |
 | Final playback composition | None (agents do not decide final merge algorithm). | Server composes final output via deterministic `stack(...)` composition. |
 | Runtime and process behavior | None (not model-controlled). | Preserves manager-owned, per-agent persistent Codex-backed sessions and controlled process lifecycle. |
+| Vision-derived conductor cues | None (meaning is not inferred by model text routing). | Browser camera capture is normalized and freshness-checked before running `interpretCameraDirective`; only accepted high-confidence directives proceed into existing deterministic `handleDirective()` routing. |
 | Agent identity and routing metadata | None (not inferred from model text). | Treats `AGENT_META` and agent key/file mappings as canonical. |
 
 ## Deterministic Precedence Rules
@@ -178,6 +180,56 @@ This policy explicitly preserves the v3 architecture invariants:
 5. WebSocket broadcast-callback pattern remains the server broadcast mechanism.
 6. Jam agents remain toolless (`--tools '' --strict-mcp-config`) unless intentionally changed.
 7. `AGENT_META` and agent key mappings remain canonical identity/routing sources.
+8. Runtime lifecycle and transport behavior (session start, reconnect, shutdown, and
+   broadcast callback delivery) is code-owned; model output never controls these
+   transitions.
+
+### Runtime and Transport Failure Semantics
+
+Deterministic failure behavior for transport and lifecycle events is part of the
+runtime boundary:
+
+- Startup/connect failures are reported through explicit runtime status/errors and
+  must fail closed rather than emitting inferred musical recovery.
+- Transport reconnect attempts are scoped to runtime attachment; they should not
+  mutate musical context or bypass existing state unless a new session start
+  is established.
+- Targeted directive errors do not mutate unrelated agents, preserving independent
+  agent continuity and deterministic broadcast behavior.
+- Final playback composition always remains server-driven via `stack(...)`, including
+  after any transport recovery path.
+
+### Audio and Vision Context Boundaries
+
+#### Audio spectral context
+
+- `useAudioFeedback` samples the combined Strudel output via browser WebAudio
+  nodes (`AnalyserNode`) and sends compact feature snapshots as `audio_feedback`
+  websocket payloads.
+- `AgentProcessManager` validates feature payloads, stores the latest snapshot,
+  and requires freshness (default `AUDIO_FEEDBACK_TTL_MS = 12_000`) before
+  injecting it into jam-start/directive/auto-tick context.
+- `deriveAudioContextSummary` collapses raw features into deterministic summary lines
+  (`state`, `level`, `texture`, `motion`, `confidence`) that are passed to model
+  prompts as context, not as raw state changes.
+- Stale/zero snapshots are intentionally downgraded to fallback scope so jam flow
+  remains safe and continuous.
+
+#### Camera conductor intent
+
+- `useCameraConductor` captures motion vectors and optional face metrics, then emits
+  a `camera_directive` payload only after a stable event (`MOTION_STABLE_FRAME_COUNT
+  = 3`) and cooldown (`DEFAULT_COOLDOWN_MS = 1200`).
+- Runtime normalizes and sanity-checks payload fields, then applies
+  `apply_camera_sample_freshness` using `CAMERA_SAMPLE_MAX_AGE_MS` and
+  `CAMERA_SAMPLE_MAX_FUTURE_SKEW_MS`.
+- `interpretCameraDirective` runs a strict schema-backed Codex call (timeout
+  `15_000 ms`) and enforces minimum confidence (`0.78`).
+- Only accepted interpretations are converted into boss directives and sent through
+  existing deterministic directive targeting; all rejected interpretations are
+  reported as `conductor_intent` reason codes (for example
+  `below_confidence_threshold`, `stale_sample`, `model_parse_failure`) with zero
+  musical-state side effects.
 
 ## Scope Note
 

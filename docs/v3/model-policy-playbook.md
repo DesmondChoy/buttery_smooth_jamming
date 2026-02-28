@@ -181,6 +181,73 @@ behavior through the system prompt assembly pipeline.
 | Jam manager context templates | `lib/jam-manager-context-templates.ts` | Behavior-shaping jam-start/directive/auto-tick wording (not routing, lifecycle, or JSON schema contract) |
 | Musical context presets | `lib/musical-context-presets.ts` | Starting key/BPM/energy/genre/chords for new jams |
 
+### Runtime Lifecycle and Transport Behavior
+
+Runtime reliability is a code-owned invariant. Operators should treat lifecycle
+events as deterministic guardrails, not model behavior:
+
+- `start` and `connect` sequencing is gated: start/stop transitions and stream
+  initialization happen in one deterministic path before accepting directives.
+- Reconnect attempts are transport-specific and conservative: if transport drops,
+  runtime re-attachments are retried; state updates and musical context are not
+  speculative.
+- Directive dispatch remains routing-bound: target resolution, session validity,
+  and broadcast fan-out are enforced server-side.
+- Shutdown is idempotent and clears in-flight work before process teardown, so a
+  fresh session is not polluted by stale callbacks.
+- Runtime failures are surfaced as explicit status/error events; they are not
+  silently downgraded into synthetic pattern changes.
+
+Acceptance checks for operators after transport incidents:
+
+- Confirm jam start/connect completes fully before issuing directives.
+- Confirm reconnect attempts do not create duplicate `execute` updates.
+- Confirm stop/reset clears pending turns before starting a new session.
+
+### Audio and Vision Context Boundaries
+
+The jam now accepts two non-text control surfaces in addition to typed boss
+directives: browser audio feedback and camera conductor intent payloads.
+
+#### Audio Feature Context
+
+- Feature extraction path:
+  - `hooks/useAudioFeedback.ts` computes 1-second spectral snapshots from the
+    active Strudel audio output (loudness, spectral centroid, low/mid/high band
+    energy, spectral flux, onset density).
+  - `useAudioFeedback` sends each fresh snapshot to runtime via
+    `audio_feedback` websocket messages.
+  - `AgentProcessManager.handleAudioFeedback()` validates and stores the latest
+    feature window if parseable.
+  - `getFreshAudioContextSummarySection()` and
+    `deriveAudioContextSummary()` convert features into `audioContextSummary` for
+    deterministic prompt context.
+
+- Current guardrails:
+  - Snapshot TTL is `12_000 ms` in `AgentProcessManager`; stale summaries fall
+    back to a low-confidence prompt scope (`fallback: music context only`).
+  - Fallback summary is injected in all jam-start/directive/auto-tick prompts.
+  - Spectral analysis failures do not fail turns; they only reduce context confidence.
+
+#### Camera Conductor Intent Pipeline
+
+- Browser path (`hooks/useCameraConductor.ts`):
+  - Motion/face analysis runs continuously when enabled and jamming is active.
+  - A directive sample is emitted only when movement/face motion stays above
+    threshold across `MOTION_STABLE_FRAME_COUNT = 3` frames and cooldown has
+    elapsed (`1200 ms`).
+  - Emitted samples are tagged with motion vectors, centroid, and optional face
+    metrics (presence, stability, face box, area).
+- Runtime path (`runtime-ws` + `lib/camera-directive-interpreter.ts`):
+  - Payloads are normalized via `normalize_camera_directive_payload`.
+  - Staleness is applied with `CAMERA_SAMPLE_MAX_AGE_MS` (default `5000 ms`) and
+    `CAMERA_SAMPLE_MAX_FUTURE_SKEW_MS` (default `1500 ms`).
+  - Interpreter uses Codex with strict JSON schema and a `15_000 ms` timeout.
+  - Only interpretations with `confidence >= 0.78` pass; stale or low-confidence
+    samples are rejected and surfaced as `conductor_intent` diagnostics.
+  - Accepted visions are translated into normal boss directives and routed through
+    the same deterministic `handleDirective()` path.
+
 ---
 
 ## 3. Failure Triage
@@ -201,6 +268,9 @@ native addon issues, React Compiler compatibility, etc.), see the
 | Deterministic anchor overrides model intent | Boss said "faster" but also included explicit BPM → explicit wins | `handleDirective()` step 1 vs step 7 | This is by design (deterministic precedence). If undesired, rephrase directive without explicit values |
 | Jam start rejected | `jam_capacity_exceeded` or `agent_capacity_exceeded` | `lib/jam-admission.ts` + `app/api/runtime-ws/route.ts` | Increase `MAX_CONCURRENT_JAMS` / `MAX_TOTAL_AGENT_PROCESSES` env vars, or stop existing jams |
 | Agent timeouts (15s) | Model latency too high; Codex session issues | `sendToAgentAndCollect()` timeout in `lib/agent-process-manager.ts` | Increase `AGENT_TIMEOUT_MS`; check model provider status; verify Codex auth |
+| Runtime start/connect races or transport reconnect loops | Runtime start finished before stream/session readiness; stale callbacks during reconnect or shutdown | `app/api/runtime-ws/route.ts` + `hooks/useRuntimeTerminal.ts` + `hooks/useJamSession.ts` | Confirm one active session in client state, restart jam from the same UI state, and avoid issuing directives until start/connect status is stable |
+| No spectral influence from running music | Audio analyzer fallback behavior (`AUDIO CONTEXT` missing or fallback state) or audio feedback not being sent | `hooks/useAudioFeedback.ts` + `lib/agent-process-manager.ts` | Ensure audio is started in the UI, `isAudioRunning` is true, and `audio_feedback` websocket path is connected; check browser console for analyzer attach warnings |
+| Camera vision cues are silent or frequently rejected | Motion thresholds too strict, sample gaps marked stale, low model confidence, or invalid payloads | `hooks/useCameraConductor.ts` + `app/api/runtime-ws/route.ts` + `lib/camera-directive-interpreter.ts` | Check browser camera permission/lighting, confirm conductor is enabled, inspect `conductor_intent` reason/rejected_reason (`stale_sample`, `below_confidence_threshold`, `model_parse_failure`) and adjust jam intent phrasing expectations |
 | Chord progression sounds wrong after key change | `deriveChordProgression()` auto-derives minimal diatonic fallback chords (I-vi-IV-V major, i-VI-III-VII minor) on the same turn a key change is applied [C hybrid, MCP-04 / bsj-7k4.15]. These are continuity placeholders, not genre-tailored. | `deriveChordProgression()` in `lib/musical-context-parser.ts`; `applyContextSuggestions()` in `lib/agent-process-manager.ts` | Wait one turn: agents see the new key on the next auto-tick and can suggest genre-appropriate chords via `suggested_chords`. If chords remain unsuitable, adjust agent personas or shared policy to encourage earlier chord suggestions. |
 | Auto-tick fires during directive | Timer not reset; `tickScheduled` coalescing failed | `startAutoTick()` / `enqueueTurn()` in `lib/agent-process-manager.ts` | Check `clearInterval` call at top of `handleDirective()` |
 

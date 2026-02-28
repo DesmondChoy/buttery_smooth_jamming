@@ -102,6 +102,15 @@ buttery_smooth_jamming/
 ## Documentation
 
 See [docs/](./docs/README.md) for architecture, technical notes, and the full implementation story.
+Recent runtime reliability updates (start/connect sequencing, reconnect behavior, and session lifecycle shutdown semantics) are documented in:
+
+- [V3 Model Policy Boundary](./docs/v3/model-policy-boundary.md)
+- [V3 Model-Policy Playbook](./docs/v3/model-policy-playbook.md)
+
+Additional sensory-control behavior now in this codebase is documented under:
+
+- [V3 Runtime Sensory & Conductor Boundaries](./docs/v3/model-policy-boundary.md#audio-and-vision-context-boundaries)
+- [V3 Model-Policy Playbook (Failure Triage)](./docs/v3/model-policy-playbook.md#3-failure-triage)
 
 ## License
 
