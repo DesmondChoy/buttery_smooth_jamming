@@ -6,6 +6,7 @@ import type { AudioFeatureSnapshot } from '@/lib/types';
 interface AudioAnalysisState {
   context: AudioContext;
   analyser: AnalyserNode;
+  busNode: AudioNode;
   silentSink: GainNode;
   timeData: Float32Array;
   freqData: Uint8Array;
@@ -52,7 +53,7 @@ async function getAudioContext(): Promise<AudioContext | null> {
 
 async function attachAnalyserToStrudelOutput(
   analyser: AnalyserNode
-): Promise<boolean> {
+): Promise<AudioNode | null> {
   try {
     const { getSuperdoughAudioController } = await import('superdough');
     const controller = getSuperdoughAudioController() as {
@@ -65,14 +66,14 @@ async function attachAnalyserToStrudelOutput(
     const busNode = output?.destinationGain ?? output?.channelMerger;
 
     if (!busNode) {
-      return false;
+      return null;
     }
 
     busNode.connect(analyser);
-    return true;
+    return busNode;
   } catch (error) {
     console.warn('[AudioFeedback] Could not attach to Strudel output bus:', error);
-    return false;
+    return null;
   }
 }
 
@@ -187,9 +188,19 @@ export function useAudioFeedback(options: UseAudioFeedbackOptions): void {
         analyser.connect(silentSink);
         silentSink.connect(context.destination);
 
+        const busNode = await attachAnalyserToStrudelOutput(analyser);
+        if (!busNode) {
+          console.warn('[AudioFeedback] No output source available for analysis.');
+          analyser.disconnect();
+          silentSink.disconnect();
+          analysisState = null;
+          return;
+        }
+
         analysisState = {
           context,
           analyser,
+          busNode,
           silentSink,
           timeData: new Float32Array(analyser.fftSize),
           freqData: new Uint8Array(analyser.frequencyBinCount),
@@ -197,15 +208,6 @@ export function useAudioFeedback(options: UseAudioFeedbackOptions): void {
           windowMs: analysisIntervalMs,
           zeroSignalStreak: 0,
         };
-
-        const attached = await attachAnalyserToStrudelOutput(analyser);
-        if (!attached) {
-          console.warn('[AudioFeedback] No output source available for analysis.');
-          analyser.disconnect();
-          silentSink.disconnect();
-          analysisState = null;
-          return;
-        }
       }
 
       if (!mounted) {
@@ -271,6 +273,7 @@ export function useAudioFeedback(options: UseAudioFeedbackOptions): void {
         clearInterval(timer);
       }
       if (analysisState) {
+        analysisState.busNode.disconnect(analysisState.analyser);
         analysisState.analyser.disconnect();
         analysisState.silentSink.disconnect();
       }
