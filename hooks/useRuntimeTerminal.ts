@@ -303,6 +303,7 @@ export function useRuntimeTerminal(
   }, [connect]);
 
   useEffect(() => {
+    shouldReconnectRef.current = true;
     connect();
 
     return () => {
