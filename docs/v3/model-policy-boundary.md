@@ -117,7 +117,7 @@ When a structured decision contract is available, apply:
 
 Auto-tick applies an additional 0.5x dampening factor on top of confidence
 scaling for tempo and energy deltas, preventing runaway drift when agents
-autonomously evolve every 30 seconds.
+autonomously evolve every 15 seconds in current defaults (`AUTO_TICK_INTERVAL_MS`).
 
 ### Minimal Guardrails for Model-Relative Context Deltas
 

@@ -90,7 +90,7 @@ through these numbered steps:
 
 ### Auto-Tick Flow
 
-`sendAutoTick()` in `lib/agent-process-manager.ts` fires every 30 seconds
+`sendAutoTick()` in `lib/agent-process-manager.ts` fires every 15 seconds
 (reset after each directive):
 
 1. **Increment round** and build context for each active agent (band state,
@@ -109,6 +109,18 @@ through these numbered steps:
 Key difference from directives: auto-tick has no boss cue direction to match,
 so all agent deltas are included (not filtered by cue compatibility). The 0.5x
 dampening factor compensates for this broader inclusion.
+
+### Execute Contract (UI Sync)
+
+`composeAndBroadcast()` includes an `ExecutePayload` envelope for every
+`execute` event, and the frontend uses `changedAgents` to show pattern-change
+glow for the exact agents whose pattern text changed on that tick/turn.
+
+`changedAgents` is derived from pattern diffing just before execution and is
+the authority for "agent decided to change" in the UI.
+
+This keeps glow signals aligned to actual creative decisions, not clock-time
+heuristics.
 
 ### A/B/C Classification Rubric
 
@@ -143,7 +155,7 @@ All governance constants are defined in `lib/jam-governance-constants.ts`
 | `ENERGY_DELTA_MIN/MAX` | `[-3, 3]` | `jam-governance-constants.ts` → `normalizeDecisionBlock()` | Clamp range for relative energy deltas | Allows larger per-turn energy swings | Limits how fast energy can change per turn | Wide range → jarring energy jumps |
 | `BPM_MIN/MAX` | `[60, 300]` | `jam-governance-constants.ts` → `parseDeterministicMusicalContextChanges()`, `applyModelRelativeContextDeltaForDirectiveTurn()`, `applyModelRelativeContextDeltaForAutoTick()` | Hard bounds on final BPM value | N/A (expanding is possible but rarely useful) | Narrows the playable tempo range | Outside [60, 300] produces unmusical results |
 | `ENERGY_MIN/MAX` | `[1, 10]` | `jam-governance-constants.ts` → same locations as BPM clamp | Hard bounds on final energy value | N/A | N/A | Fixed scale — changing breaks UI and prompt assumptions |
-| `AUTO_TICK_INTERVAL_MS` | `30000` ms | `jam-governance-constants.ts` → `startAutoTick()` | Time between autonomous evolution rounds | Slower autonomous evolution; longer static stretches | Faster evolution; more API calls; potential cost/latency | Too fast → rate limits; too slow → stale jams |
+| `AUTO_TICK_INTERVAL_MS` | `15000` ms | `jam-governance-constants.ts` → `startAutoTick()` | Time between autonomous evolution rounds | Slower autonomous evolution; longer static stretches | Faster evolution; more API calls; potential cost/latency | Too fast → rate limits; too slow → stale jams |
 
 ### Environment Variables
 

@@ -146,8 +146,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
           break;
         }
         case 'auto_tick_fired':
-          // Reserved for future UI/diagnostic consumers; current jam glow is now
-          // driven by pattern changes in jam_state_update diffs.
+          // Reserved for future UI/diagnostic consumers.
           break;
         default:
           console.warn('Unknown WebSocket message type:', message.type);
