@@ -10,6 +10,7 @@ export type WSMessageType =
   | 'execute' | 'stop' | 'message' | 'user_message'
   | 'jam_state_update'
   | 'auto_tick_timing_update'
+  | 'auto_tick_fired'
   | 'agent_thought'
   | 'agent_commentary'
   | 'musical_context_update'
@@ -40,6 +41,8 @@ export interface AgentThoughtPayload {
   timestamp: string;
 }
 
+export type JamTurnSource = 'jam-start' | 'directive' | 'auto-tick' | 'staged-silent';
+
 export interface AgentCommentaryPayload {
   agent: string;
   emoji: string;
@@ -50,10 +53,19 @@ export interface AgentCommentaryPayload {
 export interface JamStatePayload {
   jamState: JamState;
   combinedPattern: string;
+  turnSource?: JamTurnSource;
 }
 
 export interface AutoTickTimingPayload {
   autoTick: AutoTickTiming;
+}
+
+export interface AutoTickFiredPayload {
+  sessionId: string;
+  round: number;
+  activeAgents: string[];
+  autoTick: AutoTickTiming;
+  firedAtMs: number;
 }
 
 export interface AgentStatusPayload {

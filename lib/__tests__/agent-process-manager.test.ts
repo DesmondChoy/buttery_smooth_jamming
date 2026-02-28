@@ -65,7 +65,7 @@ import { spawn } from 'child_process';
 import * as fs from 'fs';
 import { AgentProcessManager, BroadcastFn } from '../agent-process-manager';
 import { JAM_GOVERNANCE } from '../jam-governance-constants';
-import type { MusicalContext } from '../types';
+import type { MusicalContext, JamTurnSource } from '../types';
 
 const mockedSpawn = vi.mocked(spawn);
 
@@ -244,6 +244,12 @@ interface BroadcastJamState {
   mutedAgents?: string[];
 }
 
+interface BroadcastJamStatePayload {
+  jamState: BroadcastJamState;
+  combinedPattern: string;
+  turnSource?: JamTurnSource;
+}
+
 function getJamStateForRound(
   broadcast: ReturnType<typeof vi.fn>,
   round: number
@@ -275,6 +281,22 @@ function getAutoTickTimingUpdates(
     .map((msg) => msg.payload!.autoTick!);
 }
 
+function getAutoTickFiredEvents(
+  broadcast: ReturnType<typeof vi.fn>
+): Array<{ sessionId: string; round: number; activeAgents: string[] }> {
+  return broadcast.mock.calls
+    .map(([msg]: unknown[]) => msg as { type: string; payload?: { sessionId?: string; round?: number; activeAgents?: string[] } })
+    .filter((msg) => msg.type === 'auto_tick_fired'
+      && typeof msg.payload?.sessionId === 'string'
+      && typeof msg.payload?.round === 'number'
+      && Array.isArray(msg.payload?.activeAgents))
+    .map((msg) => ({
+      sessionId: msg.payload!.sessionId!,
+      round: msg.payload!.round!,
+      activeAgents: msg.payload!.activeAgents!,
+    }));
+}
+
 function getAgentCommentaryTexts(
   broadcast: ReturnType<typeof vi.fn>,
   agent?: string
@@ -284,6 +306,16 @@ function getAgentCommentaryTexts(
     .filter((msg) => msg.type === 'agent_commentary' && typeof msg.payload?.text === 'string')
     .filter((msg) => !agent || msg.payload?.agent === agent)
     .map((msg) => msg.payload!.text!);
+}
+
+function getJamStateUpdatePayloads(
+  broadcast: ReturnType<typeof vi.fn>
+): BroadcastJamStatePayload[] {
+  return broadcast.mock.calls
+    .map(([msg]: unknown[]) => msg as { type: string; payload?: BroadcastJamStatePayload })
+    .filter((msg) => msg.type === 'jam_state_update' && !!msg.payload)
+    .map((msg) => msg.payload!)
+    .filter((msg): msg is BroadcastJamStatePayload => Boolean(msg.jamState));
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────
@@ -359,6 +391,81 @@ describe('AgentProcessManager turn serialization', () => {
       .map(([msg]: unknown[]) => (msg as { payload: { jamState: { currentRound: number } } }).payload.jamState.currentRound);
 
     expect(jamStateUpdates).toEqual([1, 2, 3]);
+  });
+
+  it('broadcasts jam_start jam_state_update with explicit turnSource', async () => {
+    const { manager, broadcast, processes } = createTestManager();
+
+    const startPromise = manager.start(['drums']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const drumsProc = getNthProcess(processes, 0);
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd sd")',
+      thoughts: 'Opening beat',
+      reaction: 'Kickoff',
+    });
+
+    await startPromise;
+
+    const jamStateUpdates = getJamStateUpdatePayloads(broadcast);
+    const jamStartPayload = jamStateUpdates.find(
+      (item) => item.jamState.currentRound === 1
+    );
+    expect(jamStartPayload?.turnSource).toBe('jam-start');
+  });
+
+  it('broadcasts directive jam_state_update with explicit turnSource', async () => {
+    const { manager, broadcast, processes } = createTestManager();
+
+    const startPromise = manager.start(['drums']);
+    await vi.advanceTimersByTimeAsync(0);
+    const drumsProc = getNthProcess(processes, 0);
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd sd")',
+      thoughts: 'Opening beat',
+      reaction: 'Kickoff',
+    });
+    await startPromise;
+
+    const directivePromise = manager.handleDirective('Drop the bass', 'drums', ['drums']);
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd bd")',
+      thoughts: 'Double kick',
+      reaction: 'Drop the bass',
+    });
+    await directivePromise;
+
+    const jamStateUpdates = getJamStateUpdatePayloads(broadcast);
+    const directivePayload = jamStateUpdates.find((item) => item.jamState.currentRound === 2);
+    expect(directivePayload?.turnSource).toBe('directive');
+  });
+
+  it('broadcasts auto-tick jam_state_update with explicit turnSource', async () => {
+    const { manager, broadcast, processes } = createTestManager();
+
+    const startPromise = manager.start(['drums']);
+    await vi.advanceTimersByTimeAsync(0);
+    const drumsProc = getNthProcess(processes, 0);
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd sd")',
+      thoughts: 'Opening beat',
+      reaction: 'Kickoff',
+    });
+    await startPromise;
+
+    vi.advanceTimersByTime(JAM_GOVERNANCE.AUTO_TICK_INTERVAL_MS);
+    await vi.advanceTimersByTimeAsync(0);
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd sd cp sd")',
+      thoughts: 'Auto-evolving',
+      reaction: 'Keeping pulse',
+    });
+    await vi.advanceTimersByTimeAsync(0);
+
+    const jamStateUpdates = getJamStateUpdatePayloads(broadcast);
+    const autoTickPayload = jamStateUpdates.find((item) => item.jamState.currentRound === 2);
+    expect(autoTickPayload?.turnSource).toBe('auto-tick');
   });
 
   it('loads personas from .codex/agents when available', async () => {
@@ -3857,6 +3964,38 @@ describe('AgentProcessManager auto-tick timing broadcasts', () => {
     const latestDeadline = timingUpdatesAfterTickBoundary[timingUpdatesAfterTickBoundary.length - 1].nextTickAtMs;
     expect(latestDeadline).not.toBeNull();
     expect((latestDeadline ?? 0)).toBeGreaterThan(firstDeadline ?? 0);
+
+    sendAgentResponse(drumsProc, {
+      pattern: 'no_change',
+      thoughts: 'Holding pocket',
+      reaction: 'Steady',
+    });
+    await vi.advanceTimersByTimeAsync(0);
+
+    await manager.stop();
+  });
+
+  it('broadcasts auto_tick_fired when the timer interval boundary is reached', async () => {
+    const { manager, broadcast, processes } = createTestManager();
+
+    const startPromise = manager.start(['drums']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const drumsProc = getProcessByKey(processes, 'drums');
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd sd")',
+      thoughts: 'Opening beat',
+      reaction: 'Ready',
+    });
+    await startPromise;
+
+    vi.advanceTimersByTime(JAM_GOVERNANCE.AUTO_TICK_INTERVAL_MS);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const firedEvents = getAutoTickFiredEvents(broadcast);
+    expect(firedEvents.length).toBe(1);
+    expect(firedEvents[0].activeAgents).toEqual(['drums']);
+    expect(firedEvents[0].round).toBe(2);
 
     sendAgentResponse(drumsProc, {
       pattern: 'no_change',

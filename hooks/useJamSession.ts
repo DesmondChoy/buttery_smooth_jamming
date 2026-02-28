@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import type {
   AgentState,
   MusicalContext,
@@ -16,6 +16,7 @@ import type {
 import { AGENT_META } from '@/lib/types';
 
 const MAX_CHAT_MESSAGES = 500;
+const AGENT_PATTERN_GLOW_DURATION_MS = 2000;
 
 const ALL_AGENT_KEYS = Object.keys(AGENT_META);
 
@@ -38,6 +39,7 @@ export interface UseJamSessionReturn {
   mutedAgents: string[];
   showAgentSelection: boolean;
   isJamReady: boolean;
+  agentPatternChangeGlows: Record<string, boolean>;
 
   // Actions
   startJam: () => void;
@@ -98,9 +100,46 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
   const [mutedAgents, setMutedAgents] = useState<string[]>([]);
   const [showAgentSelection, setShowAgentSelection] = useState(false);
   const [isJamReady, setIsJamReady] = useState(false);
+  const [agentPatternChangeGlows, setAgentPatternChangeGlows] = useState<Record<string, boolean>>({});
 
   const selectedAgentsRef = useRef(selectedAgents);
   const currentSessionIdRef = useRef<string | null>(null);
+  const lastJamRoundRef = useRef<number | null>(null);
+  const patternGlowTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const jamStateAgentPatternRef = useRef<Record<string, string>>({});
+
+  const clearAllPatternGlows = useCallback(() => {
+    Object.values(patternGlowTimersRef.current).forEach(clearTimeout);
+    patternGlowTimersRef.current = {};
+    setAgentPatternChangeGlows({});
+  }, []);
+
+  const triggerPatternGlow = useCallback((agentKeys: string[]) => {
+    if (agentKeys.length === 0) return;
+
+    setAgentPatternChangeGlows((prev) => {
+      const next = { ...prev };
+      for (const key of agentKeys) {
+        next[key] = true;
+      }
+      return next;
+    });
+
+    for (const key of agentKeys) {
+      if (patternGlowTimersRef.current[key]) {
+        clearTimeout(patternGlowTimersRef.current[key]);
+      }
+      patternGlowTimersRef.current[key] = setTimeout(() => {
+        setAgentPatternChangeGlows((prev) => {
+          if (!prev[key]) return prev;
+          const next = { ...prev };
+          delete next[key];
+          return next;
+        });
+        delete patternGlowTimersRef.current[key];
+      }, AGENT_PATTERN_GLOW_DURATION_MS);
+    }
+  }, []);
 
   const addChatMessage = useCallback((msg: Omit<JamChatMessage, 'id' | 'timestamp'>) => {
     setChatMessages((prev) => {
@@ -131,8 +170,11 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
     setMusicalContext(DEFAULT_MUSICAL_CONTEXT);
     setAutoTickTiming(null);
     currentSessionIdRef.current = null;
+    lastJamRoundRef.current = null;
+    jamStateAgentPatternRef.current = {};
+    clearAllPatternGlows();
     sendStartJam(selectedAgentsRef.current);
-  }, [isRuntimeConnected, sendStartJam]);
+  }, [clearAllPatternGlows, isRuntimeConnected, sendStartJam]);
 
   const stopJam = useCallback(() => {
     setIsJamming(false);
@@ -144,9 +186,12 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
     setMusicalContext(DEFAULT_MUSICAL_CONTEXT);
     setAutoTickTiming(null);
     currentSessionIdRef.current = null;
+    lastJamRoundRef.current = null;
+    jamStateAgentPatternRef.current = {};
+    clearAllPatternGlows();
     // Tell server to kill agent processes
     sendStopJam();
-  }, [clearChatMessages, sendStopJam]);
+  }, [clearAllPatternGlows, clearChatMessages, sendStopJam]);
 
   const requestStartJam = useCallback(() => {
     if (!isRuntimeConnected) return;
@@ -164,11 +209,14 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
     setMusicalContext(DEFAULT_MUSICAL_CONTEXT);
     setAutoTickTiming(null);
     currentSessionIdRef.current = null;
+    lastJamRoundRef.current = null;
+    jamStateAgentPatternRef.current = {};
+    clearAllPatternGlows();
 
     // Start the jam
     setIsJamming(true);
     sendStartJam(agents);
-  }, [sendStartJam]);
+  }, [clearAllPatternGlows, sendStartJam]);
 
   const cancelStartJam = useCallback(() => {
     setShowAgentSelection(false);
@@ -244,6 +292,34 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
       return;
     }
 
+    const isNewJamRound = (
+      lastJamRoundRef.current === null
+      || payload.jamState.currentRound > lastJamRoundRef.current
+    );
+
+    if (isNewJamRound) {
+      const changedAgents = Object.entries(jamState.agents)
+        .filter(
+          ([agentKey, nextAgentState]) => {
+            const nextPattern = nextAgentState?.pattern ?? '';
+            const previousPattern = jamStateAgentPatternRef.current[agentKey] ?? '';
+            return previousPattern !== nextPattern;
+          }
+        )
+        .map(([agentKey]) => agentKey);
+      if (changedAgents.length > 0) {
+        triggerPatternGlow(changedAgents);
+      }
+    }
+
+    lastJamRoundRef.current = jamState.currentRound;
+    jamStateAgentPatternRef.current = Object.fromEntries(
+      Object.entries(jamState.agents).map(([agentKey, nextAgentState]) => [
+        agentKey,
+        nextAgentState?.pattern ?? '',
+      ])
+    );
+
     setAgentStates(jamState.agents);
     setMusicalContext(jamState.musicalContext);
     setActivatedAgents(jamState.activatedAgents ?? jamState.activeAgents);
@@ -252,7 +328,13 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
       setAutoTickTiming(jamState.autoTick);
     }
     setIsJamReady(true);
-  }, [isJamming]);
+  }, [isJamming, triggerPatternGlow]);
+
+  useEffect(() => {
+    return () => {
+      clearAllPatternGlows();
+    };
+  }, [clearAllPatternGlows]);
 
   return {
     isJamming,
@@ -265,6 +347,7 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
     mutedAgents,
     showAgentSelection,
     isJamReady,
+    agentPatternChangeGlows,
 
     startJam,
     stopJam,

@@ -5,12 +5,12 @@ import type {
   ChatMessage,
   WSMessage,
   ExecutePayload,
-    MessagePayload,
-    AgentThoughtPayload,
-    AgentCommentaryPayload,
-    AgentStatusPayload,
-    MusicalContextPayload,
-    JamStatePayload,
+  MessagePayload,
+  AgentThoughtPayload,
+  AgentCommentaryPayload,
+  AgentStatusPayload,
+  MusicalContextPayload,
+  JamStatePayload,
 } from '@/lib/types';
 
 export interface UseWebSocketOptions {
@@ -127,6 +127,10 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
           onJamStateUpdateRef.current?.(payload);
           break;
         }
+        case 'auto_tick_fired':
+          // Reserved for future UI/diagnostic consumers; current jam glow is now
+          // driven by pattern changes in jam_state_update diffs.
+          break;
         default:
           console.warn('Unknown WebSocket message type:', message.type);
       }

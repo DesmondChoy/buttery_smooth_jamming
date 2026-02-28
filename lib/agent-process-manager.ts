@@ -10,11 +10,13 @@ import type {
   AgentThoughtPayload,
   AgentCommentaryPayload,
   AutoTickTimingPayload,
+  AutoTickFiredPayload,
   AgentStatusPayload,
   JamStatePayload,
   StructuredMusicalDecision,
   DecisionConfidence,
   ArrangementIntent,
+  JamTurnSource,
 } from './types';
 import { AGENT_META } from './types';
 import { formatBandStateLine, validatePatternForJam } from './pattern-parser';
@@ -69,8 +71,6 @@ interface AgentResponse {
   commentary?: string;
   decision?: StructuredMusicalDecision;
 }
-
-type AgentTurnSource = 'jam-start' | 'directive' | 'auto-tick';
 
 interface AgentCommentaryRuntimeState {
   lastRound: number | null;
@@ -275,7 +275,7 @@ export class AgentProcessManager {
     } else {
       // Staged silent mode: no opening prompts until the boss explicitly cues an agent.
       this.resetAutoTickDeadline();
-      this.broadcastJamStateOnly();
+      this.broadcastJamStateOnly('staged-silent');
     }
 
     // Start autonomous evolution ticks
@@ -310,7 +310,7 @@ export class AgentProcessManager {
         agent.model = rebuilt.model;
       }
 
-      this.broadcastJamStateOnly();
+      this.broadcastJamStateOnly('staged-silent');
     });
   }
 
@@ -467,7 +467,7 @@ export class AgentProcessManager {
       this.startAutoTick();
 
       // Compose all patterns and broadcast
-      this.composeAndBroadcast();
+      this.composeAndBroadcast('directive');
     });
   }
 
@@ -1378,7 +1378,7 @@ export class AgentProcessManager {
       }
 
       this.resetAutoTickDeadline();
-      this.composeAndBroadcast();
+      this.composeAndBroadcast('jam-start');
     });
   }
 
@@ -1494,6 +1494,22 @@ export class AgentProcessManager {
     });
   }
 
+  private getAutoTickActiveTargets(): string[] {
+    return this.activatedAgents.filter((key) => this.agents.has(key) && !this.mutedAgents.has(key));
+  }
+
+  private broadcastAutoTickFired(round: number, activeAgents: string[]): void {
+    if (activeAgents.length === 0) return;
+
+    this.broadcastWs<AutoTickFiredPayload>('auto_tick_fired', {
+      sessionId: this.sessionId,
+      round,
+      activeAgents: [...activeAgents],
+      autoTick: this.getAutoTickTimingSnapshot(),
+      firedAtMs: Date.now(),
+    });
+  }
+
   private startAutoTick(): void {
     if (this.tickTimer) {
       clearInterval(this.tickTimer);
@@ -1515,8 +1531,10 @@ export class AgentProcessManager {
       this.resetAutoTickDeadline();
       this.broadcastAutoTickTiming();
       if (this.tickScheduled) return;
+      const activeTargets = this.getAutoTickActiveTargets();
+      this.broadcastAutoTickFired(this.roundNumber + 1, activeTargets);
       this.tickScheduled = true;
-      this.sendAutoTick()
+      this.sendAutoTick(activeTargets)
         .catch((err) => {
           console.error('[AgentManager] Auto-tick error:', err);
         })
@@ -1526,7 +1544,7 @@ export class AgentProcessManager {
     }, JAM_GOVERNANCE.AUTO_TICK_INTERVAL_MS);
   }
 
-  private async sendAutoTick(): Promise<void> {
+  private async sendAutoTick(activeTargetsInput?: string[]): Promise<void> {
     return this.enqueueTurn('auto-tick', async () => {
       if (this.stopped) return;
       if (!this.presetConfigured) return;
@@ -1537,9 +1555,9 @@ export class AgentProcessManager {
         }
       }
 
-      const activeTargets = this.activatedAgents.filter(
-        (key) => this.agents.has(key) && !this.mutedAgents.has(key)
-      );
+      const activeTargets = activeTargetsInput && activeTargetsInput.length > 0
+        ? [...activeTargetsInput]
+        : this.getAutoTickActiveTargets();
       if (activeTargets.length === 0) return;
 
       this.roundNumber++;
@@ -1595,7 +1613,7 @@ export class AgentProcessManager {
         console.log('[AgentManager] Agent context suggestions applied:', suggestionDelta);
       }
 
-      this.composeAndBroadcast();
+      this.composeAndBroadcast('auto-tick');
     });
   }
 
@@ -1604,7 +1622,7 @@ export class AgentProcessManager {
   private maybeRejectInvalidPattern(
     key: string,
     pattern: string,
-    turnSource: AgentTurnSource
+    turnSource: JamTurnSource
   ): boolean {
     if (pattern === 'silence' || pattern === 'no_change') return false;
 
@@ -1629,7 +1647,7 @@ export class AgentProcessManager {
   private applyAgentResponse(
     key: string,
     response: AgentResponse | null,
-    turnSource: AgentTurnSource,
+    turnSource: JamTurnSource,
     turnContext: AgentTurnContext = {}
   ): AgentResponse | null {
     const state = this.agentStates[key];
@@ -1742,7 +1760,7 @@ export class AgentProcessManager {
   private maybeBroadcastAgentCommentaryForTurn(
     key: string,
     response: AgentResponse,
-    turnSource: AgentTurnSource,
+    turnSource: JamTurnSource,
     turnContext: AgentTurnContext
   ): void {
     const targetedDirective = (
@@ -1805,7 +1823,7 @@ export class AgentProcessManager {
   private maybeBroadcastAgentCommentary(
     key: string,
     response: AgentResponse,
-    turnSource: AgentTurnSource
+    turnSource: JamTurnSource
   ): void {
     const commentary = this.sanitizeOptionalCommentary(response.commentary);
     if (!commentary) return;
@@ -1861,27 +1879,32 @@ export class AgentProcessManager {
     return `stack(${patterns.join(', ')})`;
   }
 
-  private broadcastJamStateOnly(): void {
+  private broadcastJamStateOnly(turnSource: JamTurnSource = 'staged-silent'): void {
     const combinedPattern = this.composePatterns();
-    this.broadcastJamStatePayload(combinedPattern);
+    this.broadcastJamStatePayload(combinedPattern, turnSource);
   }
 
-  private composeAndBroadcast(): void {
+  private composeAndBroadcast(turnSource: JamTurnSource): void {
     const combinedPattern = this.composePatterns();
 
     // Execute the composed pattern
     this.broadcastWs('execute', { code: combinedPattern });
 
-    this.broadcastJamStatePayload(combinedPattern);
+    this.broadcastJamStatePayload(combinedPattern, turnSource);
   }
 
-  private broadcastJamStatePayload(combinedPattern: string): void {
+  private broadcastJamStatePayload(combinedPattern: string, turnSource?: JamTurnSource): void {
     // Broadcast full jam state
     const jamState = this.getJamStateSnapshot();
 
-    this.broadcastWs<JamStatePayload>('jam_state_update', {
+    const payload: JamStatePayload = {
       jamState,
       combinedPattern,
+      ...(turnSource ? { turnSource } : {}),
+    };
+
+    this.broadcastWs<JamStatePayload>('jam_state_update', {
+      ...payload,
     });
   }
 

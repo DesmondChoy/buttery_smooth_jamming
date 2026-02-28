@@ -87,6 +87,7 @@ export default function Home() {
     musicalContext,
     autoTickTiming,
     agentStates,
+    agentPatternChangeGlows,
     showAgentSelection,
     handleAgentThought,
     handleAgentCommentary,
@@ -430,6 +431,7 @@ export default function Home() {
                   agentState={agentStates[key]}
                   isMuted={mutedAgents.includes(key)}
                   messages={agentMessages[key] ?? []}
+                  isPatternChange={agentPatternChangeGlows[key]}
                 />
               ))}
             </div>

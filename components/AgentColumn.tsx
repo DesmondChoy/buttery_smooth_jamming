@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useCallback } from 'react';
+import type { CSSProperties } from 'react';
 import type { AgentState, JamChatMessage } from '@/lib/types';
 import { AGENT_META } from '@/lib/types';
 import { get_agent_status_display } from '@/lib/agent-status-ui';
@@ -10,6 +11,7 @@ interface AgentColumnProps {
   agentState: AgentState;
   isMuted?: boolean;
   messages: JamChatMessage[];
+  isPatternChange?: boolean;
 }
 
 function StatusDot({
@@ -86,10 +88,24 @@ function ColumnMessage({ message, agentKey }: { message: JamChatMessage; agentKe
   );
 }
 
-export function AgentColumn({ agentKey, agentState, isMuted = false, messages }: AgentColumnProps) {
+const AGENT_GLOW_STYLES: Record<string, string> = {
+  drums: 'rgba(248, 113, 113, 0.45)',
+  bass: 'rgba(96, 165, 250, 0.45)',
+  melody: 'rgba(163, 163, 163, 0.45)',
+  chords: 'rgba(232, 121, 249, 0.45)',
+};
+
+export function AgentColumn({
+  agentKey,
+  agentState,
+  isMuted = false,
+  messages,
+  isPatternChange = false,
+}: AgentColumnProps) {
   const meta = AGENT_META[agentKey];
   const scrollRef = useRef<HTMLDivElement>(null);
   const autoScrollRef = useRef(true);
+  const glowColor = AGENT_GLOW_STYLES[agentKey] ?? 'rgba(245, 158, 11, 0.35)';
 
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;
@@ -107,7 +123,13 @@ export function AgentColumn({ agentKey, agentState, isMuted = false, messages }:
   if (!meta) return null;
 
   return (
-    <div data-testid={`agent-column-${agentKey}`} className="flex flex-col min-h-0 min-w-0 overflow-hidden bg-stage-black">
+    <div
+      data-testid={`agent-column-${agentKey}`}
+      className={`flex flex-col min-h-0 min-w-0 bg-stage-black border border-stage-border ${
+        isPatternChange ? 'agent-pattern-change-glow' : ''
+      }`}
+      style={{ '--agent-glow-color': glowColor } as CSSProperties}
+    >
       {/* Header */}
       <div className={`flex items-center justify-between px-3 py-2 border-b border-stage-border ${meta.colors.bgSolid} shrink-0`}>
         <div className="flex items-center gap-2">
