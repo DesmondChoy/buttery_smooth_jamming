@@ -101,6 +101,20 @@ describe('validatePatternForJam', () => {
     expect(validatePatternForJam('s("bd [~ bd] sd [bd ~]").gain(0.8)')).toEqual({ valid: true });
   });
 
+  it('normalizes common invalid method names during validation', () => {
+    expect(validatePatternForJam('note("c2").wave("saw").band(1200).pan(sin)')).toEqual({ valid: true });
+    expect(validatePatternForJam('s("bd").wave("tri").fast(2)')).toEqual({ valid: true });
+  });
+
+  it('accepts callback-based note transforms used in modifiers', () => {
+    expect(validatePatternForJam('note("c1 ~ eb1 g1").s("sawtooth").sometimes(x => x.note("c2"))')).toEqual({
+      valid: true,
+    });
+    expect(validatePatternForJam('s("hh").sometimes(x => x.note("g4"))')).toEqual({
+      valid: true,
+    });
+  });
+
   it('rejects unmatched closing mini delimiters (stray >)', () => {
     const result = validatePatternForJam('s("bd > sd")');
     expect(result.valid).toBe(false);
@@ -111,6 +125,12 @@ describe('validatePatternForJam', () => {
     const result = validatePatternForJam('note("<[c3,e3,g3] [f3,a3,c4>").s("piano")');
     expect(result.valid).toBe(false);
     expect(result.reason).toContain('mismatched mini delimiter');
+  });
+
+  it('rejects host globals in pattern expressions', () => {
+    const result = validatePatternForJam('s("bd").lpf(Math.random() * 1000)');
+    expect(result.valid).toBe(false);
+    expect(result.reason).toContain('random');
   });
 });
 

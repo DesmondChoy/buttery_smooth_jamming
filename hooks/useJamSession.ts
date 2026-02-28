@@ -13,6 +13,7 @@ import type {
   AgentStatusPayload,
   MusicalContextPayload,
   JamStatePayload,
+  AgentContextWindow,
 } from '@/lib/types';
 import { AGENT_META } from '@/lib/types';
 
@@ -41,6 +42,7 @@ export interface UseJamSessionReturn {
   showAgentSelection: boolean;
   isJamReady: boolean;
   agentPatternChangeGlows: Record<string, boolean>;
+  agentContextWindows: Record<string, AgentContextWindow>;
 
   // Actions
   startJam: () => void;
@@ -103,6 +105,7 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
   const [showAgentSelection, setShowAgentSelection] = useState(false);
   const [isJamReady, setIsJamReady] = useState(false);
   const [agentPatternChangeGlows, setAgentPatternChangeGlows] = useState<Record<string, boolean>>({});
+  const [agentContextWindows, setAgentContextWindows] = useState<Record<string, AgentContextWindow>>({});
 
   const selectedAgentsRef = useRef(selectedAgents);
   const currentSessionIdRef = useRef<string | null>(null);
@@ -169,6 +172,7 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
     setAgentStates(cloneDefaultAgents());
     setMusicalContext(DEFAULT_MUSICAL_CONTEXT);
     setAutoTickTiming(null);
+    setAgentContextWindows({});
     currentSessionIdRef.current = null;
     clearAllPatternGlows();
     sendStartJam(selectedAgentsRef.current);
@@ -183,6 +187,7 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
     setAgentStates(cloneDefaultAgents());
     setMusicalContext(DEFAULT_MUSICAL_CONTEXT);
     setAutoTickTiming(null);
+    setAgentContextWindows({});
     currentSessionIdRef.current = null;
     clearAllPatternGlows();
     // Tell server to kill agent processes
@@ -204,6 +209,7 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
     setAgentStates(cloneDefaultAgents());
     setMusicalContext(DEFAULT_MUSICAL_CONTEXT);
     setAutoTickTiming(null);
+    setAgentContextWindows({});
     currentSessionIdRef.current = null;
     clearAllPatternGlows();
 
@@ -299,6 +305,18 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
     if (jamState.autoTick) {
       setAutoTickTiming(jamState.autoTick);
     }
+    const diagnosticsDelta = payload.diagnostics?.agentContextWindowsDelta;
+    if (diagnosticsDelta && typeof diagnosticsDelta === 'object') {
+      setAgentContextWindows((prev) => {
+        const next = { ...prev };
+        for (const [key, contextWindow] of Object.entries(diagnosticsDelta)) {
+          if (contextWindow) {
+            next[key] = contextWindow;
+          }
+        }
+        return next;
+      });
+    }
     setIsJamReady(true);
   }, [isJamming]);
 
@@ -320,6 +338,7 @@ export function useJamSession(options: UseJamSessionOptions): UseJamSessionRetur
     showAgentSelection,
     isJamReady,
     agentPatternChangeGlows,
+    agentContextWindows,
 
     startJam,
     stopJam,

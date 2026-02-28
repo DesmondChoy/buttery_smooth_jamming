@@ -853,6 +853,47 @@ describe('AgentProcessManager turn serialization', () => {
     await manager.stop();
   });
 
+  it('normalizes unsupported jam pattern methods before execution', async () => {
+    const { manager, broadcast, processes } = createTestManager();
+
+    const startPromise = manager.start(['drums']);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const drumsProc = getProcessByKey(processes, 'drums');
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd sd")',
+      thoughts: 'Opening beat',
+      reaction: 'Ready',
+    });
+    await startPromise;
+
+    broadcast.mockClear();
+
+    const directivePromise = manager.handleDirective(
+      'tune the top end',
+      'drums',
+      ['drums']
+    );
+    await vi.advanceTimersByTimeAsync(0);
+
+    sendAgentResponse(drumsProc, {
+      pattern: 's("bd sd").wave("saw").band(1000).pan(sin(rate=2))',
+      thoughts: 'Canonicalized',
+      reaction: 'Tighter top',
+    });
+    await directivePromise;
+
+    const executePayloads = getExecutePayloads(broadcast);
+    expect(executePayloads).toHaveLength(1);
+    const payloadCode = executePayloads[0].code;
+    expect(payloadCode).toContain('.s("sawtooth")');
+    expect(payloadCode).toContain('.bpf(1000)');
+    expect(payloadCode).toContain('.pan(sine.slow(0.5).range(0,1))');
+    expect(payloadCode).not.toContain('.wave(');
+    expect(payloadCode).not.toContain('.band(');
+    expect(payloadCode).not.toContain('sin(rate=');
+  });
+
   it('ignores rejected directive decisions when applying relative context deltas', async () => {
     const { manager, processes } = createTestManager();
 

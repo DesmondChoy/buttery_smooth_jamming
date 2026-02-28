@@ -1,10 +1,16 @@
 import { spawn, ChildProcess } from 'child_process';
+import { randomUUID } from 'crypto';
 import * as readline from 'readline';
 import * as fs from 'fs';
 import * as path from 'path';
 import type {
   AgentState,
   AudioFeatureSnapshot,
+  AgentContextBandStateEntry,
+  AgentContextWindow,
+  AgentThreadCompactionEvent,
+  AgentTurnOutcome,
+  JamStateDiagnostics,
   MusicalContext,
   JamState,
   AutoTickTiming,
@@ -20,7 +26,12 @@ import type {
   JamTurnSource,
 } from './types';
 import { AGENT_META } from './types';
-import { formatBandStateLine, validatePatternForJam } from './pattern-parser';
+import {
+  formatBandStateLine,
+  summarizePattern,
+  normalizeStrudelPatternForJam,
+  validatePatternForJam,
+} from './pattern-parser';
 import {
   deriveChordProgression,
   deriveScale,
@@ -83,6 +94,8 @@ interface AgentTurnContext {
 }
 
 const AUDIO_FEEDBACK_TTL_MS = 12_000;
+const CONTEXT_INSPECTOR_HISTORY_LIMIT = 5;
+const CONTEXT_INSPECTOR_RAW_PROMPT_CHAR_LIMIT = 12_000;
 
 // Per-agent Codex-backed session handle
 interface AgentProcess {
@@ -92,6 +105,39 @@ interface AgentProcess {
   threadId: string | null;
   activeTurn: ChildProcess | null;
   activeTurnRl: readline.Interface | null;
+}
+
+interface AgentTurnResult {
+  response: AgentResponse | null;
+  invocationMode: 'resume' | 'new_thread';
+  threadIdBefore: string | null;
+  threadIdAfter: string | null;
+}
+
+interface AgentContextTurnRecordInput {
+  key: string;
+  roundNumber: number;
+  turnSource: JamTurnSource;
+  managerContext: string;
+  fullPrompt: string;
+  musicalContext: MusicalContext;
+  currentPattern: string;
+  bandState: AgentContextBandStateEntry[];
+  audioFeedback?: AudioFeatureSnapshot;
+  directive?: string;
+  targetAgent?: string;
+  isBroadcastDirective?: boolean;
+  pendingCompactionBefore: boolean;
+  noChangeStreakBefore: number;
+  compactionAppliedThisTurn: boolean;
+  turnResult: AgentTurnResult | null;
+  acceptedResponse: AgentResponse | null;
+}
+
+interface DirectiveAttemptSnapshot {
+  turnResult: AgentTurnResult | null;
+  contextText: string;
+  fullPrompt: string;
 }
 
 interface AgentProcessManagerOptions {
@@ -165,6 +211,10 @@ export class AgentProcessManager {
   private jamStartMode: JamStartMode = 'autonomous_opening';
   private presetConfigured = true;
   private latestAudioFeedback: AudioFeatureSnapshot | null = null;
+  private contextInspectorEnabled = false;
+  private agentContextWindows: Record<string, AgentContextWindow> = {};
+  private pendingContextWindowsDelta: Record<string, AgentContextWindow> = {};
+  private agentLastCompactionEvent: Record<string, AgentThreadCompactionEvent | undefined> = {};
 
   constructor(options: AgentProcessManagerOptions) {
     this.workingDir = options.workingDir;
@@ -176,6 +226,26 @@ export class AgentProcessManager {
       this.strudelReference = fs.readFileSync(refPath, 'utf-8');
     } catch (err) {
       console.error('[AgentManager] Failed to load strudel reference:', err);
+    }
+  }
+
+  setContextInspectorEnabled(enabled: boolean): void {
+    this.contextInspectorEnabled = enabled;
+    if (!enabled) {
+      this.agentContextWindows = {};
+      this.pendingContextWindowsDelta = {};
+      this.agentLastCompactionEvent = {};
+      return;
+    }
+
+    for (const key of this.activeAgents) {
+      if (!this.agentContextWindows[key]) {
+        this.agentContextWindows[key] = {
+          agent: key,
+          updatedAt: new Date().toISOString(),
+          turns: [],
+        };
+      }
     }
   }
 
@@ -248,6 +318,9 @@ export class AgentProcessManager {
     this.agentAutoTickNoChangeStreak = {};
     this.agentPendingThreadCompaction = {};
     this.latestAudioFeedback = null;
+    this.agentContextWindows = {};
+    this.pendingContextWindowsDelta = {};
+    this.agentLastCompactionEvent = {};
 
     // Initialize state for each agent
     for (const key of this.activeAgents) {
@@ -269,6 +342,12 @@ export class AgentProcessManager {
       };
       this.agentAutoTickNoChangeStreak[key] = 0;
       this.agentPendingThreadCompaction[key] = false;
+      this.agentContextWindows[key] = {
+        agent: key,
+        updatedAt: new Date().toISOString(),
+        turns: [],
+      };
+      this.agentLastCompactionEvent[key] = undefined;
     }
 
     // Prepare one Codex-backed session per agent
@@ -498,43 +577,104 @@ export class AgentProcessManager {
 
       // Increment round once for the entire directive
       this.roundNumber++;
+      const directiveAudioFeedback = this.getFreshAudioFeedbackSection();
 
       // Build and send directive context to each targeted agent
-      const responsePromises = targets.map((key) => {
-        const context = this.buildDirectiveContext(key, text, targetAgent);
-        return this.sendToAgentAndCollect(key, context);
+      const directiveInputs = targets.map((key) => {
+        const context = this.buildDirectiveContext(
+          key,
+          text,
+          targetAgent,
+          directiveAudioFeedback
+        );
+        const fullPrompt = this.buildPromptForAgent(key, context);
+        const bandState = this.activatedAgents
+          .filter((k) => k !== key)
+          .map((k) => this.buildBandStateEntryFromPattern(
+            k,
+            this.mutedAgents.has(k) ? 'silence' : (this.agentPatterns[k] || 'silence')
+          ));
+
+        return {
+          key,
+          context,
+          fullPrompt,
+          bandState,
+          currentPattern: this.agentPatterns[key] || 'silence',
+          audioFeedback: directiveAudioFeedback,
+          pendingCompactionBefore: this.agentPendingThreadCompaction[key] ?? false,
+          noChangeStreakBefore: this.agentAutoTickNoChangeStreak[key] ?? 0,
+        };
       });
 
-      const responses = await Promise.all(responsePromises);
-      const recoveredResponses = await Promise.all(targets.map(async (key, index) => {
-        const rawResponse = responses[index];
-        if (forceMuteTarget && targetAgent === key) {
-          return this.coerceResponseToForcedSilence(rawResponse);
-        }
-        return this.recoverDirectiveResponseIfNeeded({
-          key,
-          response: rawResponse,
-          directive: text,
-          targetAgent,
-        });
-      }));
+      const rawTurnResults = await Promise.all(
+        directiveInputs.map((input) => this.sendToAgentAndCollect(input.key, input.context, input.fullPrompt))
+      );
+      const recoveredSnapshots = await Promise.all(targets.map((key, index) =>
+        (forceMuteTarget && targetAgent === key)
+          ? Promise.resolve({
+            turnResult: rawTurnResults[index],
+            contextText: directiveInputs[index].context,
+            fullPrompt: directiveInputs[index].fullPrompt,
+          })
+          : this.recoverDirectiveResponseIfNeeded({
+            key,
+            snapshot: {
+              turnResult: rawTurnResults[index],
+              contextText: directiveInputs[index].context,
+              fullPrompt: directiveInputs[index].fullPrompt,
+            },
+            directive: text,
+            targetAgent,
+          })
+      ));
+      const responses: Array<AgentResponse | null> = [...rawTurnResults.map((result) => result?.response ?? null)];
 
       const patternsBeforeTurn = { ...this.agentPatterns };
 
       // Process responses and update state
       for (let i = 0; i < targets.length; i++) {
         const key = targets[i];
-        const response = recoveredResponses[i];
+        const recoveredSnapshot = recoveredSnapshots[i];
+        const turnResult = recoveredSnapshot.turnResult;
+        let response = turnResult?.response ?? null;
 
         if (forceMuteTarget && targetAgent === key) {
           this.mutedAgents.add(key);
           this.resetThreadCompactionState(key);
+          response = this.coerceResponseToForcedSilence(response);
         }
 
         const acceptedResponse = this.applyAgentResponse(key, response, 'directive', {
           directiveTargetAgent: targetAgent,
         });
         responses[i] = acceptedResponse;
+
+        const input = directiveInputs[i];
+        this.recordContextInspectorTurn({
+          key,
+          roundNumber: this.roundNumber,
+          turnSource: 'directive',
+          managerContext: recoveredSnapshot.contextText,
+          fullPrompt: recoveredSnapshot.fullPrompt,
+          musicalContext: this.musicalContext,
+          currentPattern: input.currentPattern,
+          bandState: input.bandState,
+          audioFeedback: input.audioFeedback,
+          directive: text,
+          targetAgent,
+          isBroadcastDirective: !targetAgent,
+          pendingCompactionBefore: input.pendingCompactionBefore,
+          noChangeStreakBefore: input.noChangeStreakBefore,
+          compactionAppliedThisTurn: false,
+          turnResult: turnResult
+            ? {
+              ...turnResult,
+              response,
+            }
+            : null,
+          acceptedResponse,
+        });
       }
 
       const modelRelativeContextDelta = this.applyModelRelativeContextDeltaForDirectiveTurn({
@@ -601,6 +741,9 @@ export class AgentProcessManager {
     this.jamStartMode = 'autonomous_opening';
     this.presetConfigured = true;
     this.latestAudioFeedback = null;
+    this.agentContextWindows = {};
+    this.pendingContextWindowsDelta = {};
+    this.agentLastCompactionEvent = {};
   }
 
   /**
@@ -626,6 +769,147 @@ export class AgentProcessManager {
       mutedAgents: this.activatedAgents.filter((key) => this.mutedAgents.has(key)),
       autoTick: this.getAutoTickTimingSnapshot(),
     };
+  }
+
+  private cloneMusicalContext(context: MusicalContext): MusicalContext {
+    return {
+      ...context,
+      scale: [...context.scale],
+      chordProgression: [...context.chordProgression],
+    };
+  }
+
+  private cloneAudioFeedback(snapshot?: AudioFeatureSnapshot): AudioFeatureSnapshot | undefined {
+    if (!snapshot) return undefined;
+    return { ...snapshot };
+  }
+
+  private buildBandStateEntryFromPattern(key: string, pattern: string): AgentContextBandStateEntry {
+    return {
+      agent: key,
+      line: formatBandStateLine(key, pattern),
+      pattern,
+      patternSummary: summarizePattern(pattern),
+    };
+  }
+
+  private buildPromptForAgent(key: string, contextText: string): string {
+    const agent = this.agents.get(key);
+    if (!agent) return contextText;
+    return this.buildAgentTurnPrompt(agent, contextText);
+  }
+
+  private buildRawPromptSnapshot(fullPrompt: string) {
+    const originalCharCount = fullPrompt.length;
+    const truncated = originalCharCount > CONTEXT_INSPECTOR_RAW_PROMPT_CHAR_LIMIT;
+    return {
+      scope: 'full_prompt' as const,
+      text: truncated
+        ? fullPrompt.slice(0, CONTEXT_INSPECTOR_RAW_PROMPT_CHAR_LIMIT)
+        : fullPrompt,
+      originalCharCount,
+      maxChars: CONTEXT_INSPECTOR_RAW_PROMPT_CHAR_LIMIT,
+      truncated,
+    };
+  }
+
+  private cloneContextWindow(window: AgentContextWindow): AgentContextWindow {
+    return {
+      ...window,
+      turns: window.turns.map((turn) => ({
+        ...turn,
+        musicalContext: this.cloneMusicalContext(turn.musicalContext),
+        bandState: turn.bandState.map((entry) => ({ ...entry })),
+        audioFeedback: this.cloneAudioFeedback(turn.audioFeedback),
+        rawPrompt: { ...turn.rawPrompt },
+        thread: { ...turn.thread },
+      })),
+      ...(window.lastCompaction ? { lastCompaction: { ...window.lastCompaction } } : {}),
+    };
+  }
+
+  private determineTurnOutcome(params: {
+    turnResult: AgentTurnResult | null;
+    acceptedResponse: AgentResponse | null;
+  }): AgentTurnOutcome {
+    const { turnResult, acceptedResponse } = params;
+    if (!turnResult) return 'missing_agent';
+    if (acceptedResponse) return 'accepted';
+    if (!turnResult.response) return 'empty_or_unparseable';
+    return 'rejected_or_failed';
+  }
+
+  private recordContextInspectorTurn(input: AgentContextTurnRecordInput): void {
+    if (!this.contextInspectorEnabled) return;
+
+    const nowIso = new Date().toISOString();
+    const existingWindow = this.agentContextWindows[input.key] ?? {
+      agent: input.key,
+      updatedAt: nowIso,
+      turns: [],
+    };
+    const thread = {
+      invocationMode: input.turnResult?.invocationMode ?? 'new_thread',
+      threadIdBefore: input.turnResult?.threadIdBefore ?? null,
+      threadIdAfter: input.turnResult?.threadIdAfter ?? null,
+      pendingCompactionBefore: input.pendingCompactionBefore,
+      pendingCompactionAfter: this.agentPendingThreadCompaction[input.key] ?? false,
+      noChangeStreakBefore: input.noChangeStreakBefore,
+      noChangeStreakAfter: this.agentAutoTickNoChangeStreak[input.key] ?? 0,
+      compactionAppliedThisTurn: input.compactionAppliedThisTurn,
+    };
+
+    const nextTurn = {
+      id: randomUUID(),
+      round: input.roundNumber,
+      turnSource: input.turnSource,
+      createdAt: nowIso,
+      ...(input.directive ? { directive: input.directive } : {}),
+      ...(input.targetAgent ? { targetAgent: input.targetAgent } : {}),
+      ...(typeof input.isBroadcastDirective === 'boolean'
+        ? { isBroadcastDirective: input.isBroadcastDirective }
+        : {}),
+      musicalContext: this.cloneMusicalContext(input.musicalContext),
+      currentPattern: input.currentPattern,
+      currentPatternSummary: summarizePattern(input.currentPattern),
+      bandState: input.bandState.map((entry) => ({ ...entry })),
+      ...(input.audioFeedback ? { audioFeedback: this.cloneAudioFeedback(input.audioFeedback)! } : {}),
+      managerContext: input.managerContext,
+      rawPrompt: this.buildRawPromptSnapshot(input.fullPrompt),
+      outcome: this.determineTurnOutcome({
+        turnResult: input.turnResult,
+        acceptedResponse: input.acceptedResponse,
+      }),
+      thread,
+    };
+
+    const nextTurns = [nextTurn, ...existingWindow.turns].slice(0, CONTEXT_INSPECTOR_HISTORY_LIMIT);
+    const nextWindow: AgentContextWindow = {
+      ...existingWindow,
+      updatedAt: nowIso,
+      turns: nextTurns,
+      ...(this.agentLastCompactionEvent[input.key]
+        ? { lastCompaction: { ...this.agentLastCompactionEvent[input.key]! } }
+        : {}),
+    };
+
+    this.agentContextWindows[input.key] = nextWindow;
+    this.pendingContextWindowsDelta[input.key] = this.cloneContextWindow(nextWindow);
+  }
+
+  private consumeContextInspectorDelta(): JamStateDiagnostics | undefined {
+    if (!this.contextInspectorEnabled) return undefined;
+    const keys = Object.keys(this.pendingContextWindowsDelta);
+    if (keys.length === 0) return undefined;
+
+    const delta: Record<string, AgentContextWindow> = {};
+    for (const key of keys) {
+      const window = this.pendingContextWindowsDelta[key];
+      if (!window) continue;
+      delta[key] = this.cloneContextWindow(window);
+    }
+    this.pendingContextWindowsDelta = {};
+    return { agentContextWindowsDelta: delta };
   }
 
   // ─── Private: Session Setup ─────────────────────────────────────
@@ -799,13 +1083,19 @@ export class AgentProcessManager {
    */
   private sendToAgentAndCollect(
     key: string,
-    text: string
-  ): Promise<AgentResponse | null> {
+    text: string,
+    promptOverride?: string
+  ): Promise<AgentTurnResult | null> {
     const agent = this.agents.get(key);
     if (!agent) {
       console.error(`[AgentManager] No process for agent: ${key}`);
       return Promise.resolve(null);
     }
+
+    const threadIdBeforeTurn = agent.threadId;
+    const invocationMode: AgentTurnResult['invocationMode'] = threadIdBeforeTurn
+      ? 'resume'
+      : 'new_thread';
 
     return new Promise((resolve) => {
       const attemptTurn = (attempt: number): void => {
@@ -907,7 +1197,12 @@ export class AgentProcessManager {
             return;
           }
 
-          resolve(response);
+          resolve({
+            response,
+            invocationMode,
+            threadIdBefore: threadIdBeforeTurn,
+            threadIdAfter: agent.threadId,
+          });
         };
 
         rl.on('line', onLine);
@@ -964,7 +1259,7 @@ export class AgentProcessManager {
           finish();
         });
 
-        const prompt = this.buildAgentTurnPrompt(agent, text);
+        const prompt = promptOverride ?? this.buildAgentTurnPrompt(agent, text);
         proc.stdin?.write(prompt);
         proc.stdin?.write('\n');
         proc.stdin?.end();
@@ -1404,25 +1699,32 @@ export class AgentProcessManager {
     this.agentPendingThreadCompaction[key] = false;
   }
 
-  private applyPendingThreadCompactionForAutoTick(key: string): void {
-    if (!this.agentPendingThreadCompaction[key]) return;
+  private applyPendingThreadCompactionForAutoTick(key: string): boolean {
+    if (!this.agentPendingThreadCompaction[key]) return false;
 
     const agent = this.agents.get(key);
     if (!agent) {
       this.resetThreadCompactionState(key);
-      return;
+      return false;
     }
 
     const oldThreadId = agent.threadId;
     agent.threadId = null;
     this.agentPendingThreadCompaction[key] = false;
     this.agentAutoTickNoChangeStreak[key] = 0;
+    this.agentLastCompactionEvent[key] = {
+      appliedAtRound: this.roundNumber,
+      turnSource: 'auto-tick',
+      oldThreadId,
+      timestamp: new Date().toISOString(),
+    };
 
     console.log(
       `[AgentManager] Thread compaction applied for ${key}. ` +
       `Old thread: ${oldThreadId?.slice(0, 12) ?? 'null'}. ` +
       'Next turn starts a fresh thread.'
     );
+    return true;
   }
 
   private recordAutoTickCompactionSignal(params: {
@@ -1472,33 +1774,84 @@ export class AgentProcessManager {
       const audioFeedback = this.getFreshAudioFeedbackSection();
       const patternsBeforeTurn = { ...this.agentPatterns };
 
-      const responsePromises = this.activeAgents.map((key) => {
-        if (!this.agents.has(key)) return Promise.resolve(null);
+      const openingBandState = this.activeAgents.map((k) => {
+        const meta = AGENT_META[k];
+        if (!meta) {
+          return {
+            agent: k,
+            line: `${k}: [first round — no pattern yet]`,
+            pattern: '',
+            patternSummary: null,
+          };
+        }
+        return {
+          agent: k,
+          line: `${meta.emoji} ${meta.name} (${k}): [first round — no pattern yet]`,
+          pattern: '',
+          patternSummary: null,
+        };
+      });
 
-        const bandStateLines = this.activeAgents.map((k) => {
-          const meta = AGENT_META[k];
-          if (!meta) return `${k}: [first round — no pattern yet]`;
-          return `${meta.emoji} ${meta.name} (${k}): [first round — no pattern yet]`;
-        });
+      const turnInputs = this.activeAgents.map((key) => {
+        if (!this.agents.has(key)) {
+          return {
+            key,
+            context: '',
+            fullPrompt: '',
+            pendingCompactionBefore: false,
+            noChangeStreakBefore: 0,
+          };
+        }
 
         const context = buildJamStartManagerContext({
           roundNumber: this.roundNumber,
           musicalContext: ctx,
-          bandStateLines,
+          bandStateLines: openingBandState.map((entry) => entry.line),
           audioFeedback,
         });
 
+        const fullPrompt = this.buildPromptForAgent(key, context);
         this.setAgentStatus(key, 'thinking');
-        return this.sendToAgentAndCollect(key, context);
+        return {
+          key,
+          context,
+          fullPrompt,
+          pendingCompactionBefore: this.agentPendingThreadCompaction[key] ?? false,
+          noChangeStreakBefore: this.agentAutoTickNoChangeStreak[key] ?? 0,
+        };
       });
 
-      const responses = await Promise.all(responsePromises);
+      const turnResults = await Promise.all(
+        turnInputs.map((input) => {
+          if (!input.context) return Promise.resolve(null);
+          return this.sendToAgentAndCollect(input.key, input.context, input.fullPrompt);
+        })
+      );
 
       for (let i = 0; i < this.activeAgents.length; i++) {
         const key = this.activeAgents[i];
-        const response = responses[i];
+        const turnResult = turnResults[i];
+        const response = turnResult?.response ?? null;
         this.resetThreadCompactionState(key);
-        this.applyAgentResponse(key, response, 'jam-start');
+        const acceptedResponse = this.applyAgentResponse(key, response, 'jam-start');
+
+        const input = turnInputs[i];
+        this.recordContextInspectorTurn({
+          key,
+          roundNumber: this.roundNumber,
+          turnSource: 'jam-start',
+          managerContext: input.context,
+          fullPrompt: input.fullPrompt,
+          musicalContext: ctx,
+          currentPattern: 'None yet — this is your first round.',
+          bandState: openingBandState.map((entry) => ({ ...entry })),
+          audioFeedback,
+          pendingCompactionBefore: input.pendingCompactionBefore,
+          noChangeStreakBefore: input.noChangeStreakBefore,
+          compactionAppliedThisTurn: false,
+          turnResult,
+          acceptedResponse,
+        });
       }
 
       this.resetAutoTickDeadline();
@@ -1517,11 +1870,12 @@ export class AgentProcessManager {
   private buildDirectiveContext(
     key: string,
     directive: string,
-    targetAgent: string | undefined
+    targetAgent: string | undefined,
+    audioFeedbackOverride?: AudioFeatureSnapshot
   ): string {
     const ctx = this.musicalContext;
     const isBroadcast = !targetAgent;
-    const audioFeedback = this.getFreshAudioFeedbackSection();
+    const audioFeedback = audioFeedbackOverride ?? this.getFreshAudioFeedbackSection();
 
     const bandStateLines = this.activatedAgents
       .filter((k) => k !== key)
@@ -1538,21 +1892,39 @@ export class AgentProcessManager {
     });
   }
 
-  private getPatternValidationFailureReason(pattern: string): string | null {
-    if (!pattern || pattern === 'silence' || pattern === 'no_change') return null;
+  private sanitizePatternCandidate(pattern: string): string {
+    if (!pattern || pattern === 'silence' || pattern === 'no_change') return pattern;
+    return normalizeStrudelPatternForJam(pattern);
+  }
 
-    const validation = validatePatternForJam(pattern);
+  private getPatternValidationFailureReason(key: string, pattern: string): string | null {
+    const normalizedPattern = this.sanitizePatternCandidate(pattern);
+    if (!normalizedPattern || normalizedPattern === 'silence' || normalizedPattern === 'no_change') return null;
+
+    if (normalizedPattern !== pattern) {
+      const compactOriginal = pattern.replace(/\s+/g, ' ').trim().slice(0, 120);
+      const compactNormalized = normalizedPattern.replace(/\s+/g, ' ').trim().slice(0, 120);
+      console.log(
+        `[Agent:${key}] Pattern normalized during validation: ` +
+        `${compactOriginal} -> ${compactNormalized}`
+      );
+    }
+
+    const validation = validatePatternForJam(normalizedPattern);
     if (validation.valid) return null;
     return validation.reason || 'invalid pattern syntax';
   }
 
-  private getResponseRejectReasonForRetry(response: AgentResponse | null): string | null {
+  private getResponseRejectReasonForRetry(
+    key: string,
+    response: AgentResponse | null
+  ): string | null {
     if (!response) {
       return 'empty, timed-out, or unparseable response';
     }
 
     const proposedPattern = response.pattern || 'silence';
-    const patternFailure = this.getPatternValidationFailureReason(proposedPattern);
+    const patternFailure = this.getPatternValidationFailureReason(key, proposedPattern);
     if (!patternFailure) return null;
     return `invalid pattern (${patternFailure})`;
   }
@@ -1577,13 +1949,18 @@ export class AgentProcessManager {
 
   private async recoverDirectiveResponseIfNeeded(params: {
     key: string;
-    response: AgentResponse | null;
+    snapshot: DirectiveAttemptSnapshot;
     directive: string;
     targetAgent: string | undefined;
-  }): Promise<AgentResponse | null> {
-    const { key, response, directive, targetAgent } = params;
-    const rejectReason = this.getResponseRejectReasonForRetry(response);
-    if (!rejectReason) return response;
+  }): Promise<DirectiveAttemptSnapshot> {
+    const {
+      key,
+      snapshot,
+      directive,
+      targetAgent,
+    } = params;
+    const rejectReason = this.getResponseRejectReasonForRetry(key, snapshot.turnResult?.response ?? null);
+    if (!rejectReason) return snapshot;
 
     console.warn(`[Agent:${key}] Directive response rejected (${rejectReason}). Retrying once.`);
     this.setAgentStatus(key, 'thinking');
@@ -1593,12 +1970,23 @@ export class AgentProcessManager {
       targetAgent,
       rejectReason
     );
-    const retryResponse = await this.sendToAgentAndCollect(key, retryContext);
-    const retryRejectReason = this.getResponseRejectReasonForRetry(retryResponse);
-    if (!retryRejectReason) return retryResponse;
+    const retryPrompt = this.buildPromptForAgent(key, retryContext);
+    const retryTurnResult = await this.sendToAgentAndCollect(key, retryContext, retryPrompt);
+    const retryRejectReason = this.getResponseRejectReasonForRetry(key, retryTurnResult?.response ?? null);
+    if (!retryRejectReason) {
+      return {
+        turnResult: retryTurnResult,
+        contextText: retryContext,
+        fullPrompt: retryPrompt,
+      };
+    }
 
     console.warn(`[Agent:${key}] Directive retry rejected (${retryRejectReason}). Keeping previous groove.`);
-    return retryResponse;
+    return {
+      turnResult: retryTurnResult,
+      contextText: retryContext,
+      fullPrompt: retryPrompt,
+    };
   }
 
   // ─── Private: Auto-Tick ─────────────────────────────────────────
@@ -1693,28 +2081,45 @@ export class AgentProcessManager {
 
       console.log(`[AgentManager] Auto-tick round ${this.roundNumber}`);
 
-      const responsePromises = activeTargets.map((key) => {
-        this.applyPendingThreadCompactionForAutoTick(key);
+      const autoTickInputs = activeTargets.map((key) => {
+        const pendingCompactionBefore = this.agentPendingThreadCompaction[key] ?? false;
+        const noChangeStreakBefore = this.agentAutoTickNoChangeStreak[key] ?? 0;
+        const compactionAppliedThisTurn = this.applyPendingThreadCompactionForAutoTick(key);
 
-        const bandStateLines = this.activatedAgents
+        const bandState = this.activatedAgents
           .filter((k) => k !== key)
-          .map((k) => this.formatAgentBandState(k));
-
+          .map((k) => this.buildBandStateEntryFromPattern(
+            k,
+            this.mutedAgents.has(k) ? 'silence' : (this.agentPatterns[k] || 'silence')
+          ));
         const myPattern = this.agentPatterns[key] || 'silence';
 
         const context = buildAutoTickManagerContext({
           roundNumber: this.roundNumber,
           musicalContext: ctx,
           currentPattern: myPattern,
-          bandStateLines,
+          bandStateLines: bandState.map((entry) => entry.line),
           audioFeedback,
         });
 
+        const fullPrompt = this.buildPromptForAgent(key, context);
         this.setAgentStatus(key, 'thinking');
-        return this.sendToAgentAndCollect(key, context);
+        return {
+          key,
+          context,
+          fullPrompt,
+          currentPattern: myPattern,
+          bandState,
+          pendingCompactionBefore,
+          noChangeStreakBefore,
+          compactionAppliedThisTurn,
+        };
       });
 
-      const responses = await Promise.all(responsePromises);
+      const turnResults = await Promise.all(
+        autoTickInputs.map((input) => this.sendToAgentAndCollect(input.key, input.context, input.fullPrompt))
+      );
+      const responses: Array<AgentResponse | null> = [...turnResults.map((result) => result?.response ?? null)];
       const patternsBeforeTurn = { ...this.agentPatterns };
 
       // If stopped during await, don't apply stale responses
@@ -1722,7 +2127,8 @@ export class AgentProcessManager {
 
       for (let i = 0; i < activeTargets.length; i++) {
         const key = activeTargets[i];
-        const response = responses[i];
+        const turnResult = turnResults[i];
+        const response = turnResult?.response ?? null;
         const patternBeforeTurn = this.agentPatterns[key] || 'silence';
         const acceptedResponse = this.applyAgentResponse(key, response, 'auto-tick');
         this.recordAutoTickCompactionSignal({
@@ -1731,6 +2137,24 @@ export class AgentProcessManager {
           patternBeforeTurn,
         });
         responses[i] = acceptedResponse;
+
+        const input = autoTickInputs[i];
+        this.recordContextInspectorTurn({
+          key,
+          roundNumber: this.roundNumber,
+          turnSource: 'auto-tick',
+          managerContext: input.context,
+          fullPrompt: input.fullPrompt,
+          musicalContext: ctx,
+          currentPattern: input.currentPattern,
+          bandState: input.bandState,
+          audioFeedback,
+          pendingCompactionBefore: input.pendingCompactionBefore,
+          noChangeStreakBefore: input.noChangeStreakBefore,
+          compactionAppliedThisTurn: input.compactionAppliedThisTurn,
+          turnResult,
+          acceptedResponse,
+        });
       }
 
       // Aggregate autonomous context drift from agent decisions
@@ -1757,11 +2181,12 @@ export class AgentProcessManager {
   ): boolean {
     if (pattern === 'silence' || pattern === 'no_change') return false;
 
-    const validation = validatePatternForJam(pattern);
+    const normalizedPattern = this.sanitizePatternCandidate(pattern);
+    const validation = validatePatternForJam(normalizedPattern);
     if (validation.valid) return false;
 
     const reason = validation.reason || 'invalid pattern syntax';
-    const compactPattern = pattern.replace(/\s+/g, ' ').trim().slice(0, 200);
+    const compactPattern = normalizedPattern.replace(/\s+/g, ' ').trim().slice(0, 200);
     console.warn(`[Agent:${key}] Invalid pattern rejected: ${reason}. Pattern: ${compactPattern}`);
 
     if (turnSource === 'directive') {
@@ -1787,8 +2212,14 @@ export class AgentProcessManager {
     let safeResponse = response;
     if (safeResponse) {
       const proposedPattern = safeResponse.pattern || 'silence';
-      if (this.maybeRejectInvalidPattern(key, proposedPattern, turnSource)) {
+      const normalizedPattern = this.sanitizePatternCandidate(proposedPattern);
+      if (this.maybeRejectInvalidPattern(key, normalizedPattern, turnSource)) {
         safeResponse = null;
+      } else if (normalizedPattern !== proposedPattern) {
+        safeResponse = {
+          ...safeResponse,
+          pattern: normalizedPattern,
+        };
       }
     }
 
@@ -2065,11 +2496,13 @@ export class AgentProcessManager {
   private broadcastJamStatePayload(combinedPattern: string, turnSource?: JamTurnSource): void {
     // Broadcast full jam state
     const jamState = this.getJamStateSnapshot();
+    const diagnostics = this.consumeContextInspectorDelta();
 
     const payload: JamStatePayload = {
       jamState,
       combinedPattern,
       ...(turnSource ? { turnSource } : {}),
+      ...(diagnostics ? { diagnostics } : {}),
     };
 
     this.broadcastWs<JamStatePayload>('jam_state_update', {

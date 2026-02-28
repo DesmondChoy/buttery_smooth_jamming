@@ -22,6 +22,80 @@ export interface PatternValidationResult {
   reason?: string;
 }
 
+const VALID_ROOT_CALLS = new Set([
+  'note',
+  'sound',
+  's',
+  'stack',
+  'cat',
+  'seq',
+  'fastcat',
+  'slowcat',
+]);
+
+// Canonical methods allowed by our runtime safety gate.
+// This list is intentionally conservative and follows the documented Strudel
+// API family currently used by jam agents + normal-mode examples.
+const VALID_METHOD_CALLS = new Set([
+  'note',
+  'gain',
+  'lpf',
+  'hpf',
+  'bpf',
+  'lpq',
+  'room',
+  'delay',
+  'delaytime',
+  'delayfeedback',
+  'distort',
+  'crush',
+  'coarse',
+  'shape',
+  'speed',
+  'bank',
+  's',
+  'n',
+  'vowel',
+  'pan',
+  'range',
+  'scale',
+  'voicings',
+  'fm',
+  'fmh',
+  'wt',
+  'legato',
+  'attack',
+  'decay',
+  'sustain',
+  'release',
+  'rev',
+  'shuffle',
+  'cut',
+  'orbit',
+  'someCycles',
+  'often',
+  'sometimes',
+  'rarely',
+  'every',
+  'degradeBy',
+  'euclid',
+  'palindrome',
+  'fast',
+  'slow',
+]);
+
+const FORBIDDEN_GLOBALS = new Set([
+  'window',
+  'document',
+  'globalThis',
+  'process',
+  'fetch',
+  'setTimeout',
+  'setInterval',
+  'Date',
+  'Math',
+]);
+
 // Known effect methods (value-bearing — we capture the first argument)
 // Includes .s() which sets the sound source on note() patterns
 const EFFECT_METHODS = new Set([
@@ -48,6 +122,161 @@ const MINI_CLOSE_TO_OPEN: Record<string, string> = {
   '}': '{',
   ')': '(',
 };
+
+function normalizeSynthName(name: string): string {
+  const normalized = name.trim().toLowerCase();
+  if (normalized === 'saw') return 'sawtooth';
+  if (normalized === 'tri') return 'triangle';
+  return name.trim();
+}
+
+function normalizePanSinSyntax(expression: string): { expression: string; rewrites: string[] } {
+  const rewrites: string[] = [];
+  const normalized = expression
+    .replace(
+      /\.pan\(\s*sin\s*\(\s*rate\s*=\s*([0-9.]+)\s*\)\s*\)/g,
+      (_match, rawRate: string) => {
+        const rate = Number.parseFloat(rawRate);
+        const slow = Number.isFinite(rate) && rate > 0 ? (1 / rate) : 1;
+        const slowRounded = Number(slow.toFixed(3));
+        rewrites.push('pan(sin(rate=...)) -> pan(sine.slow(...).range(0,1))');
+        return `.pan(sine.slow(${slowRounded}).range(0,1))`;
+      }
+    )
+    .replace(
+      /\.pan\(\s*sin\s*\)/g,
+      () => {
+        rewrites.push('pan(sin) -> pan(sine.range(0,1))');
+        return `.pan(sine.range(0,1))`;
+      }
+    );
+
+  return { expression: normalized, rewrites };
+}
+
+function stripUnsupportedMethodNames(expression: string): { code: string; rewrites: string[] } {
+  const rewrites: string[] = [];
+  const replacements = normalizePanSinSyntax(expression);
+  let normalized = replacements.expression;
+
+  if (normalized.includes('.wave(')) {
+    rewrites.push('wave() -> s()');
+    normalized = normalized.replace(/\.wave\(\s*(['"])([^'"]+)\1\s*\)/g, (_match, _quote, sourceName: string) => {
+      return `.s("${normalizeSynthName(sourceName)}")`;
+    });
+  }
+
+  if (normalized.includes('.band(')) {
+    rewrites.push('band() -> bpf()');
+    normalized = normalized.replace(/\.band\(/g, '.bpf(');
+  }
+
+  return {
+    code: normalized,
+    rewrites: [...replacements.rewrites, ...rewrites],
+  };
+}
+
+/**
+ * Normalize raw Strudel snippets before validation.
+ * This keeps canonical method names in one place for deterministic rewrite.
+ */
+export function normalizeStrudelPatternForJam(code: string): string {
+  const result = stripUnsupportedMethodNames(code);
+  return result.code;
+}
+
+function isValidRootFunction(name: string): boolean {
+  return VALID_ROOT_CALLS.has(name);
+}
+
+function isValidMethod(name: string): boolean {
+  return VALID_METHOD_CALLS.has(name);
+}
+
+function isForbiddenGlobalReference(node: ASTNode, _parent: ASTNode | null): boolean {
+  if (node.type !== 'Identifier') return false;
+  if (!FORBIDDEN_GLOBALS.has(node.name)) return false;
+  return true;
+}
+
+function isSineArgument(node: ASTNode): boolean {
+  if (node.type !== 'Identifier') return false;
+  return node.name === 'sin';
+}
+
+function isPanSinCall(node: ASTNode): boolean {
+  if (node.type !== 'CallExpression') return false;
+  const callee = node.callee;
+  if (
+    callee.type !== 'Identifier' ||
+    callee.name !== 'sin' ||
+    !node.arguments.length
+  ) {
+    return false;
+  }
+  return true;
+}
+
+function findInvalidPatternConstructs(node: ASTNode): string | null {
+  const stack: Array<{ node: ASTNode; parent: ASTNode | null }> = [
+    { node, parent: null },
+  ];
+
+  while (stack.length > 0) {
+    const current = stack.pop();
+    if (!current) continue;
+
+    const astNode = current.node;
+    const parent = current.parent;
+
+    if (!astNode || typeof astNode !== 'object') continue;
+
+    if (
+      astNode.type === 'Identifier'
+      && isForbiddenGlobalReference(astNode, parent)
+    ) {
+      return `disallowed runtime global "${astNode.name}"`;
+    }
+
+    if (astNode.type === 'CallExpression') {
+      const callee = astNode.callee;
+      if (callee.type === 'Identifier' && !isValidRootFunction(callee.name)) {
+        return `unsupported root "${callee.name}"`;
+      }
+      if (callee.type === 'MemberExpression' && callee.property?.type === 'Identifier') {
+        const methodName = callee.property.name;
+        if (methodName === 'wave') return 'unsupported method ".wave()"';
+        if (methodName === 'band') return 'unsupported method ".band()"';
+        if (!isValidMethod(methodName)) {
+          return `unsupported method ".${methodName}()"`;
+        }
+        if (methodName === 'pan') {
+          const arg = astNode.arguments?.[0] as ASTNode | undefined;
+          if (isSineArgument(arg) || isPanSinCall(arg)) {
+            return 'use sine for pan modulation (for example .pan(sine.range(0,1))';
+          }
+        }
+      }
+    }
+
+    const values = Object.values(astNode) as ASTNode[];
+    for (const child of values) {
+      if (!child) continue;
+      if (Array.isArray(child)) {
+        for (const nested of child) {
+          if (nested && typeof nested === 'object') {
+            stack.push({ node: nested as ASTNode, parent: astNode });
+          }
+        }
+      } else if (typeof child === 'object') {
+        stack.push({ node: child, parent: astNode });
+      }
+    }
+  }
+
+  return null;
+}
 
 function parsePatternExpression(code: string): ASTNode | null {
   const wrapped = `const __expr = ${code}`;
@@ -151,14 +380,20 @@ export function validatePatternForJam(code: string): PatternValidationResult {
     return { valid: true };
   }
 
+  const normalizedCode = normalizeStrudelPatternForJam(code);
   let expr: ASTNode | null;
   try {
-    expr = parsePatternExpression(code);
+    expr = parsePatternExpression(normalizedCode);
   } catch {
     return { valid: false, reason: 'not a valid expression' };
   }
   if (!expr) {
     return { valid: false, reason: 'missing expression' };
+  }
+
+  const invalidConstruct = findInvalidPatternConstructs(expr);
+  if (invalidConstruct) {
+    return { valid: false, reason: invalidConstruct };
   }
 
   const delimiterIssue = findMiniDelimiterIssue(expr);

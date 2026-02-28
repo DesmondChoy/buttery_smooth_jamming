@@ -19,6 +19,7 @@ const clientProcesses = new Map<WebSocket, RuntimeProcess>();
 // Store agent process managers per client (for jam sessions)
 const agentManagers = new Map<WebSocket, AgentProcessManager>();
 const pendingJamStarts = new Map<WebSocket, Promise<void>>();
+const contextInspectorEnabledByClient = new Map<WebSocket, boolean>();
 
 const MAX_CONCURRENT_JAMS = getPositiveInt(process.env.MAX_CONCURRENT_JAMS, 1);
 const MAX_TOTAL_AGENT_PROCESSES = getPositiveInt(process.env.MAX_TOTAL_AGENT_PROCESSES, 4);
@@ -63,11 +64,13 @@ interface BrowserMessage {
     | 'set_jam_preset'
     | 'boss_directive'
     | 'stop_jam'
-    | 'audio_feedback';
+    | 'audio_feedback'
+    | 'set_context_inspector';
   text?: string;
   activeAgents?: string[];
   targetAgent?: string;
   presetId?: string;
+  enabled?: boolean;
   payload?: AudioFeatureSnapshot;
 }
 
@@ -226,6 +229,7 @@ export function SOCKET(
   const clientId = ++clientCounter;
   clientIds.set(client, clientId);
   console.log(`[Runtime WS] Client #${clientId} connected, total: ${server.clients.size}`);
+  contextInspectorEnabledByClient.set(client, false);
 
   // Send initial connecting status
   sendToClient(client, {
@@ -355,6 +359,7 @@ export function SOCKET(
             }
           };
           const manager = new AgentProcessManager({ workingDir, broadcast: broadcastToClient });
+          manager.setContextInspectorEnabled(contextInspectorEnabledByClient.get(client) ?? false);
           agentManagers.set(client, manager);
 
           const startPromise = manager.start(agents, { mode: 'staged_silent' });
@@ -480,6 +485,14 @@ export function SOCKET(
           manager.handleAudioFeedback(candidate);
           break;
         }
+
+        case 'set_context_inspector': {
+          const enabled = Boolean(message.enabled);
+          contextInspectorEnabledByClient.set(client, enabled);
+          const manager = agentManagers.get(client);
+          manager?.setContextInspectorEnabled(enabled);
+          break;
+        }
       }
     } catch (error) {
       console.error('[Runtime WS] Failed to parse message:', error);
@@ -496,6 +509,7 @@ export function SOCKET(
       clearTimeout(pendingStart);
       pendingStarts.delete(client);
       console.log(`[Runtime WS] Client #${cid} cancelled pending process start (StrictMode unmount)`);
+      contextInspectorEnabledByClient.delete(client);
       clientIds.delete(client);
       return;
     }
@@ -516,6 +530,7 @@ export function SOCKET(
     }
 
     pendingJamStarts.delete(client);
+    contextInspectorEnabledByClient.delete(client);
 
     clientIds.delete(client);
   });

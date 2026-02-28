@@ -31,6 +31,7 @@ export interface UseRuntimeTerminalReturn {
   sendJamPreset: (presetId: string) => void;
   sendBossDirective: (text: string, targetAgent?: string, activeAgents?: string[]) => void;
   sendStopJam: () => void;
+  setContextInspectorEnabled: (enabled: boolean) => void;
   sendAudioFeedback: (payload: AudioFeatureSnapshot) => void;
   clearLines: () => void;
 }
@@ -65,6 +66,7 @@ export function useRuntimeTerminal(
   const currentAssistantLineRef = useRef<string | null>(null);
   const reconnectAttemptsRef = useRef(0);
   const handleMessageRef = useRef<((event: MessageEvent) => void) | null>(null);
+  const contextInspectorEnabledRef = useRef(false);
   const MAX_RECONNECT_ATTEMPTS = 5;
 
   useEffect(() => {
@@ -193,6 +195,11 @@ export function useRuntimeTerminal(
       setError(null);
       setStatus('connecting');
       reconnectAttemptsRef.current = 0; // Reset on successful connection
+
+      ws.send(JSON.stringify({
+        type: 'set_context_inspector',
+        enabled: contextInspectorEnabledRef.current,
+      }));
     };
 
     ws.onclose = () => {
@@ -293,6 +300,13 @@ export function useRuntimeTerminal(
     }
   }, []);
 
+  const setContextInspectorEnabled = useCallback((enabled: boolean) => {
+    contextInspectorEnabledRef.current = enabled;
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'set_context_inspector', enabled }));
+    }
+  }, []);
+
   const sendAudioFeedback = useCallback((payload: AudioFeatureSnapshot) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({
@@ -317,6 +331,7 @@ export function useRuntimeTerminal(
     sendJamPreset,
     sendBossDirective,
     sendStopJam,
+    setContextInspectorEnabled,
     sendAudioFeedback,
     clearLines,
   };

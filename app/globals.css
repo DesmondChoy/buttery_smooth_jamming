@@ -11,6 +11,34 @@
   --stage-text: #c4b8a8;
   --amber-glow: #f59e0b;
   --amber-warm: #d97706;
+  --scrollbar-track: #1d1916;
+  --scrollbar-thumb: #4a433c;
+  --scrollbar-thumb-hover: #5a524a;
+}
+
+/* Dark scrollbar styling to match the stage palette */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: var(--scrollbar-thumb);
+  border-radius: 9999px;
+  border: 2px solid var(--scrollbar-track);
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: var(--scrollbar-thumb-hover);
 }
 
 body::before {

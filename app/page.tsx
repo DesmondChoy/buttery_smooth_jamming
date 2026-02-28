@@ -34,6 +34,7 @@ export default function Home() {
   const [selectedJamPresetId, setSelectedJamPresetId] = useState<string | null>(null);
   const [jamPlayRequested, setJamPlayRequested] = useState(false);
   const [lastSentJamPresetId, setLastSentJamPresetId] = useState<string | null>(null);
+  const [isContextInspectorEnabled, setIsContextInspectorEnabled] = useState(false);
   const pendingExecuteFrameRef = useRef<number | null>(null);
 
   const { ref, setCode, evaluate, stop, onEditorReady } = useStrudel();
@@ -60,14 +61,15 @@ export default function Home() {
   });
 
   const {
-    lines: runtimeLines,
     status: runtimeStatus,
     isConnected: isRuntimeConnected,
     error: runtimeTerminalError,
-    sendMessage,
-    clearLines,
+    lines: runtimeLines,
     sendJamPreset,
     sendBossDirective,
+    sendMessage,
+    clearLines,
+    setContextInspectorEnabled,
     sendAudioFeedback,
   } = runtimeTerminal;
 
@@ -89,6 +91,7 @@ export default function Home() {
     autoTickTiming,
     agentStates,
     agentPatternChangeGlows,
+    agentContextWindows,
     handleExecute: handleJamExecute,
     showAgentSelection,
     handleAgentThought,
@@ -105,6 +108,16 @@ export default function Home() {
     onFeedback: sendAudioFeedback,
     analysisIntervalMs: 1_000,
   });
+
+  useEffect(() => {
+    if (!isRuntimeConnected) return;
+    setContextInspectorEnabled(isJamming && isContextInspectorEnabled);
+  }, [
+    isRuntimeConnected,
+    isJamming,
+    isContextInspectorEnabled,
+    setContextInspectorEnabled,
+  ]);
 
   // Per-agent message filtering: each agent sees their own optional commentary
   // plus boss directives (both broadcast and targeted)
@@ -483,6 +496,8 @@ export default function Home() {
               onSelectPreset={handleSelectJamPreset}
               onPlayJam={handleJamPlay}
               onStopJam={handleStopJamAndAudio}
+              isContextInspectorEnabled={isContextInspectorEnabled}
+              onToggleContextInspector={setIsContextInspectorEnabled}
             />
 
             {/* Agent columns grid */}
@@ -498,6 +513,8 @@ export default function Home() {
                   isMuted={mutedAgents.includes(key)}
                   messages={agentMessages[key] ?? []}
                   isPatternChange={agentPatternChangeGlows[key]}
+                  contextWindow={agentContextWindows[key]}
+                  isContextInspectorEnabled={isContextInspectorEnabled}
                 />
               ))}
             </div>
@@ -595,8 +612,8 @@ export default function Home() {
                 Start a Jam Session
               </button>
 
-              {/* Stage plot — the band lineup */}
-              <div className="w-full max-w-3xl mb-10">
+            {/* Stage plot — the band lineup */}
+            <div className="w-full max-w-3xl mb-10">
                 {/* Stage floor */}
                 <div className="relative rounded-xl bg-gradient-to-b from-stage-dark to-stage-black border border-stage-border/60 overflow-hidden px-4 py-8 md:py-10">
                   {/* Subtle stage edge highlight */}

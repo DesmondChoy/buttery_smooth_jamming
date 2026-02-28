@@ -61,6 +61,7 @@ export interface JamStatePayload {
   jamState: JamState;
   combinedPattern: string;
   turnSource?: JamTurnSource;
+  diagnostics?: JamStateDiagnostics;
 }
 
 export interface AutoTickTimingPayload {
@@ -166,6 +167,75 @@ export interface AudioFeatureSnapshot {
   highBandEnergy: number;
   spectralFlux: number;
   onsetDensity: number;
+}
+
+export type AgentTurnOutcome =
+  | 'accepted'
+  | 'rejected_or_failed'
+  | 'empty_or_unparseable'
+  | 'missing_agent';
+
+export interface AgentContextBandStateEntry {
+  agent: string;
+  line: string;
+  pattern: string;
+  patternSummary: string | null;
+}
+
+export interface AgentRawPromptSnapshot {
+  scope: 'full_prompt';
+  text: string;
+  originalCharCount: number;
+  maxChars: number;
+  truncated: boolean;
+}
+
+export interface AgentTurnThreadState {
+  invocationMode: 'resume' | 'new_thread';
+  threadIdBefore: string | null;
+  threadIdAfter: string | null;
+  pendingCompactionBefore: boolean;
+  pendingCompactionAfter: boolean;
+  noChangeStreakBefore: number;
+  noChangeStreakAfter: number;
+  compactionAppliedThisTurn: boolean;
+}
+
+export interface AgentContextTurnSnapshot {
+  id: string;
+  round: number;
+  turnSource: JamTurnSource;
+  createdAt: string;
+  directive?: string;
+  targetAgent?: string;
+  isBroadcastDirective?: boolean;
+  musicalContext: MusicalContext;
+  currentPattern: string;
+  currentPatternSummary: string | null;
+  bandState: AgentContextBandStateEntry[];
+  audioFeedback?: AudioFeatureSnapshot;
+  managerContext: string;
+  rawPrompt: AgentRawPromptSnapshot;
+  outcome: AgentTurnOutcome;
+  thread: AgentTurnThreadState;
+}
+
+export interface AgentThreadCompactionEvent {
+  appliedAtRound: number;
+  turnSource: JamTurnSource;
+  oldThreadId: string | null;
+  timestamp: string;
+}
+
+export interface AgentContextWindow {
+  agent: string;
+  updatedAt: string;
+  turns: AgentContextTurnSnapshot[];
+  lastCompaction?: AgentThreadCompactionEvent;
+}
+
+export interface JamStateDiagnostics {
+  agentContextWindowsDelta: Record<string, AgentContextWindow>;
 }
 
 // Pattern parser types — structured summary of agent Strudel patterns
