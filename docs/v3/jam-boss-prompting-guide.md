@@ -513,20 +513,29 @@ Use these scripts as live-run prompts for two contrasting demo styles.
 
 | # | Genre | Who | What to prompt | What to do? / Breathe | Next subagent | What to prompt next |
 |---|---|---|---|---|---|---|
-| 1 | Funk / lo-fi vibe | Broadcast | `Start loose and late-night, energy 3, everyone sparse and breathable` | `Let it breathe for 2 cycles` | @BEAT | `@BEAT dusty old-school pocket, behind the beat, chatty hi-hats` |
-| 2 | Funk / lo-fi vibe | @BEAT | `@BEAT dusty old-school pocket, behind the beat, chatty hi-hats` | `Let it breathe for 2 cycles` | @GROOVE | `@GROOVE deep round bass, hug the kick, minimal notes` |
-| 3 | Funk / lo-fi vibe | @GROOVE | `@GROOVE deep round bass, hug the kick, minimal notes` | `Let it breathe for 2 cycles` | @ARIA | `@ARIA airy motif, repeat-friendly, leave air between phrases` |
-| 4 | Funk / lo-fi vibe | @ARIA | `@ARIA airy motif, repeat-friendly, leave air between phrases` | `Let it breathe for 2 cycles` | @CHORDS | `@CHORDS smooth pad wash, distant and soft, don’t crowd the melody` |
-| 5 | Funk / lo-fi vibe | @CHORDS | `@CHORDS smooth pad wash, distant and soft, don’t crowd the melody` | `Let it breathe for 2 cycles` | Broadcast | `energy 6, add a little sparkle and momentum, keep it human` |
-| 6 | Funk / lo-fi vibe | Broadcast | `energy 6, add a little sparkle and momentum, keep it human` | `Let it breathe for 2 cycles` | @BEAT | `@BEAT 808-style weight with small ghost hits, still pocket-focused` |
+| 1 | prog rock | Broadcast | `open cinematic, restless, and spacious, energy 4, let it evolve naturally` | `breathe 2 cycles` | `@BEAT` | `@BEAT relaxed tom accents and ride texture, odd-feel phrasing, pocket still clear` |
+| 2 | prog rock | @BEAT | `@BEAT relaxed tom accents and ride texture, odd-feel phrasing, pocket still clear` | `breathe 2 cycles` | `@GROOVE` | `@GROOVE warm bass undercurrent, slow contour changes, stay below the melody lane` |
+| 3 | prog rock | @GROOVE | `@GROOVE warm bass undercurrent, slow contour changes, stay below the melody lane` | `breathe 2 cycles` | `@ARIA` | `@ARIA lyrical lead motif, repeats with slight variation, airy and expressive` |
+| 4 | prog rock | @ARIA | `@ARIA lyrical lead motif, repeats with slight variation, airy and expressive` | `breathe 2 cycles` | `@CHORDS` | `@CHORDS cinematic pad bed, soft swells, sparse support, no clutter` |
+| 5 | bossa nova | Broadcast | `drop into a light tropical pocket, energy 3, intimate and gentle` | `breathe 2 cycles` | `@BEAT` | `@BEAT light brushy ride texture, gentle claves, tight pocket on relaxed beats` |
+| 6 | bossa nova | @BEAT | `@BEAT light brushy ride texture, gentle claves, tight pocket on relaxed beats` | `breathe 2 cycles` | `@GROOVE` | `@GROOVE fingerstyle bass groove, smooth and conversational, never too busy` |
+| 7 | bossa nova | @GROOVE | `@GROOVE fingerstyle bass groove, smooth and conversational, never too busy` | `breathe 2 cycles` | `@CHORDS` | `@CHORDS clean Rhodes voicing, light offbeat comping, lots of space` |
+| 8 | bossa nova | @CHORDS | `@CHORDS clean Rhodes voicing, light offbeat comping, lots of space` | `breathe 2 cycles` | `@ARIA` | `@ARIA breezy flute-like line, short phrases, conversational with room between notes` |
+| 9 | jazz | Broadcast | `shift to smoky late-night jazz, energy 4, stay elegant and open` | `breathe 3 cycles` | `@BEAT` | `@BEAT soft swing with brushes, subtle cymbal texture, no harsh spikes` |
 
 ### Version 2) Orchestrator-style (specific and directive-heavy)
 
 | # | Genre | Who | What to prompt | What to do? / Breathe | Next subagent | What to prompt next |
 |---|---|---|---|---|---|---|
-| 1 | Funk / tight | Broadcast | `Switch to D minor, BPM 104, energy 5, establish a clean pocket` | `Breathe 2 cycles` | @BEAT | `@BEAT LinnDrum kit, on-the-one pocket, tight snare, no busy fills` |
-| 2 | Funk / tight | @BEAT | `@BEAT LinnDrum kit, on-the-one pocket, tight snare, no busy fills` | `Breathe 2 cycles` | @GROOVE | `@GROOVE slap bass, lock to BEAT, root-fifth movement, stay below C3` |
-| 3 | Funk / tight | @GROOVE | `@GROOVE slap bass, lock to BEAT, root-fifth movement, stay below C3` | `Breathe 2 cycles` | @CHORDS | `@CHORDS Rhodes comping, jazz voicings, offbeat accents, leave melody room` |
-| 4 | Funk / tight | @CHORDS | `@CHORDS Rhodes comping, jazz voicings, offbeat accents, leave melody room` | `Breathe 2 cycles` | @ARIA | `@ARIA trumpet-like hook line, rhythmic and punchy, clear repeats` |
-| 5 | Funk / tight | @ARIA | `@ARIA trumpet-like hook line, rhythmic and punchy, clear repeats` | `Breathe 2 cycles` | Broadcast | `BPM 118, energy 8, pre-chorus lift, keep every part pocketed` |
-| 6 | Funk / tight | Broadcast | `BPM 118, energy 8, pre-chorus lift, keep every part pocketed` | `Breathe 2 cycles` | Broadcast | `Drop to energy 4 and keep only BEAT + GROOVE for 2 cycles, then finish` |
+| 1 | prog rock | Broadcast | `Switch to E minor, BPM 128, energy 6, establish a progressive pocket` | `hold 2 cycles` | `@BEAT` | `@BEAT LinnDrum hybrid, tight kick/snare base, tom accents on phrase ends, keep punch controlled` |
+| 2 | prog rock | @BEAT | `@BEAT LinnDrum hybrid, tight kick/snare base, tom accents on phrase ends, keep punch controlled` | `hold 2 cycles` | `@GROOVE` | `@GROOVE sawtooth bass, lock to BEAT, octave-and-fifth motion, no note crowding above F2` |
+| 3 | prog rock | @GROOVE | `@GROOVE sawtooth bass, lock to BEAT, octave-and-fifth motion, no note crowding above F2` | `hold 2 cycles` | `@CHORDS` | `@CHORDS sawtooth pad, thick and filtered, rhythmic pulse that swells and pulls back` |
+| 4 | prog rock | @CHORDS | `@CHORDS sawtooth pad, thick and filtered, rhythmic pulse that swells and pulls back` | `hold 2 cycles` | `@ARIA` | `@ARIA synth lead, dramatic motif, filtered and wide, leave room for low end` |
+| 5 | bossa nova | Broadcast | `Switch to F major, BPM 118, energy 3, restrained bossa feel` | `hold 2 cycles` | `@BEAT` | `@BEAT KorgMinipops kit, thin vintage ride language, clave-like syncopation, no heavy accents` |
+| 6 | bossa nova | @BEAT | `@BEAT KorgMinipops kit, thin vintage ride language, clave-like syncopation, no heavy accents` | `hold 2 cycles` | `@GROOVE` | `@GROOVE acoustic electric bass, soft syncopated pulse, lock to BEAT and stay low` |
+| 7 | bossa nova | @GROOVE | `@GROOVE acoustic electric bass, soft syncopated pulse, lock to BEAT and stay low` | `hold 2 cycles` | `@CHORDS` | `@CHORDS clean Rhodes comping, shell-leaning voicings, sparse and warm` |
+| 8 | bossa nova | @CHORDS | `@CHORDS clean Rhodes comping, shell-leaning voicings, sparse and warm` | `hold 2 cycles` | `@ARIA` | `@ARIA airy flute melody, short lyrical lines, leave negative space` |
+| 9 | jazz | Broadcast | `Switch to Bb major, BPM 132, energy 5, bebop-leaning swing pocket` | `hold 2 cycles` | `@BEAT` | `@BEAT brush kit, clear swing ride on 2/4, soft snare comping, no clutter` |
+| 10 | jazz | @BEAT | `@BEAT brush kit, clear swing ride on 2/4, soft snare comping, no clutter` | `hold 2 cycles` | `@GROOVE` | `@GROOVE acoustic upright walking bass, quarter-line, chromatic passing tones only` |
+| 11 | jazz | @GROOVE | `@GROOVE acoustic upright walking bass, quarter-line, chromatic passing tones only` | `hold 2 cycles` | `@ARIA` | `@ARIA piano motif, hook-first phrasing, clean and warm, leave room for comping` |
+| 12 | jazz | @ARIA | `@ARIA piano motif, hook-first phrasing, clean and warm, leave room for comping` | `hold 2 cycles` | `@CHORDS` | `@CHORDS Rhodes comping, light jazz voicings, subtle tension on turnarounds` |
