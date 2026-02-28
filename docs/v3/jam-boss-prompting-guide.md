@@ -508,12 +508,13 @@ This gives the runtime a reliable anchor while preserving musical creativity.
 ## Demo Drafts (Easy to Read)
 
 Use these scripts as live-run prompts for two contrasting demo styles.
+Important: at jam start, no agents are active yet. Make the first cue a targeted `@mention` so one agent is activated, then continue with broadcast or targeted cues.
 
 ### Version 1) Organic Jamming (vibey, less specific)
 
 | # | Genre | Who | What to prompt | What to do? / Breathe | Next subagent | What to prompt next |
 |---|---|---|---|---|---|---|
-| 1 | prog rock | Broadcast | `open cinematic, restless, and spacious, energy 4, let it evolve naturally` | `breathe 2 cycles` | `@BEAT` | `@BEAT relaxed tom accents and ride texture, odd-feel phrasing, pocket still clear` |
+| 1 | prog rock | @BEAT | `@BEAT open cinematic, restless, and spacious, energy 4, let it evolve naturally` | `breathe 2 cycles` | `@BEAT` | `@BEAT relaxed tom accents and ride texture, odd-feel phrasing, pocket still clear` |
 | 2 | prog rock | @BEAT | `@BEAT relaxed tom accents and ride texture, odd-feel phrasing, pocket still clear` | `breathe 2 cycles` | `@GROOVE` | `@GROOVE warm bass undercurrent, slow contour changes, stay below the melody lane` |
 | 3 | prog rock | @GROOVE | `@GROOVE warm bass undercurrent, slow contour changes, stay below the melody lane` | `breathe 2 cycles` | `@ARIA` | `@ARIA lyrical lead motif, repeats with slight variation, airy and expressive` |
 | 4 | prog rock | @ARIA | `@ARIA lyrical lead motif, repeats with slight variation, airy and expressive` | `breathe 2 cycles` | `@CHORDS` | `@CHORDS cinematic pad bed, soft swells, sparse support, no clutter` |
@@ -527,7 +528,7 @@ Use these scripts as live-run prompts for two contrasting demo styles.
 
 | # | Genre | Who | What to prompt | What to do? / Breathe | Next subagent | What to prompt next |
 |---|---|---|---|---|---|---|
-| 1 | prog rock | Broadcast | `Switch to E minor, BPM 128, energy 6, establish a progressive pocket` | `hold 2 cycles` | `@BEAT` | `@BEAT LinnDrum hybrid, tight kick/snare base, tom accents on phrase ends, keep punch controlled` |
+| 1 | prog rock | @BEAT | `@BEAT Switch to E minor, BPM 128, energy 6, establish a progressive pocket` | `hold 2 cycles` | `@BEAT` | `@BEAT LinnDrum hybrid, tight kick/snare base, tom accents on phrase ends, keep punch controlled` |
 | 2 | prog rock | @BEAT | `@BEAT LinnDrum hybrid, tight kick/snare base, tom accents on phrase ends, keep punch controlled` | `hold 2 cycles` | `@GROOVE` | `@GROOVE sawtooth bass, lock to BEAT, octave-and-fifth motion, no note crowding above F2` |
 | 3 | prog rock | @GROOVE | `@GROOVE sawtooth bass, lock to BEAT, octave-and-fifth motion, no note crowding above F2` | `hold 2 cycles` | `@CHORDS` | `@CHORDS sawtooth pad, thick and filtered, rhythmic pulse that swells and pulls back` |
 | 4 | prog rock | @CHORDS | `@CHORDS sawtooth pad, thick and filtered, rhythmic pulse that swells and pulls back` | `hold 2 cycles` | `@ARIA` | `@ARIA synth lead, dramatic motif, filtered and wide, leave room for low end` |
