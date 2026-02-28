@@ -83,7 +83,7 @@ export function useRuntimeTerminal(
   const currentAssistantLineRef = useRef<string | null>(null);
   const reconnectAttemptsRef = useRef(0);
   const handleMessageRef = useRef<((event: MessageEvent) => void) | null>(null);
-  const contextInspectorEnabledRef = useRef(false);
+  const contextInspectorEnabledRef = useRef(true);
   const shouldReconnectRef = useRef(true);
   const queuedStartJamAgentsRef = useRef<string[] | null>(null);
   const MAX_RECONNECT_ATTEMPTS = 5;

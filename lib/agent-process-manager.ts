@@ -214,7 +214,7 @@ export class AgentProcessManager {
   private jamStartMode: JamStartMode = 'autonomous_opening';
   private presetConfigured = true;
   private latestAudioFeedback: AudioFeatureSnapshot | null = null;
-  private contextInspectorEnabled = false;
+  private contextInspectorEnabled = true;
   private agentContextWindows: Record<string, AgentContextWindow> = {};
   private pendingContextWindowsDelta: Record<string, AgentContextWindow> = {};
   private agentLastCompactionEvent: Record<string, AgentThreadCompactionEvent | undefined> = {};

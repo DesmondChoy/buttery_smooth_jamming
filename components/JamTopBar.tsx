@@ -19,7 +19,6 @@ interface JamTopBarProps {
   autoTickTiming?: AutoTickTiming | null;
   showAutoTickCountdown?: boolean;
   errorMessage?: string | null;
-  isContextInspectorEnabled?: boolean;
   isCameraConductorEnabled?: boolean;
   isCameraConductorReady?: boolean;
   canEnableCameraConductor?: boolean;
@@ -28,7 +27,6 @@ interface JamTopBarProps {
   onSelectPreset: (presetId: string | null) => void;
   onPlayJam: () => void;
   onStopJam: () => void;
-  onToggleContextInspector?: (enabled: boolean) => void;
   onToggleCameraConductor?: (enabled: boolean) => void;
 }
 
@@ -46,7 +44,6 @@ export function JamTopBar({
   autoTickTiming,
   showAutoTickCountdown = false,
   errorMessage,
-  isContextInspectorEnabled = false,
   isCameraConductorEnabled = false,
   isCameraConductorReady = false,
   canEnableCameraConductor = false,
@@ -55,7 +52,6 @@ export function JamTopBar({
   onSelectPreset,
   onPlayJam,
   onStopJam,
-  onToggleContextInspector,
   onToggleCameraConductor,
 }: JamTopBarProps) {
   const [clockNowMs, setClockNowMs] = useState<number>(() => Date.now());
@@ -156,17 +152,6 @@ export function JamTopBar({
         className="px-3 py-1.5 bg-red-600 hover:bg-red-500 text-white rounded-md text-sm font-medium transition-colors shrink-0"
       >
         Stop
-      </button>
-
-      <button
-        onClick={() => onToggleContextInspector?.(!isContextInspectorEnabled)}
-        className={`px-2.5 py-1 rounded text-xs font-medium border shrink-0 transition-colors ${
-          isContextInspectorEnabled
-            ? 'border-amber-400/60 bg-amber-500/15 text-amber-200'
-            : 'border-stage-border bg-stage-mid/40 text-stage-text hover:bg-stage-mid/70'
-        }`}
-      >
-        Context Inspector: {isContextInspectorEnabled ? 'On' : 'Off'}
       </button>
 
       <button

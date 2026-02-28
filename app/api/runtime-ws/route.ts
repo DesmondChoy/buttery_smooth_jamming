@@ -270,7 +270,7 @@ export function SOCKET(
   const clientId = ++clientCounter;
   clientIds.set(client, clientId);
   console.log(`[Runtime WS] Client #${clientId} connected, total: ${server.clients.size}`);
-  contextInspectorEnabledByClient.set(client, false);
+  contextInspectorEnabledByClient.set(client, true);
 
   // Send initial connecting status
   sendToClient(client, {
@@ -401,7 +401,7 @@ export function SOCKET(
             }
           };
           const manager = new AgentProcessManager({ workingDir, broadcast: broadcastToClient });
-          manager.setContextInspectorEnabled(contextInspectorEnabledByClient.get(client) ?? false);
+          manager.setContextInspectorEnabled(contextInspectorEnabledByClient.get(client) ?? true);
           agentManagers.set(client, manager);
 
           const startPromise = manager.start(agents, { mode: 'staged_silent' });

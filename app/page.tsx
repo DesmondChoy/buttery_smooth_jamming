@@ -46,7 +46,6 @@ export default function Home() {
   const [selectedJamPresetId, setSelectedJamPresetId] = useState<string | null>(null);
   const [jamPlayRequested, setJamPlayRequested] = useState(false);
   const [lastSentJamPresetId, setLastSentJamPresetId] = useState<string | null>(null);
-  const [isContextInspectorEnabled, setIsContextInspectorEnabled] = useState(false);
   const [isCameraConductorEnabled, setIsCameraConductorEnabled] = useState(false);
   const [lastConductorIntentSummary, setLastConductorIntentSummary] = useState<string | null>(null);
   const pendingExecuteFrameRef = useRef<number | null>(null);
@@ -104,7 +103,6 @@ export default function Home() {
     sendCameraDirective,
     sendMessage,
     clearLines,
-    setContextInspectorEnabled,
     sendAudioFeedback,
   } = runtimeTerminal;
 
@@ -473,14 +471,6 @@ export default function Home() {
     ? lastConductorIntentSummary
     : null;
 
-  useEffect(() => {
-    setContextInspectorEnabled(isJamming && isContextInspectorEnabled);
-  }, [
-    isJamming,
-    isContextInspectorEnabled,
-    setContextInspectorEnabled,
-  ]);
-
   const handleSendDirective = useCallback((text: string, targetAgent?: string) => {
     if (!isJamming || !isJamReady || !selectedJamPresetId || !isJamPlayArmed) return;
     addBossDirective(text, targetAgent);
@@ -554,8 +544,6 @@ export default function Home() {
               onSelectPreset={handleSelectJamPreset}
               onPlayJam={handleJamPlay}
               onStopJam={handleStopJamAndAudio}
-              isContextInspectorEnabled={isContextInspectorEnabled}
-              onToggleContextInspector={setIsContextInspectorEnabled}
               isCameraConductorEnabled={isCameraConductorEnabled}
               isCameraConductorReady={isCameraConductorReady}
               canEnableCameraConductor={canUseCameraConductor}
@@ -578,7 +566,7 @@ export default function Home() {
                   messages={agentMessages[key] ?? []}
                   isPatternChange={agentPatternChangeGlows[key]}
                   contextWindow={agentContextWindows[key]}
-                  isContextInspectorEnabled={isContextInspectorEnabled}
+                  isContextInspectorEnabled
                 />
               ))}
             </div>
