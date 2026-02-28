@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import type {
   AgentState,
+  AudioFeatureSnapshot,
   MusicalContext,
   JamState,
   AutoTickTiming,
@@ -80,6 +81,8 @@ interface AgentCommentaryRuntimeState {
 interface AgentTurnContext {
   directiveTargetAgent?: string;
 }
+
+const AUDIO_FEEDBACK_TTL_MS = 12_000;
 
 // Per-agent Codex-backed session handle
 interface AgentProcess {
@@ -161,6 +164,7 @@ export class AgentProcessManager {
   private codexJamDefaultModel = 'gpt-5-codex-mini';
   private jamStartMode: JamStartMode = 'autonomous_opening';
   private presetConfigured = true;
+  private latestAudioFeedback: AudioFeatureSnapshot | null = null;
 
   constructor(options: AgentProcessManagerOptions) {
     this.workingDir = options.workingDir;
@@ -243,6 +247,7 @@ export class AgentProcessManager {
     this.agentCommentaryState = {};
     this.agentAutoTickNoChangeStreak = {};
     this.agentPendingThreadCompaction = {};
+    this.latestAudioFeedback = null;
 
     // Initialize state for each agent
     for (const key of this.activeAgents) {
@@ -312,6 +317,82 @@ export class AgentProcessManager {
 
       this.broadcastJamStateOnly('staged-silent');
     });
+  }
+
+  /**
+   * Receive a compact client-side spectral summary from the browser audio loop.
+   */
+  handleAudioFeedback(payload: AudioFeatureSnapshot): void {
+    const normalized = this.normalizeAudioFeedback(payload);
+    if (!normalized) {
+      return;
+    }
+
+    this.latestAudioFeedback = normalized;
+  }
+
+  private getFreshAudioFeedbackSection(contextNowMs = Date.now()): AudioFeatureSnapshot | undefined {
+    if (!this.latestAudioFeedback) {
+      return undefined;
+    }
+
+    if (contextNowMs - this.latestAudioFeedback.capturedAtMs > AUDIO_FEEDBACK_TTL_MS) {
+      return undefined;
+    }
+
+    return this.latestAudioFeedback;
+  }
+
+  private normalizeAudioFeedback(payload: AudioFeatureSnapshot): AudioFeatureSnapshot | null {
+    if (
+      typeof payload.capturedAtMs !== 'number'
+      || !Number.isFinite(payload.capturedAtMs)
+      || typeof payload.windowMs !== 'number'
+      || !Number.isFinite(payload.windowMs)
+      || typeof payload.loudnessDb !== 'number'
+      || !Number.isFinite(payload.loudnessDb)
+      || typeof payload.spectralCentroidHz !== 'number'
+      || !Number.isFinite(payload.spectralCentroidHz)
+      || typeof payload.lowBandEnergy !== 'number'
+      || !Number.isFinite(payload.lowBandEnergy)
+      || typeof payload.midBandEnergy !== 'number'
+      || !Number.isFinite(payload.midBandEnergy)
+      || typeof payload.highBandEnergy !== 'number'
+      || !Number.isFinite(payload.highBandEnergy)
+      || typeof payload.spectralFlux !== 'number'
+      || !Number.isFinite(payload.spectralFlux)
+      || typeof payload.onsetDensity !== 'number'
+      || !Number.isFinite(payload.onsetDensity)
+    ) {
+      return null;
+    }
+
+    const safeTimestamp = payload.capturedAtMs > 0 ? payload.capturedAtMs : Date.now();
+
+    return {
+      capturedAtMs: safeTimestamp,
+      windowMs: this.sanitizeFeatureInt(payload.windowMs, 250, 10_000, 1000),
+      loudnessDb: this.sanitizeFeatureInt(payload.loudnessDb, 0, 100, 0),
+      spectralCentroidHz: this.sanitizeFeatureInt(payload.spectralCentroidHz, 0, 40_000, 0),
+      lowBandEnergy: this.sanitizeFeatureInt(payload.lowBandEnergy, 0, 100, 0),
+      midBandEnergy: this.sanitizeFeatureInt(payload.midBandEnergy, 0, 100, 0),
+      highBandEnergy: this.sanitizeFeatureInt(payload.highBandEnergy, 0, 100, 0),
+      spectralFlux: this.sanitizeFeatureInt(payload.spectralFlux, 0, 100, 0),
+      onsetDensity: this.sanitizeFeatureInt(payload.onsetDensity, 0, 100, 0),
+    };
+  }
+
+  private sanitizeFeatureInt(
+    value: number,
+    min: number,
+    max: number,
+    fallback: number
+  ): number {
+    if (!Number.isFinite(value)) return fallback;
+    const rounded = Math.round(value);
+    if (rounded < min) return min;
+    if (rounded > max) return max;
+    return rounded;
   }
 
   /**
@@ -519,6 +600,7 @@ export class AgentProcessManager {
     this.codexConfigOverrides = [];
     this.jamStartMode = 'autonomous_opening';
     this.presetConfigured = true;
+    this.latestAudioFeedback = null;
   }
 
   /**
@@ -726,138 +808,169 @@ export class AgentProcessManager {
     }
 
     return new Promise((resolve) => {
-      const args = this.buildCodexTurnArgs(agent);
-      const proc = spawn('codex', args, {
-        cwd: this.workingDir,
-        stdio: ['pipe', 'pipe', 'pipe'],
-        env: {
-          ...process.env,
-          JAM_AGENT_KEY: key,
-        },
-      });
-      const rl = readline.createInterface({
-        input: proc.stdout!,
-        crlfDelay: Infinity,
-      });
-      agent.activeTurn = proc;
-      agent.activeTurnRl = rl;
+      const attemptTurn = (attempt: number): void => {
+        const args = this.buildCodexTurnArgs(agent);
+        const proc = spawn('codex', args, {
+          cwd: this.workingDir,
+          stdio: ['pipe', 'pipe', 'pipe'],
+          env: {
+            ...process.env,
+            JAM_AGENT_KEY: key,
+          },
+        });
+        const rl = readline.createInterface({
+          input: proc.stdout!,
+          crlfDelay: Infinity,
+        });
+        agent.activeTurn = proc;
+        agent.activeTurnRl = rl;
 
-      const timeout = setTimeout(() => {
-        console.warn(`[Agent:${key}] Response timeout after ${JAM_GOVERNANCE.AGENT_TIMEOUT_MS}ms`);
-        if (!proc.killed) {
-          proc.kill('SIGTERM');
-        }
-        finish();
-      }, JAM_GOVERNANCE.AGENT_TIMEOUT_MS);
+        const timeout = setTimeout(() => {
+          console.warn(
+            `[Agent:${key}] Response timeout after ${JAM_GOVERNANCE.AGENT_TIMEOUT_MS}ms`
+          );
+          if (!proc.killed) {
+            proc.kill('SIGTERM');
+          }
+          finish();
+        }, JAM_GOVERNANCE.AGENT_TIMEOUT_MS);
 
-      let fullText = '';
-      let settled = false;
-      let parseState = { saw_assistant_delta: false };
-      let lastCodexError: string | null = null;
+        let fullText = '';
+        let settled = false;
+        let parseState = { saw_assistant_delta: false };
+        let lastCodexError: string | null = null;
+        let transportError = false;
 
-      const onLine = (line: string) => {
-        if (!line.trim()) return;
-        try {
-          const msg = JSON.parse(line) as Record<string, unknown>;
-          const legacyMessage = msg.message as {
-            content?: Array<{ type?: string; text?: string }>;
-          } | undefined;
+        const onLine = (line: string) => {
+          if (!line.trim()) return;
+          try {
+            const msg = JSON.parse(line) as Record<string, unknown>;
+            const legacyMessage = msg.message as {
+              content?: Array<{ type?: string; text?: string }>;
+            } | undefined;
 
-          // Backward-compatible stream-json handling (used heavily in tests).
-          if (msg.type === 'assistant' && legacyMessage?.content) {
-            const content = legacyMessage.content;
-            for (const block of content) {
-              if (block.type === 'text' && block.text) {
-                fullText += block.text;
+            // Backward-compatible stream-json handling (used heavily in tests).
+            if (msg.type === 'assistant' && legacyMessage?.content) {
+              const content = legacyMessage.content;
+              for (const block of content) {
+                if (block.type === 'text' && block.text) {
+                  fullText += block.text;
+                }
+              }
+              return;
+            } else if (msg.type === 'result') {
+              finish();
+              return;
+            }
+
+            if (msg.type === 'thread.started' && typeof msg.thread_id === 'string') {
+              agent.threadId = msg.thread_id;
+            }
+
+            const mapped = map_codex_event_to_runtime_events(msg, parseState);
+            parseState = mapped.next_state;
+            for (const event of mapped.events) {
+              if (event.type === 'text') {
+                fullText += event.text;
+              } else if (event.type === 'error') {
+                const formatted = this.formatCodexErrorForLog(event.error);
+                if (formatted !== lastCodexError) {
+                  console.error(`[Agent:${key}] Codex turn failed: ${formatted}`);
+                }
+                lastCodexError = formatted;
               }
             }
+            if (mapped.turn_completed) {
+              finish();
+            }
+          } catch {
+            // Non-JSON line (or partial line) — ignore.
+          }
+        };
+
+        const cleanup = () => {
+          clearTimeout(timeout);
+          rl.removeListener('line', onLine);
+          rl.close();
+          agent.activeTurn = null;
+          agent.activeTurnRl = null;
+        };
+
+        const finish = () => {
+          if (settled) return;
+          settled = true;
+          cleanup();
+
+          const response = this.parseAgentResponse(fullText, key);
+          if (transportError && attempt < 1) {
+            attemptTurn(attempt + 1);
             return;
-          } else if (msg.type === 'result') {
+          }
+
+          resolve(response);
+        };
+
+        rl.on('line', onLine);
+
+        proc.stderr?.on('data', (data) => {
+          const text = data.toString().trim();
+          if (!text) return;
+
+          if (this.isCodexTransportError(text)) {
+            transportError = true;
+            console.error(`[Agent:${key}] Codex transport error: ${text}`);
+            if (!proc.killed) {
+              proc.kill('SIGTERM');
+            }
             finish();
             return;
           }
 
-          if (msg.type === 'thread.started' && typeof msg.thread_id === 'string') {
-            agent.threadId = msg.thread_id;
-          }
-
-          const mapped = map_codex_event_to_runtime_events(msg, parseState);
-          parseState = mapped.next_state;
-          for (const event of mapped.events) {
-            if (event.type === 'text') {
-              fullText += event.text;
-            } else if (event.type === 'error') {
-              const formatted = this.formatCodexErrorForLog(event.error);
-              if (formatted !== lastCodexError) {
-                console.error(`[Agent:${key}] Codex turn failed: ${formatted}`);
-              }
-              lastCodexError = formatted;
+          if (this.isNonFatalCodexCacheTtlWarning(text)) {
+            if (!this.cacheTtlWarnedAgents.has(key)) {
+              this.cacheTtlWarnedAgents.add(key);
+              console.warn(`[Agent:${key}] Non-fatal Codex cache warning: ${text}`);
             }
+            return;
           }
-          if (mapped.turn_completed) {
-            finish();
-          }
-        } catch {
-          // Non-JSON line (or partial line) — ignore.
-        }
-      };
+          console.error(`[Agent:${key} stderr]:`, text);
+        });
 
-      const cleanup = () => {
-        clearTimeout(timeout);
-        rl.removeListener('line', onLine);
-        rl.close();
-        agent.activeTurn = null;
-        agent.activeTurnRl = null;
-      };
-
-      const finish = () => {
-        if (settled) return;
-        settled = true;
-        cleanup();
-        resolve(this.parseAgentResponse(fullText, key));
-      };
-
-      rl.on('line', onLine);
-
-      proc.stderr?.on('data', (data) => {
-        const text = data.toString().trim();
-        if (!text) return;
-        if (this.isNonFatalCodexCacheTtlWarning(text)) {
-          if (!this.cacheTtlWarnedAgents.has(key)) {
-            this.cacheTtlWarnedAgents.add(key);
-            console.warn(`[Agent:${key}] Non-fatal Codex cache warning: ${text}`);
-          }
-          return;
-        }
-        console.error(`[Agent:${key} stderr]:`, text);
-      });
-
-      proc.on('error', (err) => {
-        console.error(`[Agent:${key}] Process error:`, err);
-        this.setAgentStatus(key, 'error');
-      });
-
-      proc.on('exit', (code, signal) => {
-        console.log(`[Agent:${key}] Turn exited: code=${code}, signal=${signal}`);
-        if (typeof code === 'number' && code !== 0) {
-          if (lastCodexError) {
-            console.warn(
-              `[Agent:${key}] Session became unavailable after non-zero exit (${code}). ` +
-              `Last Codex error: ${lastCodexError}`
-            );
-          } else {
-            console.warn(`[Agent:${key}] Session became unavailable after non-zero exit (${code})`);
-          }
-          this.agents.delete(key);
+        proc.on('error', (err) => {
+          console.error(`[Agent:${key}] Process error:`, err);
           this.setAgentStatus(key, 'error');
-        }
-        finish();
-      });
+        });
 
-      const prompt = this.buildAgentTurnPrompt(agent, text);
-      proc.stdin?.write(prompt);
-      proc.stdin?.write('\n');
-      proc.stdin?.end();
+        proc.on('exit', (code, signal) => {
+          console.log(
+            `[Agent:${key}] Turn exited (attempt ${attempt + 1}): code=${code}, signal=${signal}`
+          );
+          if (
+            !transportError &&
+            typeof code === 'number' &&
+            code !== 0
+          ) {
+            if (lastCodexError) {
+              console.warn(
+                `[Agent:${key}] Session became unavailable after non-zero exit (${code}). ` +
+                `Last Codex error: ${lastCodexError}`
+              );
+            } else {
+              console.warn(`[Agent:${key}] Session became unavailable after non-zero exit (${code})`);
+            }
+            this.agents.delete(key);
+            this.setAgentStatus(key, 'error');
+          }
+          finish();
+        });
+
+        const prompt = this.buildAgentTurnPrompt(agent, text);
+        proc.stdin?.write(prompt);
+        proc.stdin?.write('\n');
+        proc.stdin?.end();
+      };
+
+      attemptTurn(0);
     });
   }
 
@@ -1281,6 +1394,11 @@ export class AgentProcessManager {
     return /failed to renew cache TTL: EOF while parsing a value at line 1 column 0/i.test(text);
   }
 
+  private isCodexTransportError(text: string): boolean {
+    return /failed to connect to websocket/i.test(text) &&
+      /(connection reset by peer|os error 54|io error|econnreset)/i.test(text);
+  }
+
   private resetThreadCompactionState(key: string): void {
     this.agentAutoTickNoChangeStreak[key] = 0;
     this.agentPendingThreadCompaction[key] = false;
@@ -1351,6 +1469,7 @@ export class AgentProcessManager {
     return this.enqueueTurn('jam-start', async () => {
       this.roundNumber++;
       const ctx = this.musicalContext;
+      const audioFeedback = this.getFreshAudioFeedbackSection();
       const patternsBeforeTurn = { ...this.agentPatterns };
 
       const responsePromises = this.activeAgents.map((key) => {
@@ -1366,6 +1485,7 @@ export class AgentProcessManager {
           roundNumber: this.roundNumber,
           musicalContext: ctx,
           bandStateLines,
+          audioFeedback,
         });
 
         this.setAgentStatus(key, 'thinking');
@@ -1401,6 +1521,7 @@ export class AgentProcessManager {
   ): string {
     const ctx = this.musicalContext;
     const isBroadcast = !targetAgent;
+    const audioFeedback = this.getFreshAudioFeedbackSection();
 
     const bandStateLines = this.activatedAgents
       .filter((k) => k !== key)
@@ -1413,6 +1534,7 @@ export class AgentProcessManager {
       isBroadcast,
       currentPattern: this.agentPatterns[key] || 'silence',
       bandStateLines,
+      audioFeedback,
     });
   }
 
@@ -1567,6 +1689,7 @@ export class AgentProcessManager {
 
       this.roundNumber++;
       const ctx = this.musicalContext;
+      const audioFeedback = this.getFreshAudioFeedbackSection();
 
       console.log(`[AgentManager] Auto-tick round ${this.roundNumber}`);
 
@@ -1584,6 +1707,7 @@ export class AgentProcessManager {
           musicalContext: ctx,
           currentPattern: myPattern,
           bandStateLines,
+          audioFeedback,
         });
 
         this.setAgentStatus(key, 'thinking');
