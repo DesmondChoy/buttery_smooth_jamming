@@ -20,10 +20,16 @@ interface JamTopBarProps {
   showAutoTickCountdown?: boolean;
   errorMessage?: string | null;
   isContextInspectorEnabled?: boolean;
+  isCameraConductorEnabled?: boolean;
+  isCameraConductorReady?: boolean;
+  canEnableCameraConductor?: boolean;
+  cameraConductorError?: string | null;
+  cameraConductorIntentStatus?: string | null;
   onSelectPreset: (presetId: string | null) => void;
   onPlayJam: () => void;
   onStopJam: () => void;
   onToggleContextInspector?: (enabled: boolean) => void;
+  onToggleCameraConductor?: (enabled: boolean) => void;
 }
 
 export function JamTopBar({
@@ -41,10 +47,16 @@ export function JamTopBar({
   showAutoTickCountdown = false,
   errorMessage,
   isContextInspectorEnabled = false,
+  isCameraConductorEnabled = false,
+  isCameraConductorReady = false,
+  canEnableCameraConductor = false,
+  cameraConductorError,
+  cameraConductorIntentStatus = null,
   onSelectPreset,
   onPlayJam,
   onStopJam,
   onToggleContextInspector,
+  onToggleCameraConductor,
 }: JamTopBarProps) {
   const [clockNowMs, setClockNowMs] = useState<number>(() => Date.now());
   const [localAutoTickDeadlineMs, setLocalAutoTickDeadlineMs] = useState<number | null>(null);
@@ -157,6 +169,18 @@ export function JamTopBar({
         Context Inspector: {isContextInspectorEnabled ? 'On' : 'Off'}
       </button>
 
+      <button
+        onClick={() => onToggleCameraConductor?.(!isCameraConductorEnabled)}
+        disabled={!canEnableCameraConductor}
+        className={`px-2.5 py-1 rounded text-xs font-medium border shrink-0 transition-colors ${
+          isCameraConductorEnabled
+            ? 'border-cyan-400/60 bg-cyan-500/15 text-cyan-200'
+            : 'border-stage-border bg-stage-mid/40 text-stage-text hover:bg-stage-mid/70'
+        } disabled:opacity-50 disabled:cursor-not-allowed`}
+      >
+        Camera Conductor: {isCameraConductorEnabled ? 'On' : 'Off'}
+      </button>
+
       {isPresetLocked && (
         <span className="text-xs text-amber-300 bg-amber-500/10 border border-amber-500/30 px-2 py-1 rounded shrink-0">
           Preset locked after first join
@@ -197,6 +221,26 @@ export function JamTopBar({
       {errorMessage && (
         <span className="text-xs text-red-300 bg-red-500/10 border border-red-500/30 px-2 py-1 rounded shrink-0 max-w-[420px] truncate">
           {errorMessage}
+        </span>
+      )}
+      {cameraConductorError && (
+        <span className="text-xs text-red-300 bg-red-500/10 border border-red-500/30 px-2 py-1 rounded shrink-0 max-w-[420px] truncate">
+          Camera: {cameraConductorError}
+        </span>
+      )}
+      {cameraConductorIntentStatus && (
+        <span className="text-xs text-cyan-200 bg-cyan-500/10 border border-cyan-500/30 px-2 py-1 rounded shrink-0 max-w-[520px] truncate">
+          {cameraConductorIntentStatus}
+        </span>
+      )}
+      {canEnableCameraConductor && isCameraConductorEnabled && isCameraConductorReady && (
+        <span className="text-xs text-cyan-300 bg-cyan-500/10 border border-cyan-500/30 px-2 py-1 rounded shrink-0">
+          Camera ready
+        </span>
+      )}
+      {canEnableCameraConductor && isCameraConductorEnabled && !isCameraConductorReady && (
+        <span className="text-xs text-stage-text bg-stage-mid/40 border border-stage-border px-2 py-1 rounded shrink-0">
+          Enabling camera…
         </span>
       )}
 

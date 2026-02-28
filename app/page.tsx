@@ -9,9 +9,21 @@ import { BossInputBar } from '@/components/BossInputBar';
 import { PatternDisplay } from '@/components/PatternDisplay';
 import { AgentSelectionModal } from '@/components/AgentSelectionModal';
 import { AudioStartButton } from '@/components/AudioStartButton';
-import { useAudioFeedback, useJamSession, useRuntimeTerminal, useStrudel, useWebSocket } from '@/hooks';
+import {
+  useAudioFeedback,
+  useCameraConductor,
+  useJamSession,
+  useRuntimeTerminal,
+  useStrudel,
+  useWebSocket,
+} from '@/hooks';
 import { PRESETS } from '@/lib/musical-context-presets';
-import { AGENT_META, type ExecutePayload } from '@/lib/types';
+import {
+  AGENT_META,
+  type CameraDirectivePayload,
+  type ConductorInterpreterResult,
+  type ExecutePayload,
+} from '@/lib/types';
 
 const StrudelPanel = dynamic(
   () => import('@/components/StrudelPanel'),
@@ -35,6 +47,8 @@ export default function Home() {
   const [jamPlayRequested, setJamPlayRequested] = useState(false);
   const [lastSentJamPresetId, setLastSentJamPresetId] = useState<string | null>(null);
   const [isContextInspectorEnabled, setIsContextInspectorEnabled] = useState(false);
+  const [isCameraConductorEnabled, setIsCameraConductorEnabled] = useState(false);
+  const [lastConductorIntentSummary, setLastConductorIntentSummary] = useState<string | null>(null);
   const pendingExecuteFrameRef = useRef<number | null>(null);
 
   const { ref, setCode, evaluate, stop, onEditorReady } = useStrudel();
@@ -51,8 +65,28 @@ export default function Home() {
     jamBroadcastRef.current?.(message);
   }, []);
 
+  const handleConductorIntent = useCallback((result: ConductorInterpreterResult) => {
+    const confidencePct = Math.round(Math.max(0, Math.min(1, result.confidence)) * 100);
+    if (result.accepted) {
+      const directive = result.interpretation?.directive?.trim();
+      setLastConductorIntentSummary(
+        directive
+          ? `Camera intent accepted (${confidencePct}%): ${directive}`
+          : `Camera intent accepted (${confidencePct}%)`
+      );
+      return;
+    }
+
+    const reason = result.rejected_reason || result.reason || 'Rejected by policy';
+    setLastConductorIntentSummary(`Camera intent rejected (${confidencePct}%): ${reason}`);
+  }, []);
+
   // Lift useRuntimeTerminal to page level so sendStartJam is accessible
-  const runtimeTerminal = useRuntimeTerminal({ onToolUse: handleToolUse, onJamBroadcast: handleJamBroadcast });
+  const runtimeTerminal = useRuntimeTerminal({
+    onToolUse: handleToolUse,
+    onJamBroadcast: handleJamBroadcast,
+    onConductorIntent: handleConductorIntent,
+  });
 
   const jam = useJamSession({
     sendStartJam: runtimeTerminal.sendStartJam,
@@ -67,6 +101,7 @@ export default function Home() {
     lines: runtimeLines,
     sendJamPreset,
     sendBossDirective,
+    sendCameraDirective,
     sendMessage,
     clearLines,
     setContextInspectorEnabled,
@@ -108,14 +143,6 @@ export default function Home() {
     onFeedback: sendAudioFeedback,
     analysisIntervalMs: 1_000,
   });
-
-  useEffect(() => {
-    setContextInspectorEnabled(isJamming && isContextInspectorEnabled);
-  }, [
-    isJamming,
-    isContextInspectorEnabled,
-    setContextInspectorEnabled,
-  ]);
 
   // Per-agent message filtering: each agent sees their own optional commentary
   // plus boss directives (both broadcast and targeted)
@@ -421,6 +448,39 @@ export default function Home() {
     && isJamPlayArmed
   );
 
+  const canUseCameraConductor = Boolean(
+    isJamming
+    && isJamReady
+    && isRuntimeConnected
+    && canSendJamDirectives
+  );
+
+  const handleCameraVisionPayload = useCallback((payload: CameraDirectivePayload) => {
+    sendCameraDirective(payload, selectedAgents);
+  }, [sendCameraDirective, selectedAgents]);
+
+  const {
+    isReady: isCameraConductorReady,
+    error: cameraConductorError,
+  } = useCameraConductor({
+    enabled: isCameraConductorEnabled && canUseCameraConductor,
+    canSendDirectives: canSendJamDirectives,
+    isJamming: canUseCameraConductor,
+    onVisionPayload: handleCameraVisionPayload,
+  });
+
+  const cameraConductorIntentStatus = isCameraConductorEnabled && canUseCameraConductor && isJamming
+    ? lastConductorIntentSummary
+    : null;
+
+  useEffect(() => {
+    setContextInspectorEnabled(isJamming && isContextInspectorEnabled);
+  }, [
+    isJamming,
+    isContextInspectorEnabled,
+    setContextInspectorEnabled,
+  ]);
+
   const handleSendDirective = useCallback((text: string, targetAgent?: string) => {
     if (!isJamming || !isJamReady || !selectedJamPresetId || !isJamPlayArmed) return;
     addBossDirective(text, targetAgent);
@@ -496,6 +556,12 @@ export default function Home() {
               onStopJam={handleStopJamAndAudio}
               isContextInspectorEnabled={isContextInspectorEnabled}
               onToggleContextInspector={setIsContextInspectorEnabled}
+              isCameraConductorEnabled={isCameraConductorEnabled}
+              isCameraConductorReady={isCameraConductorReady}
+              canEnableCameraConductor={canUseCameraConductor}
+              cameraConductorError={cameraConductorError}
+              cameraConductorIntentStatus={cameraConductorIntentStatus}
+              onToggleCameraConductor={setIsCameraConductorEnabled}
             />
 
             {/* Agent columns grid */}

@@ -5,6 +5,7 @@ export { useStrudel } from './useStrudel';
 export type { UseStrudelReturn } from './useStrudel';
 
 export { useRuntimeTerminal, useAiTerminal, useCodexTerminal } from './useRuntimeTerminal';
+export { useCameraConductor } from './useCameraConductor';
 export { useAudioFeedback } from './useAudioFeedback';
 export type {
   RuntimeStatus,

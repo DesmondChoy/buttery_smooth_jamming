@@ -6,7 +6,17 @@ import { AgentProcessManager } from '@/lib/agent-process-manager';
 import { evaluate_jam_admission } from '@/lib/jam-admission';
 import { createNormalRuntimeProcess } from '@/lib/runtime-factory';
 import type { RuntimeEvent, RuntimeProcess } from '@/lib/runtime-process';
-import type { AudioFeatureSnapshot } from '@/lib/types';
+import {
+  apply_camera_sample_freshness,
+  build_conductor_interpretation_result,
+  interpretCameraDirective,
+  normalize_camera_directive_payload,
+} from '@/lib/camera-directive-interpreter';
+import type {
+  AudioFeatureSnapshot,
+  CameraDirectivePayload,
+  ConductorInterpreterResult,
+} from '@/lib/types';
 
 // Required GET export for next-ws to recognize this as a WebSocket route
 export function GET() {
@@ -24,6 +34,8 @@ const contextInspectorEnabledByClient = new Map<WebSocket, boolean>();
 
 const MAX_CONCURRENT_JAMS = getPositiveInt(process.env.MAX_CONCURRENT_JAMS, 1);
 const MAX_TOTAL_AGENT_PROCESSES = getPositiveInt(process.env.MAX_TOTAL_AGENT_PROCESSES, 4);
+const CAMERA_SAMPLE_MAX_AGE_MS = getPositiveInt(process.env.CAMERA_SAMPLE_MAX_AGE_MS, 5_000);
+const CAMERA_SAMPLE_MAX_FUTURE_SKEW_MS = getPositiveInt(process.env.CAMERA_SAMPLE_MAX_FUTURE_SKEW_MS, 1_500);
 
 // Per-client timing for latency measurement
 const directiveTimers = new Map<WebSocket, { start: number; lastEvent: number; events: string[] }>();
@@ -64,6 +76,7 @@ interface BrowserMessage {
     | 'start_jam'
     | 'set_jam_preset'
     | 'boss_directive'
+    | 'camera_directive'
     | 'stop_jam'
     | 'audio_feedback'
     | 'set_context_inspector';
@@ -73,13 +86,23 @@ interface BrowserMessage {
   presetId?: string;
   enabled?: boolean;
   payload?: AudioFeatureSnapshot;
+  // Vision capture payload from browser camera hook.
+  visionPayload?: CameraDirectivePayload;
 }
 
 interface ServerMessage {
-  type: 'text' | 'tool_use' | 'tool_result' | 'status' | 'error' | 'pong';
+  type:
+    | 'text'
+    | 'tool_use'
+    | 'tool_result'
+    | 'status'
+    | 'error'
+    | 'pong'
+    | 'conductor_intent';
   text?: string;
   toolName?: string;
   toolInput?: Record<string, unknown>;
+  payload?: unknown;
   status?: 'connecting' | 'ready' | 'thinking' | 'done';
   error?: string;
   code?: 'jam_capacity_exceeded' | 'agent_capacity_exceeded';
@@ -479,6 +502,123 @@ export function SOCKET(
             });
           } else {
             sendErrorToClient(client, 'Cannot send empty boss directive.');
+            sendToClient(client, { type: 'status', status: 'done' });
+          }
+          break;
+        }
+
+        case 'camera_directive': {
+          const messagePayload = message.visionPayload;
+          if (!messagePayload) {
+            sendToClient(client, {
+              type: 'conductor_intent',
+              payload: {
+                accepted: false,
+                confidence: 0,
+                reason: 'invalid_request',
+                explicit_target: null,
+                rejected_reason: 'Missing camera vision payload.',
+              } satisfies ConductorInterpreterResult,
+            });
+            sendErrorToClient(client, 'Missing camera vision payload.');
+            sendToClient(client, { type: 'status', status: 'done' });
+            break;
+          }
+
+          const sample = normalize_camera_directive_payload(messagePayload);
+          if (!sample) {
+            sendToClient(client, {
+              type: 'conductor_intent',
+              payload: {
+                accepted: false,
+                confidence: 0,
+                reason: 'invalid_payload',
+                explicit_target: null,
+                rejected_reason: 'Invalid camera vision payload.',
+              } satisfies ConductorInterpreterResult,
+            });
+            sendErrorToClient(client, 'Invalid camera vision payload.');
+            sendToClient(client, { type: 'status', status: 'done' });
+            break;
+          }
+          const freshnessCheckedSample = apply_camera_sample_freshness(sample, {
+            maxAgeMs: CAMERA_SAMPLE_MAX_AGE_MS,
+            maxFutureSkewMs: CAMERA_SAMPLE_MAX_FUTURE_SKEW_MS,
+          });
+
+          try {
+            await awaitPendingJamStart(client);
+          } catch (error) {
+            const err = error as Error;
+            sendErrorToClient(client, `Cannot send camera cue before jam startup completes: ${err.message}`);
+            sendToClient(client, { type: 'status', status: 'done' });
+            break;
+          }
+
+          const manager = agentManagers.get(client);
+          if (!manager) {
+            sendToClient(client, {
+              type: 'conductor_intent',
+              payload: {
+                accepted: false,
+                confidence: 0,
+                reason: 'invalid_request',
+                explicit_target: null,
+                rejected_reason: 'No active jam session for camera cue.',
+              } satisfies ConductorInterpreterResult,
+            });
+            sendErrorToClient(client, 'No active jam session for camera cue.');
+            sendToClient(client, { type: 'status', status: 'done' });
+            break;
+          }
+
+          startTimer(client, 'CAMERA_DIRECTIVE interpretation');
+          sendToClient(client, { type: 'status', status: 'thinking' });
+
+          try {
+            const interpretation = await interpretCameraDirective(workingDir, freshnessCheckedSample)
+              .catch((error) => ({
+                interpretation: null,
+                diagnostics: {
+                  model_exit_code: null,
+                  parse_error: error instanceof Error ? error.message : 'Interpreter execution failed.',
+                },
+              }));
+            const interpreted = build_conductor_interpretation_result(
+              interpretation.interpretation,
+              'interpreted',
+              interpretation.diagnostics
+            );
+            sendToClient(client, { type: 'conductor_intent', payload: interpreted });
+            if (!interpreted.accepted || !interpreted.interpretation?.directive.trim()) {
+              endTimer(client);
+              sendToClient(client, { type: 'status', status: 'done' });
+              break;
+            }
+
+            const explicitTarget = interpreted.explicit_target ?? interpreted.interpretation?.target_agent ?? undefined;
+            await manager.handleDirective(
+              interpreted.interpretation.directive,
+              explicitTarget ?? undefined,
+              message.activeAgents || []
+            );
+            endTimer(client);
+            sendToClient(client, { type: 'status', status: 'done' });
+          } catch (error) {
+            const err = error as Error;
+            endTimer(client);
+            console.error('[Runtime WS] Camera directive interpretation failed:', err);
+            sendToClient(client, {
+              type: 'conductor_intent',
+              payload: {
+                accepted: false,
+                confidence: 0,
+                reason: 'model_execution_failure',
+                explicit_target: null,
+                rejected_reason: err.message || 'Camera directive request failed.',
+              } satisfies ConductorInterpreterResult,
+            });
+            sendErrorToClient(client, `Camera directive failed: ${err.message}`);
             sendToClient(client, { type: 'status', status: 'done' });
           }
           break;

@@ -1,6 +1,9 @@
 'use client';
 
 import type { AudioFeatureSnapshot } from '@/lib/types';
+import type { ConductorInterpreterResult } from '@/lib/types';
+import type { CameraDirectivePayload } from '@/lib/types';
+import type { JamAgentKey } from '@/lib/types';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 
@@ -19,6 +22,7 @@ export interface UseRuntimeTerminalOptions {
   url?: string;
   onToolUse?: (toolName: string, toolInput: Record<string, unknown>) => void;
   onJamBroadcast?: (message: { type: string; payload: unknown }) => void;
+  onConductorIntent?: (result: ConductorInterpreterResult) => void;
 }
 
 export interface UseRuntimeTerminalReturn {
@@ -33,6 +37,7 @@ export interface UseRuntimeTerminalReturn {
   sendStopJam: () => void;
   setContextInspectorEnabled: (enabled: boolean) => void;
   sendAudioFeedback: (payload: AudioFeatureSnapshot) => void;
+  sendCameraDirective: (payload: CameraDirectivePayload, activeAgents?: string[]) => void;
   clearLines: () => void;
 }
 
@@ -40,6 +45,12 @@ export type UseCodexTerminalOptions = UseRuntimeTerminalOptions;
 export type UseCodexTerminalReturn = UseRuntimeTerminalReturn;
 export type UseAiTerminalOptions = UseRuntimeTerminalOptions;
 export type UseAiTerminalReturn = UseRuntimeTerminalReturn;
+
+const CONDUCTOR_INTENT_AGENT_KEYS = new Set(['drums', 'bass', 'melody', 'chords'] as const);
+
+function isConductorAgentKey(value: unknown): value is JamAgentKey {
+  return typeof value === 'string' && CONDUCTOR_INTENT_AGENT_KEYS.has(value as JamAgentKey);
+}
 
 function getDefaultWsUrl(): string {
   if (typeof window === 'undefined') {
@@ -52,7 +63,12 @@ function getDefaultWsUrl(): string {
 export function useRuntimeTerminal(
   options: UseRuntimeTerminalOptions = {}
 ): UseRuntimeTerminalReturn {
-  const { url = getDefaultWsUrl(), onToolUse, onJamBroadcast } = options;
+  const {
+    url = getDefaultWsUrl(),
+    onToolUse,
+    onJamBroadcast,
+    onConductorIntent,
+  } = options;
 
   const [lines, setLines] = useState<TerminalLine[]>([]);
   const [status, setStatus] = useState<RuntimeStatus>('connecting');
@@ -62,6 +78,7 @@ export function useRuntimeTerminal(
   const wsRef = useRef<WebSocket | null>(null);
   const onToolUseRef = useRef(onToolUse);
   const onJamBroadcastRef = useRef(onJamBroadcast);
+  const onConductorIntentRef = useRef(onConductorIntent);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const currentAssistantLineRef = useRef<string | null>(null);
   const reconnectAttemptsRef = useRef(0);
@@ -73,7 +90,8 @@ export function useRuntimeTerminal(
   useEffect(() => {
     onToolUseRef.current = onToolUse;
     onJamBroadcastRef.current = onJamBroadcast;
-  }, [onToolUse, onJamBroadcast]);
+    onConductorIntentRef.current = onConductorIntent;
+  }, [onToolUse, onJamBroadcast, onConductorIntent]);
 
   const addLine = useCallback((type: TerminalLine['type'], text: string) => {
     const line: TerminalLine = {
@@ -166,6 +184,41 @@ export function useRuntimeTerminal(
           case 'directive_error':
             onJamBroadcastRef.current?.(message);
             break;
+
+          case 'conductor_intent':
+            if (message.payload && typeof message.payload === 'object') {
+              const payload = message.payload as Record<string, unknown>;
+              const interpretation = (payload.interpretation !== null && typeof payload.interpretation === 'object')
+                ? payload.interpretation as ConductorInterpreterResult['interpretation']
+                : undefined;
+              const diagnostics = (payload.diagnostics !== null && typeof payload.diagnostics === 'object')
+                ? payload.diagnostics as ConductorInterpreterResult['diagnostics']
+                : undefined;
+              onConductorIntentRef.current?.({
+                accepted: typeof payload.accepted === 'boolean' ? payload.accepted : false,
+                confidence: typeof payload.confidence === 'number' ? payload.confidence : 0,
+                reason:
+                  typeof payload.reason === 'string'
+                    ? payload.reason
+                    : 'model_parse_failure',
+                explicit_target:
+                  isConductorAgentKey(payload.explicit_target)
+                    ? payload.explicit_target
+                    : null,
+                ...(interpretation ? { interpretation } : {}),
+                ...(typeof payload.rejected_reason === 'string' ? { rejected_reason: payload.rejected_reason } : {}),
+                ...(diagnostics ? { diagnostics } : {}),
+              });
+            } else {
+              onConductorIntentRef.current?.({
+                accepted: false,
+                confidence: 0,
+                reason: 'model_parse_failure',
+                explicit_target: null,
+                rejected_reason: 'Malformed conductor_intent message from runtime.',
+              });
+            }
+            break;
         }
       } catch (err) {
         console.error('Failed to parse WebSocket message:', err);
@@ -202,7 +255,6 @@ export function useRuntimeTerminal(
       setError(null);
       setStatus('connecting');
       reconnectAttemptsRef.current = 0; // Reset on successful connection
-
       ws.send(JSON.stringify({
         type: 'set_context_inspector',
         enabled: contextInspectorEnabledRef.current,
@@ -320,6 +372,35 @@ export function useRuntimeTerminal(
     }
   }, []);
 
+  const sendCameraDirective = useCallback((
+    payload: CameraDirectivePayload,
+    activeAgents?: string[]
+  ) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        type: 'camera_directive',
+        visionPayload: payload,
+        ...(activeAgents ? { activeAgents } : {}),
+      }));
+      setStatus('thinking');
+      setError(null);
+      return;
+    }
+
+    if (wsRef.current?.readyState === WebSocket.CONNECTING) {
+      setError('Runtime is connecting; dropped camera directive.');
+      return;
+    }
+
+    if (!shouldReconnectRef.current) {
+      setError('Camera directives are blocked while runtime is disconnected.');
+      return;
+    }
+
+    setError('Runtime disconnected; dropped camera directive.');
+    connect();
+  }, [connect]);
+
   const setContextInspectorEnabled = useCallback((enabled: boolean) => {
     contextInspectorEnabledRef.current = enabled;
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -351,6 +432,7 @@ export function useRuntimeTerminal(
     sendJamPreset,
     sendBossDirective,
     sendStopJam,
+    sendCameraDirective,
     setContextInspectorEnabled,
     sendAudioFeedback,
     clearLines,

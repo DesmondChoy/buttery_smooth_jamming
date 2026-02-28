@@ -85,6 +85,85 @@ export interface MusicalContextPayload {
   musicalContext: MusicalContext;
 }
 
+export type JamAgentKey = 'drums' | 'bass' | 'melody' | 'chords';
+
+export interface CameraMotionVector {
+  score: number;
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+  centroidX: number;
+  centroidY: number;
+  maxDelta: number;
+}
+
+export interface CameraFaceSnapshot {
+  present: boolean;
+  motion: number;
+  areaRatio: number;
+  stability: number;
+  box?: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+}
+
+export interface CameraVisionSample {
+  capturedAtMs: number;
+  sampleIntervalMs: number;
+  frameWidth: number;
+  frameHeight: number;
+  motion: CameraMotionVector;
+  isStale?: boolean;
+  face?: CameraFaceSnapshot;
+}
+
+export interface CameraDirectivePayload {
+  sample: CameraVisionSample;
+}
+
+export interface InterpretedVisionDirective {
+  directive: string;
+  targetAgent?: JamAgentKey;
+  confidence: number;
+  rationale?: string;
+}
+
+export type ConductorInterpreterReason =
+  | 'interpreted'
+  | 'below_confidence_threshold'
+  | 'stale_sample'
+  | 'model_parse_failure'
+  | 'model_execution_failure'
+  | 'invalid_request'
+  | 'invalid_payload';
+
+export interface ConductorInterpreterDiagnostics {
+  model_exit_code?: number | null;
+  model_exit_signal?: string | null;
+  model_timed_out?: boolean;
+  parse_error?: string;
+  raw_sample_timestamp_ms?: number;
+  payload_sample_interval_ms?: number;
+}
+
+export interface ConductorInterpreterResult {
+  accepted: boolean;
+  confidence: number;
+  reason: ConductorInterpreterReason | string;
+  explicit_target: JamAgentKey | null;
+  interpretation?: {
+    directive: string;
+    rationale?: string;
+    target_agent?: JamAgentKey;
+  };
+  rejected_reason?: string;
+  diagnostics?: ConductorInterpreterDiagnostics;
+}
+
 // Jam session types (multi-agent band)
 
 export interface MusicalContext {
