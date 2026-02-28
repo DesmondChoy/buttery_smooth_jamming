@@ -5,6 +5,7 @@ export { useStrudel } from './useStrudel';
 export type { UseStrudelReturn } from './useStrudel';
 
 export { useRuntimeTerminal, useAiTerminal, useCodexTerminal } from './useRuntimeTerminal';
+export { useAudioFeedback } from './useAudioFeedback';
 export type {
   RuntimeStatus,
   AiStatus,
@@ -17,6 +18,7 @@ export type {
   UseCodexTerminalOptions,
   UseCodexTerminalReturn,
 } from './useRuntimeTerminal';
+export type { UseAudioFeedbackOptions } from './useAudioFeedback';
 
 export { useJamSession } from './useJamSession';
 export type { UseJamSessionReturn } from './useJamSession';

@@ -5,6 +5,7 @@ import { AgentProcessManager } from '@/lib/agent-process-manager';
 import { evaluate_jam_admission } from '@/lib/jam-admission';
 import { createNormalRuntimeProcess } from '@/lib/runtime-factory';
 import type { RuntimeEvent, RuntimeProcess } from '@/lib/runtime-process';
+import type { AudioFeatureSnapshot } from '@/lib/types';
 
 // Required GET export for next-ws to recognize this as a WebSocket route
 export function GET() {
@@ -54,11 +55,20 @@ function endTimer(client: WebSocket): void {
 
 // Message types for browser <-> server communication
 interface BrowserMessage {
-  type: 'user_input' | 'stop' | 'ping' | 'start_jam' | 'set_jam_preset' | 'boss_directive' | 'stop_jam';
+  type:
+    | 'user_input'
+    | 'stop'
+    | 'ping'
+    | 'start_jam'
+    | 'set_jam_preset'
+    | 'boss_directive'
+    | 'stop_jam'
+    | 'audio_feedback';
   text?: string;
   activeAgents?: string[];
   targetAgent?: string;
   presetId?: string;
+  payload?: AudioFeatureSnapshot;
 }
 
 interface ServerMessage {
@@ -458,6 +468,18 @@ export function SOCKET(
         case 'ping':
           sendToClient(client, { type: 'pong' });
           break;
+
+        case 'audio_feedback': {
+          if (!message.payload) break;
+          if (!agentManagers.get(client)) break;
+
+          const manager = agentManagers.get(client);
+          if (!manager) break;
+
+          const candidate = message.payload as AudioFeatureSnapshot;
+          manager.handleAudioFeedback(candidate);
+          break;
+        }
       }
     } catch (error) {
       console.error('[Runtime WS] Failed to parse message:', error);

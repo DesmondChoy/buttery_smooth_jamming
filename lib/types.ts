@@ -16,6 +16,7 @@ export type WSMessageType =
   | 'musical_context_update'
   | 'agent_status'
   | 'start_jam'
+  | 'audio_feedback'
   | 'directive_error';
 
 export interface WSMessage<T = unknown> {
@@ -153,6 +154,18 @@ export interface JamChatMessage {
   pattern?: string;        // optional code snippet
   targetAgent?: string;    // @mention-directed boss directive target
   timestamp: Date;
+}
+
+export interface AudioFeatureSnapshot {
+  capturedAtMs: number;
+  windowMs: number;
+  loudnessDb: number;
+  spectralCentroidHz: number;
+  lowBandEnergy: number;
+  midBandEnergy: number;
+  highBandEnergy: number;
+  spectralFlux: number;
+  onsetDensity: number;
 }
 
 // Pattern parser types — structured summary of agent Strudel patterns

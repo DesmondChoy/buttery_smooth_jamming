@@ -1,5 +1,7 @@
 'use client';
 
+import type { AudioFeatureSnapshot } from '@/lib/types';
+
 import { useState, useEffect, useRef, useCallback } from 'react';
 
 export type RuntimeStatus = 'connecting' | 'ready' | 'thinking' | 'done' | 'error';
@@ -29,6 +31,7 @@ export interface UseRuntimeTerminalReturn {
   sendJamPreset: (presetId: string) => void;
   sendBossDirective: (text: string, targetAgent?: string, activeAgents?: string[]) => void;
   sendStopJam: () => void;
+  sendAudioFeedback: (payload: AudioFeatureSnapshot) => void;
   clearLines: () => void;
 }
 
@@ -290,6 +293,15 @@ export function useRuntimeTerminal(
     }
   }, []);
 
+  const sendAudioFeedback = useCallback((payload: AudioFeatureSnapshot) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        type: 'audio_feedback',
+        payload,
+      }));
+    }
+  }, []);
+
   const clearLines = useCallback(() => {
     setLines([]);
     currentAssistantLineRef.current = null;
@@ -305,6 +317,7 @@ export function useRuntimeTerminal(
     sendJamPreset,
     sendBossDirective,
     sendStopJam,
+    sendAudioFeedback,
     clearLines,
   };
 }

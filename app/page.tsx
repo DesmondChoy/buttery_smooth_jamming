@@ -9,7 +9,7 @@ import { BossInputBar } from '@/components/BossInputBar';
 import { PatternDisplay } from '@/components/PatternDisplay';
 import { AgentSelectionModal } from '@/components/AgentSelectionModal';
 import { AudioStartButton } from '@/components/AudioStartButton';
-import { useWebSocket, useStrudel, useRuntimeTerminal, useJamSession } from '@/hooks';
+import { useAudioFeedback, useJamSession, useRuntimeTerminal, useStrudel, useWebSocket } from '@/hooks';
 import { PRESETS } from '@/lib/musical-context-presets';
 import { AGENT_META, type ExecutePayload } from '@/lib/types';
 
@@ -68,6 +68,7 @@ export default function Home() {
     clearLines,
     sendJamPreset,
     sendBossDirective,
+    sendAudioFeedback,
   } = runtimeTerminal;
 
   // Destructure stable callbacks to satisfy React Compiler + exhaustive-deps
@@ -97,6 +98,13 @@ export default function Home() {
     handleMusicalContextUpdate,
     handleJamStateUpdate,
   } = jam;
+
+  useAudioFeedback({
+    enabled: isJamming && audioReady && isRuntimeConnected,
+    isAudioRunning: isPlaying,
+    onFeedback: sendAudioFeedback,
+    analysisIntervalMs: 1_000,
+  });
 
   // Per-agent message filtering: each agent sees their own optional commentary
   // plus boss directives (both broadcast and targeted)
@@ -147,10 +155,43 @@ export default function Home() {
     }
 
     if (payload && typeof payload === 'object' && 'code' in payload) {
-      const maybeCode = (payload as { code?: unknown }).code;
-      if (typeof maybeCode === 'string') {
-        return { code: maybeCode };
+      const payloadAsRecord = payload as Record<string, unknown>;
+      const maybeCode = payloadAsRecord.code;
+      if (typeof maybeCode !== 'string') {
+        return null;
       }
+
+      const turnSource = payloadAsRecord.turnSource;
+      const executePayload: ExecutePayload = {
+        code: maybeCode,
+      };
+
+      if (typeof payloadAsRecord.sessionId === 'string') {
+        executePayload.sessionId = payloadAsRecord.sessionId;
+      }
+      if (typeof payloadAsRecord.round === 'number') {
+        executePayload.round = payloadAsRecord.round;
+      }
+      if (
+        turnSource === 'jam-start'
+        || turnSource === 'directive'
+        || turnSource === 'auto-tick'
+        || turnSource === 'staged-silent'
+      ) {
+        executePayload.turnSource = turnSource;
+      }
+      if (Array.isArray(payloadAsRecord.changedAgents)) {
+        executePayload.changedAgents = payloadAsRecord.changedAgents
+          .filter((agent) => typeof agent === 'string') as string[];
+      }
+      if (typeof payloadAsRecord.changed === 'boolean') {
+        executePayload.changed = payloadAsRecord.changed;
+      }
+      if (typeof payloadAsRecord.issuedAtMs === 'number') {
+        executePayload.issuedAtMs = payloadAsRecord.issuedAtMs;
+      }
+
+      return executePayload;
     }
 
     return null;

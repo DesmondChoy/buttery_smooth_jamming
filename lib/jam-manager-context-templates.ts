@@ -1,9 +1,11 @@
 import type { MusicalContext } from './types';
+import type { AudioFeatureSnapshot } from './types';
 
 export interface JamStartManagerContextInput {
   roundNumber: number;
   musicalContext: MusicalContext;
   bandStateLines: string[];
+  audioFeedback?: AudioFeatureSnapshot;
 }
 
 export interface DirectiveManagerContextInput {
@@ -13,6 +15,7 @@ export interface DirectiveManagerContextInput {
   isBroadcast: boolean;
   currentPattern: string;
   bandStateLines: string[];
+  audioFeedback?: AudioFeatureSnapshot;
 }
 
 export interface AutoTickManagerContextInput {
@@ -20,6 +23,7 @@ export interface AutoTickManagerContextInput {
   musicalContext: MusicalContext;
   currentPattern: string;
   bandStateLines: string[];
+  audioFeedback?: AudioFeatureSnapshot;
 }
 
 function buildMusicalContextLines(musicalContext: MusicalContext): [string, string, string] {
@@ -30,8 +34,25 @@ function buildMusicalContextLines(musicalContext: MusicalContext): [string, stri
   ];
 }
 
+function buildAudioFeedbackLines(audioFeedback: AudioFeatureSnapshot): string[] {
+  const ageSeconds = Math.max(
+    0,
+    Math.round((Date.now() - audioFeedback.capturedAtMs) / 1000)
+  );
+
+  return [
+    `AUDIO SNAPSHOT (${ageSeconds}s old):`,
+    `- loudness=${audioFeedback.loudnessDb}/100 (approx loudness score)`,
+    `- centroid=${audioFeedback.spectralCentroidHz}Hz`,
+    `- band_energy: low=${audioFeedback.lowBandEnergy}, mid=${audioFeedback.midBandEnergy}, high=${audioFeedback.highBandEnergy}`,
+    `- spectral_flux=${audioFeedback.spectralFlux}`,
+    `- onset_density=${audioFeedback.onsetDensity}`,
+  ];
+}
+
 export function buildJamStartManagerContext(input: JamStartManagerContextInput): string {
   const [genreLine, contextLine, chordLine] = buildMusicalContextLines(input.musicalContext);
+  const audioLines = input.audioFeedback ? buildAudioFeedbackLines(input.audioFeedback) : [];
 
   return [
     'JAM START — CONTEXT',
@@ -40,6 +61,8 @@ export function buildJamStartManagerContext(input: JamStartManagerContextInput):
     contextLine,
     chordLine,
     '',
+    ...audioLines,
+    ...(audioLines.length > 0 ? [''] : []),
     'BAND STATE:',
     ...input.bandStateLines,
     '',
@@ -51,6 +74,7 @@ export function buildJamStartManagerContext(input: JamStartManagerContextInput):
 
 export function buildDirectiveManagerContext(input: DirectiveManagerContextInput): string {
   const { musicalContext } = input;
+  const audioLines = input.audioFeedback ? buildAudioFeedbackLines(input.audioFeedback) : [];
 
   return [
     'DIRECTIVE from the boss.',
@@ -64,6 +88,8 @@ export function buildDirectiveManagerContext(input: DirectiveManagerContextInput
     `Scale: ${musicalContext.scale.join(', ')} | Chords: ${musicalContext.chordProgression.join(' → ')}`,
     `Your current pattern: ${input.currentPattern}`,
     '',
+    ...audioLines,
+    ...(audioLines.length > 0 ? [''] : []),
     'BAND STATE:',
     ...input.bandStateLines,
     '',
@@ -73,6 +99,7 @@ export function buildDirectiveManagerContext(input: DirectiveManagerContextInput
 
 export function buildAutoTickManagerContext(input: AutoTickManagerContextInput): string {
   const [genreLine, contextLine, chordLine] = buildMusicalContextLines(input.musicalContext);
+  const audioLines = input.audioFeedback ? buildAudioFeedbackLines(input.audioFeedback) : [];
 
   return [
     'AUTO-TICK — LISTEN AND EVOLVE',
@@ -81,6 +108,8 @@ export function buildAutoTickManagerContext(input: AutoTickManagerContextInput):
     contextLine,
     chordLine,
     '',
+    ...audioLines,
+    ...(audioLines.length > 0 ? [''] : []),
     'BAND STATE:',
     ...input.bandStateLines,
     '',
