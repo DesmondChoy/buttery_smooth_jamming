@@ -27,7 +27,7 @@ const VISION_INTERPRETER_SCHEMA = {
   $id: 'https://buttery-smooth-jamming.local/camera-directive.schema.json',
   type: 'object',
   additionalProperties: false,
-  required: ['directive', 'confidence'],
+  required: ['directive', 'confidence', 'target_agent', 'rationale', 'reason'],
   properties: {
     directive: {
       type: 'string',
@@ -40,15 +40,22 @@ const VISION_INTERPRETER_SCHEMA = {
       maximum: 1,
     },
     target_agent: {
-      type: 'string',
-      enum: ['drums', 'bass', 'melody', 'chords'],
+      anyOf: [
+        {
+          type: 'string',
+          enum: ['drums', 'bass', 'melody', 'chords', 'all'],
+        },
+        {
+          type: 'null',
+        },
+      ],
     },
     rationale: {
-      type: 'string',
+      type: ['string', 'null'],
       maxLength: 500,
     },
     reason: {
-      type: 'string',
+      type: ['string', 'null'],
       maxLength: 200,
     },
   },
@@ -81,6 +88,12 @@ interface CameraSampleFreshnessOptions {
   nowMs?: number;
 }
 
+interface ParsedCodexJsonlOutput {
+  assistant_json_text: string | null;
+  error_text: string | null;
+  saw_jsonl: boolean;
+}
+
 function build_conductor_interpreter_failure(
   reason: string,
   confidence: number,
@@ -92,7 +105,7 @@ function build_conductor_interpreter_failure(
     reason,
     confidence,
     explicit_target: null,
-    rejected_reason: parse_error ? `Model output parse/validation failed: ${parse_error}` : reason,
+    rejected_reason: parse_error || reason,
     ...(diagnostics ? { diagnostics } : {}),
   };
 }
@@ -108,6 +121,9 @@ function infer_rejection_reason(
   const parseError = (diagnostics.parse_error ?? '').toLowerCase();
   if (parseError.includes('stale')) {
     return 'stale_sample';
+  }
+  if (parseError.includes('invalid_json_schema') || parseError.includes('invalid schema')) {
+    return 'model_execution_failure';
   }
   if (parseError.includes('exit') || parseError.includes('command') || parseError.includes('terminated')) {
     return 'model_execution_failure';
@@ -145,7 +161,7 @@ function is_confidence(value: unknown): value is number {
   return value >= 0 && value <= 1;
 }
 
-function normalize_interpreted_directive(value: unknown): InterpretedVisionDirective | null {
+export function normalize_interpreted_directive(value: unknown): InterpretedVisionDirective | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return null;
   }
@@ -166,9 +182,17 @@ function normalize_interpreted_directive(value: unknown): InterpretedVisionDirec
     ? record.target_agent
     : typeof record.targetAgent === 'string'
       ? record.targetAgent
+      : record.target_agent === null || record.targetAgent === null
+        ? null
+        : undefined;
+  const normalizedTarget = typeof targetRaw === 'string'
+    ? targetRaw.trim().toLowerCase()
+    : '';
+  const target = normalizedTarget === 'all'
+    ? undefined
+    : is_jam_agent_key(normalizedTarget)
+      ? normalizedTarget
       : undefined;
-  const normalizedTarget = typeof targetRaw === 'string' ? targetRaw.toLowerCase() : '';
-  const target = is_jam_agent_key(normalizedTarget) ? normalizedTarget : undefined;
 
   const rationale = typeof record.rationale === 'string'
     ? record.rationale.trim()
@@ -194,6 +218,88 @@ function parse_single_json_object(text: string): unknown | null {
   } catch {
     return null;
   }
+}
+
+function as_record(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function extract_error_message(value: unknown): string | null {
+  if (typeof value === 'string' && value.trim()) {
+    return value.trim();
+  }
+
+  const record = as_record(value);
+  if (!record) return null;
+  const nested = extract_error_message(record.message);
+  if (nested) return nested;
+  return null;
+}
+
+export function parse_camera_interpreter_jsonl_output(stdout: string): ParsedCodexJsonlOutput {
+  const assistant_payloads: string[] = [];
+  const error_messages: string[] = [];
+  let saw_jsonl = false;
+
+  const lines = stdout.split(/\r?\n/);
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line || !line.startsWith('{')) continue;
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(line);
+      saw_jsonl = true;
+    } catch {
+      continue;
+    }
+
+    const event = as_record(parsed);
+    if (!event) continue;
+    const eventType = typeof event.type === 'string'
+      ? event.type.trim().toLowerCase()
+      : '';
+
+    if (eventType === 'item.completed') {
+      const item = as_record(event.item);
+      if (!item) continue;
+
+      const itemType = typeof item.type === 'string'
+        ? item.type.trim().toLowerCase()
+        : '';
+      if (itemType === 'agent_message' || itemType === 'agent.message') {
+        if (typeof item.text === 'string' && item.text.trim()) {
+          assistant_payloads.push(item.text.trim());
+        }
+      } else if (itemType === 'error') {
+        const itemError = extract_error_message(item.message);
+        if (itemError) {
+          error_messages.push(itemError);
+        }
+      }
+      continue;
+    }
+
+    if (eventType === 'error' || eventType === 'turn.failed') {
+      const eventError = extract_error_message(event.message)
+        ?? extract_error_message(event.error);
+      if (eventError) {
+        error_messages.push(eventError);
+      }
+    }
+  }
+
+  return {
+    assistant_json_text: assistant_payloads.at(-1) ?? null,
+    error_text: error_messages.at(-1) ?? null,
+    saw_jsonl,
+  };
+}
+
+export function get_camera_interpreter_output_schema(): typeof VISION_INTERPRETER_SCHEMA {
+  return VISION_INTERPRETER_SCHEMA;
 }
 
 export function apply_camera_sample_freshness(
@@ -351,7 +457,8 @@ function build_interpreter_prompt(sample: CameraDirectivePayload): string {
     ...agentLines,
     '',
     'Use a target only when movement/expressive evidence is clearly lane-specific.',
-    'Default behavior is broadcast to all ("all" agents) when unclear.',
+    'Default behavior is broadcast to all agents when unclear.',
+    'Encode broadcast intents by setting "target_agent": null.',
     'If sample.isStale is true, treat this as background/noise and avoid high-confidence decisions.',
     '',
     'Interpretation rules:',
@@ -363,8 +470,9 @@ function build_interpreter_prompt(sample: CameraDirectivePayload): string {
     '- confidence must be numeric in [0, 1].',
     '- 0.0 means "no clear signal", 1.0 means "very clear signal".',
     '',
-    'Output format example:',
+    'Output format examples:',
     '{ "directive": "tighten groove and add syncopation", "confidence": 0.83, "target_agent": "drums", "rationale": "right hand motion and fast steps" }',
+    '{ "directive": "ease density and keep a pocket", "confidence": 0.80, "target_agent": null, "rationale": "broad whole-body sway" }',
     '',
     'Camera sample payload:',
     JSON.stringify(sample, null, 2),
@@ -548,12 +656,18 @@ export async function interpretCameraDirective(
       workingDir,
       configOverrides
     );
+    const parsedJsonlOutput = parse_camera_interpreter_jsonl_output(output.stdout);
+    const stderrText = output.stderr.trim();
+    const modelErrorDetail = parsedJsonlOutput.error_text || stderrText || null;
+
     diagnostics.model_exit_code = output.exitCode;
     diagnostics.model_exit_signal = output.exitSignal;
     diagnostics.model_timed_out = output.timedOut;
 
     if (output.timedOut) {
-      diagnostics.parse_error = 'Model execution timed out.';
+      diagnostics.parse_error = modelErrorDetail
+        ? `Model execution timed out. ${modelErrorDetail}`
+        : 'Model execution timed out.';
       return {
         interpretation: null,
         diagnostics,
@@ -565,7 +679,9 @@ export async function interpretCameraDirective(
         interpretation: null,
         diagnostics: {
           ...diagnostics,
-          parse_error: 'Model returned empty stdout.',
+          parse_error: modelErrorDetail
+            ? `Model returned empty stdout. ${modelErrorDetail}`
+            : 'Model returned empty stdout.',
         },
       };
     }
@@ -575,18 +691,23 @@ export async function interpretCameraDirective(
         interpretation: null,
         diagnostics: {
           ...diagnostics,
-          parse_error: `Model exited with code ${output.exitCode}.`,
+          parse_error: modelErrorDetail
+            ? `Model exited with code ${output.exitCode}: ${modelErrorDetail}`
+            : `Model exited with code ${output.exitCode}.`,
         },
       };
     }
 
-    const parsed = parse_single_json_object(output.stdout);
+    const parsed = parse_single_json_object(parsedJsonlOutput.assistant_json_text ?? '')
+      ?? parse_single_json_object(output.stdout);
     if (!parsed) {
       return {
         interpretation: null,
         diagnostics: {
           ...diagnostics,
-          parse_error: 'Model output was not strict JSON.',
+          parse_error: parsedJsonlOutput.saw_jsonl
+            ? 'Model JSONL stream did not include a strict JSON assistant payload.'
+            : 'Model output was not strict JSON.',
         },
       };
     }

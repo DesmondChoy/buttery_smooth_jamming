@@ -77,7 +77,7 @@ export default function Home() {
     }
 
     const reason = result.rejected_reason || result.reason || 'Rejected by policy';
-    setLastConductorIntentSummary(`Camera intent rejected (${confidencePct}%): ${reason}`);
+    setLastConductorIntentSummary(`Camera cue skipped (${confidencePct}%): ${reason}`);
   }, []);
 
   // Lift useRuntimeTerminal to page level so sendStartJam is accessible
