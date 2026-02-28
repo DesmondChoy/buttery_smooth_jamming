@@ -504,3 +504,29 @@ For best results, combine one deterministic anchor with one expressive cue:
 - `@BEAT half time, but stay punchy`
 
 This gives the runtime a reliable anchor while preserving musical creativity.
+
+## Demo Drafts (Easy to Read)
+
+Use these scripts as live-run prompts for two contrasting demo styles.
+
+### Version 1) Organic Jamming (vibey, less specific)
+
+| # | Genre | Who | What to prompt | What to do? / Breathe | Next subagent | What to prompt next |
+|---|---|---|---|---|---|---|
+| 1 | Funk / lo-fi vibe | Broadcast | `Start loose and late-night, energy 3, everyone sparse and breathable` | `Let it breathe for 2 cycles` | @BEAT | `@BEAT dusty old-school pocket, behind the beat, chatty hi-hats` |
+| 2 | Funk / lo-fi vibe | @BEAT | `@BEAT dusty old-school pocket, behind the beat, chatty hi-hats` | `Let it breathe for 2 cycles` | @GROOVE | `@GROOVE deep round bass, hug the kick, minimal notes` |
+| 3 | Funk / lo-fi vibe | @GROOVE | `@GROOVE deep round bass, hug the kick, minimal notes` | `Let it breathe for 2 cycles` | @ARIA | `@ARIA airy motif, repeat-friendly, leave air between phrases` |
+| 4 | Funk / lo-fi vibe | @ARIA | `@ARIA airy motif, repeat-friendly, leave air between phrases` | `Let it breathe for 2 cycles` | @CHORDS | `@CHORDS smooth pad wash, distant and soft, don’t crowd the melody` |
+| 5 | Funk / lo-fi vibe | @CHORDS | `@CHORDS smooth pad wash, distant and soft, don’t crowd the melody` | `Let it breathe for 2 cycles` | Broadcast | `energy 6, add a little sparkle and momentum, keep it human` |
+| 6 | Funk / lo-fi vibe | Broadcast | `energy 6, add a little sparkle and momentum, keep it human` | `Let it breathe for 2 cycles` | @BEAT | `@BEAT 808-style weight with small ghost hits, still pocket-focused` |
+
+### Version 2) Orchestrator-style (specific and directive-heavy)
+
+| # | Genre | Who | What to prompt | What to do? / Breathe | Next subagent | What to prompt next |
+|---|---|---|---|---|---|---|
+| 1 | Funk / tight | Broadcast | `Switch to D minor, BPM 104, energy 5, establish a clean pocket` | `Breathe 2 cycles` | @BEAT | `@BEAT LinnDrum kit, on-the-one pocket, tight snare, no busy fills` |
+| 2 | Funk / tight | @BEAT | `@BEAT LinnDrum kit, on-the-one pocket, tight snare, no busy fills` | `Breathe 2 cycles` | @GROOVE | `@GROOVE slap bass, lock to BEAT, root-fifth movement, stay below C3` |
+| 3 | Funk / tight | @GROOVE | `@GROOVE slap bass, lock to BEAT, root-fifth movement, stay below C3` | `Breathe 2 cycles` | @CHORDS | `@CHORDS Rhodes comping, jazz voicings, offbeat accents, leave melody room` |
+| 4 | Funk / tight | @CHORDS | `@CHORDS Rhodes comping, jazz voicings, offbeat accents, leave melody room` | `Breathe 2 cycles` | @ARIA | `@ARIA trumpet-like hook line, rhythmic and punchy, clear repeats` |
+| 5 | Funk / tight | @ARIA | `@ARIA trumpet-like hook line, rhythmic and punchy, clear repeats` | `Breathe 2 cycles` | Broadcast | `BPM 118, energy 8, pre-chorus lift, keep every part pocketed` |
+| 6 | Funk / tight | Broadcast | `BPM 118, energy 8, pre-chorus lift, keep every part pocketed` | `Breathe 2 cycles` | Broadcast | `Drop to energy 4 and keep only BEAT + GROOVE for 2 cycles, then finish` |
