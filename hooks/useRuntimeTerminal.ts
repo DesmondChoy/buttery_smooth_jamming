@@ -280,12 +280,20 @@ export function useRuntimeTerminal(
   }, []);
 
   const sendBossDirective = useCallback((text: string, targetAgent?: string, activeAgents?: string[]) => {
+    const trimmedText = text.trim();
+    if (!trimmedText) {
+      addLine('error', 'Cannot send an empty boss directive.');
+      setError('Cannot send an empty boss directive.');
+      return;
+    }
+
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({
-        type: 'boss_directive', text, targetAgent, activeAgents,
+        type: 'boss_directive', text: trimmedText, targetAgent, activeAgents,
       }));
+      setStatus('thinking');
     }
-  }, []);
+  }, [addLine, setStatus]);
 
   const sendJamPreset = useCallback((presetId: string) => {
     if (!presetId) return;

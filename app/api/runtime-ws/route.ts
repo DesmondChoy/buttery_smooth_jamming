@@ -110,6 +110,18 @@ function getPositiveInt(raw: string | undefined, fallback: number): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+function getIncomingRequestWsProtocol(request: IncomingMessage): 'ws' | 'wss' {
+  const forwardedRaw = request.headers['x-forwarded-proto'];
+  const forwarded = Array.isArray(forwardedRaw) ? forwardedRaw[0] : forwardedRaw;
+  if (forwarded) {
+    const lower = forwarded.toLowerCase();
+    if (lower.startsWith('https')) return 'wss';
+    if (lower.startsWith('http')) return 'ws';
+  }
+
+  return request.socket?.encrypted ? 'wss' : 'ws';
+}
+
 function getActiveAgentCount(manager: AgentProcessManager): number {
   return manager.getJamStateSnapshot().activeAgents.length;
 }
@@ -242,7 +254,8 @@ export function SOCKET(
 
   // Extract port from Host header to pass to MCP server
   const host = request.headers.host || 'localhost:3000';
-  const wsUrl = `ws://${host}/api/ws`;
+  const wsProtocol = getIncomingRequestWsProtocol(request);
+  const wsUrl = `${wsProtocol}://${host}/api/ws`;
   console.log(`[Runtime WS] Using WebSocket URL: ${wsUrl}`);
 
   // Delay process start to survive React StrictMode's quick unmount cycle
@@ -392,6 +405,7 @@ export function SOCKET(
         case 'set_jam_preset': {
           if (!message.presetId) {
             sendErrorToClient(client, 'Missing jam preset id.');
+            sendToClient(client, { type: 'status', status: 'done' });
             break;
           }
 
@@ -400,12 +414,14 @@ export function SOCKET(
           } catch (error) {
             const err = error as Error;
             sendErrorToClient(client, `Cannot set jam preset before jam startup completes: ${err.message}`);
+            sendToClient(client, { type: 'status', status: 'done' });
             break;
           }
 
           const manager = agentManagers.get(client);
           if (!manager) {
             sendErrorToClient(client, 'No active jam session for preset selection.');
+            sendToClient(client, { type: 'status', status: 'done' });
             break;
           }
 
@@ -432,12 +448,14 @@ export function SOCKET(
             } catch (error) {
               const err = error as Error;
               sendErrorToClient(client, `Cannot send directive before jam startup completes: ${err.message}`);
+              sendToClient(client, { type: 'status', status: 'done' });
               break;
             }
 
             const manager = agentManagers.get(client);
             if (!manager) {
               sendErrorToClient(client, 'No active jam session for boss directive.');
+              sendToClient(client, { type: 'status', status: 'done' });
               break;
             }
 
@@ -451,9 +469,11 @@ export function SOCKET(
               console.error('[Runtime WS] Directive failed:', error);
               endTimer(client);
               sendErrorToClient(client, `Directive failed: ${error.message}`);
+              sendToClient(client, { type: 'status', status: 'done' });
             });
           } else {
-            sendErrorToClient(client, 'No active jam session for boss directive.');
+            sendErrorToClient(client, 'Cannot send empty boss directive.');
+            sendToClient(client, { type: 'status', status: 'done' });
           }
           break;
         }
