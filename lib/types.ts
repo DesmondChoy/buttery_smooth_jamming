@@ -145,9 +145,17 @@ export interface ConductorInterpreterDiagnostics {
   model_exit_code?: number | null;
   model_exit_signal?: string | null;
   model_timed_out?: boolean;
+  model_profile?: string;
+  model_name?: string;
   parse_error?: string;
   raw_sample_timestamp_ms?: number;
   payload_sample_interval_ms?: number;
+  sample_is_stale?: boolean;
+  sample_motion_score?: number;
+  sample_max_delta?: number;
+  sample_face_present?: boolean;
+  sample_face_motion?: number;
+  min_confidence_threshold?: number;
 }
 
 export interface ConductorInterpreterResult {

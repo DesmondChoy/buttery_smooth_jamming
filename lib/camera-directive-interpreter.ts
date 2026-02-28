@@ -66,7 +66,10 @@ const AGENT_TARGET_SET = new Set<JamAgentKey>(['drums', 'bass', 'melody', 'chord
 const MIN_SAMPLE_INTERVAL_MS = 1;
 const MAX_SAMPLE_INTERVAL_MS = 10_000;
 const MAX_FRAME_DIMENSION = 8_000;
-const CAMERA_INTERPRETATION_MIN_CONFIDENCE = 0.78;
+const DEFAULT_CAMERA_INTERPRETATION_MIN_CONFIDENCE = 0.55;
+const CAMERA_INTERPRETATION_MIN_CONFIDENCE = resolve_camera_interpretation_min_confidence(
+  process.env.CAMERA_INTERPRETATION_MIN_CONFIDENCE
+);
 const CAMERA_STALE_SAMPLE_MESSAGE = 'Vision sample is stale (extended capture gap).';
 
 interface CodexCommandResult {
@@ -94,6 +97,29 @@ interface ParsedCodexJsonlOutput {
   saw_jsonl: boolean;
 }
 
+export function resolve_camera_interpretation_min_confidence(raw: string | undefined): number {
+  if (!raw?.trim()) {
+    return DEFAULT_CAMERA_INTERPRETATION_MIN_CONFIDENCE;
+  }
+
+  const parsed = Number.parseFloat(raw);
+  if (!Number.isFinite(parsed)) {
+    return DEFAULT_CAMERA_INTERPRETATION_MIN_CONFIDENCE;
+  }
+
+  return Math.max(0, Math.min(1, parsed));
+}
+
+function resolve_min_confidence_threshold(
+  diagnostics: ConductorInterpreterDiagnostics | undefined
+): number {
+  const rawThreshold = diagnostics?.min_confidence_threshold;
+  if (typeof rawThreshold !== 'number' || !Number.isFinite(rawThreshold)) {
+    return CAMERA_INTERPRETATION_MIN_CONFIDENCE;
+  }
+  return Math.max(0, Math.min(1, rawThreshold));
+}
+
 function build_conductor_interpreter_failure(
   reason: string,
   confidence: number,
@@ -114,7 +140,8 @@ function infer_rejection_reason(
   diagnostics: ConductorInterpreterDiagnostics,
   interpretation: InterpretedVisionDirective | null
 ): ConductorInterpreterResult['reason'] {
-  if (interpretation && interpretation.confidence < CAMERA_INTERPRETATION_MIN_CONFIDENCE) {
+  const min_confidence_threshold = resolve_min_confidence_threshold(diagnostics);
+  if (interpretation && interpretation.confidence < min_confidence_threshold) {
     return 'below_confidence_threshold';
   }
 
@@ -621,17 +648,29 @@ export async function interpretCameraDirective(
   const config = load_project_codex_config(workingDir);
   const configOverrides = build_codex_overrides(config, CODEX_JAM_PROFILE);
   const safePayload = sanitize_sample(payload);
+  const min_confidence_threshold = CAMERA_INTERPRETATION_MIN_CONFIDENCE;
+  const base_diagnostics: ConductorInterpreterDiagnostics = {
+    model_profile: CODEX_JAM_PROFILE,
+    model_name: config.jam_agent_model,
+    raw_sample_timestamp_ms: payload.sample.capturedAtMs,
+    payload_sample_interval_ms: payload.sample.sampleIntervalMs,
+    sample_is_stale: safePayload.sample.isStale === true,
+    sample_motion_score: safePayload.sample.motion.score,
+    sample_max_delta: safePayload.sample.motion.maxDelta,
+    sample_face_present: safePayload.sample.face?.present === true,
+    sample_face_motion: safePayload.sample.face?.motion ?? 0,
+    min_confidence_threshold,
+  };
 
   if (safePayload.sample.isStale === true) {
     return {
       interpretation: null,
       diagnostics: {
+        ...base_diagnostics,
         model_exit_code: null,
         model_exit_signal: null,
         model_timed_out: false,
         parse_error: CAMERA_STALE_SAMPLE_MESSAGE,
-        raw_sample_timestamp_ms: payload.sample.capturedAtMs,
-        payload_sample_interval_ms: payload.sample.sampleIntervalMs,
       },
     };
   }
@@ -644,11 +683,10 @@ export async function interpretCameraDirective(
 
   fs.writeFileSync(schemaPath, JSON.stringify(VISION_INTERPRETER_SCHEMA, null, 2), 'utf-8');
   const diagnostics: ConductorInterpreterDiagnostics = {
+    ...base_diagnostics,
     model_exit_code: null,
     model_exit_signal: null,
     model_timed_out: false,
-    raw_sample_timestamp_ms: payload.sample.capturedAtMs,
-    payload_sample_interval_ms: payload.sample.sampleIntervalMs,
   };
 
   try {
@@ -724,12 +762,12 @@ export async function interpretCameraDirective(
       };
     }
 
-    if (interpretation.confidence < CAMERA_INTERPRETATION_MIN_CONFIDENCE) {
+    if (interpretation.confidence < min_confidence_threshold) {
       return {
         interpretation,
         diagnostics: {
           ...diagnostics,
-          parse_error: 'Interpretation confidence below minimum model threshold.',
+          parse_error: `Interpretation confidence below minimum model threshold (${min_confidence_threshold.toFixed(2)}).`,
         },
       };
     }
@@ -752,6 +790,7 @@ export function build_conductor_interpretation_result(
   source: string,
   diagnostics: ConductorInterpreterDiagnostics
 ): ConductorInterpreterResult {
+  const min_confidence_threshold = resolve_min_confidence_threshold(diagnostics);
   if (!interpretation || !interpretation.directive.trim()) {
     return build_conductor_interpreter_failure(
       infer_rejection_reason(diagnostics, interpretation),
@@ -761,7 +800,7 @@ export function build_conductor_interpretation_result(
     );
   }
 
-  if (interpretation.confidence < CAMERA_INTERPRETATION_MIN_CONFIDENCE) {
+  if (interpretation.confidence < min_confidence_threshold) {
     return {
       accepted: false,
       confidence: interpretation.confidence,
@@ -772,7 +811,7 @@ export function build_conductor_interpretation_result(
         ...(interpretation.rationale ? { rationale: interpretation.rationale } : {}),
         ...(interpretation.targetAgent ? { target_agent: interpretation.targetAgent } : {}),
       },
-      rejected_reason: `Model confidence (${interpretation.confidence.toFixed(2)}) below threshold.`,
+      rejected_reason: `Model confidence (${interpretation.confidence.toFixed(2)}) below threshold (${min_confidence_threshold.toFixed(2)}).`,
       diagnostics,
     };
   }

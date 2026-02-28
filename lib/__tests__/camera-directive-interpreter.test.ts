@@ -7,6 +7,7 @@ import {
   normalize_camera_directive_payload,
   normalize_interpreted_directive,
   parse_camera_interpreter_jsonl_output,
+  resolve_camera_interpretation_min_confidence,
 } from '../camera-directive-interpreter';
 import type { CameraDirectivePayload } from '../types';
 
@@ -91,6 +92,14 @@ describe('camera-directive-interpreter', () => {
     expect(schema.required).toEqual(expect.arrayContaining(propertyNames));
   });
 
+  it('parses camera confidence threshold env with clamp + fallback behavior', () => {
+    expect(resolve_camera_interpretation_min_confidence(undefined)).toBe(0.55);
+    expect(resolve_camera_interpretation_min_confidence('not-a-number')).toBe(0.55);
+    expect(resolve_camera_interpretation_min_confidence('-0.3')).toBe(0);
+    expect(resolve_camera_interpretation_min_confidence('0.65')).toBe(0.65);
+    expect(resolve_camera_interpretation_min_confidence('1.7')).toBe(1);
+  });
+
   it('extracts assistant payload and error detail from codex jsonl output', () => {
     const output = [
       '{"type":"thread.started","thread_id":"abc"}',
@@ -155,5 +164,23 @@ describe('camera-directive-interpreter', () => {
     });
 
     expect(freshResult.sample.isStale).toBe(false);
+  });
+
+  it('uses diagnostics min threshold when deciding below-confidence rejection', () => {
+    const lowThresholdResult = build_conductor_interpretation_result(
+      { directive: 'keep groove steady', confidence: 0.6 },
+      'interpreted',
+      { min_confidence_threshold: 0.55 }
+    );
+    expect(lowThresholdResult.accepted).toBe(true);
+
+    const highThresholdResult = build_conductor_interpretation_result(
+      { directive: 'keep groove steady', confidence: 0.6 },
+      'interpreted',
+      { min_confidence_threshold: 0.7 }
+    );
+    expect(highThresholdResult.accepted).toBe(false);
+    expect(highThresholdResult.reason).toBe('below_confidence_threshold');
+    expect(highThresholdResult.rejected_reason).toContain('0.70');
   });
 });

@@ -224,7 +224,8 @@ runtime boundary:
   `apply_camera_sample_freshness` using `CAMERA_SAMPLE_MAX_AGE_MS` and
   `CAMERA_SAMPLE_MAX_FUTURE_SKEW_MS`.
 - `interpretCameraDirective` runs a strict schema-backed Codex call (timeout
-  `15_000 ms`) and enforces minimum confidence (`0.78`).
+  `15_000 ms`) and enforces minimum confidence
+  (`CAMERA_INTERPRETATION_MIN_CONFIDENCE`, default `0.55`).
 - Only accepted interpretations are converted into boss directives and sent through
   existing deterministic directive targeting; all rejected interpretations are
   reported as `conductor_intent` reason codes (for example

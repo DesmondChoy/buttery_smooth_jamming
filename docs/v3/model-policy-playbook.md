@@ -166,6 +166,7 @@ Enforced by `lib/jam-admission.ts`, consumed in `app/api/runtime-ws/route.ts`.
 |----------|---------|----------|-------|
 | `MAX_CONCURRENT_JAMS` | `1` | Maximum simultaneous jam sessions across all clients | Prevents multi-tab process explosions |
 | `MAX_TOTAL_AGENT_PROCESSES` | `4` | Maximum total agent Codex processes across all jams | With 4 agents per jam and default limit of 1 jam, this is exactly 1 full band |
+| `CAMERA_INTERPRETATION_MIN_CONFIDENCE` | `0.55` | Minimum model confidence required to accept a camera cue | Used by `interpretCameraDirective`; lower values increase cue acceptance and false-positive risk. Restart server after changes. |
 
 ### Prompt-Layer Tuning Knobs
 
@@ -243,8 +244,11 @@ directives: browser audio feedback and camera conductor intent payloads.
   - Staleness is applied with `CAMERA_SAMPLE_MAX_AGE_MS` (default `5000 ms`) and
     `CAMERA_SAMPLE_MAX_FUTURE_SKEW_MS` (default `1500 ms`).
   - Interpreter uses Codex with strict JSON schema and a `15_000 ms` timeout.
-  - Only interpretations with `confidence >= 0.78` pass; stale or low-confidence
-    samples are rejected and surfaced as `conductor_intent` diagnostics.
+  - Only interpretations with `confidence >= CAMERA_INTERPRETATION_MIN_CONFIDENCE`
+    pass (default `0.55`); stale or low-confidence samples are rejected and
+    surfaced as `conductor_intent` diagnostics.
+  - Diagnostics include threshold and sample-signal context (`sample_motion_score`,
+    `sample_face_motion`, `sample_is_stale`) to explain skipped cues.
   - Accepted visions are translated into normal boss directives and routed through
     the same deterministic `handleDirective()` path.
 

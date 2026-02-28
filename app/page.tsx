@@ -65,6 +65,8 @@ export default function Home() {
   }, []);
 
   const handleConductorIntent = useCallback((result: ConductorInterpreterResult) => {
+    console.debug('[CameraConductor] conductor_intent', result);
+
     const confidencePct = Math.round(Math.max(0, Math.min(1, result.confidence)) * 100);
     if (result.accepted) {
       const directive = result.interpretation?.directive?.trim();
@@ -76,8 +78,33 @@ export default function Home() {
       return;
     }
 
+    const minThreshold = result.diagnostics?.min_confidence_threshold;
+    const thresholdPct = (typeof minThreshold === 'number' && Number.isFinite(minThreshold))
+      ? Math.round(Math.max(0, Math.min(1, minThreshold)) * 100)
+      : null;
+    const motionScore = result.diagnostics?.sample_motion_score;
+    const faceMotion = result.diagnostics?.sample_face_motion;
+    const sampleIsStale = result.diagnostics?.sample_is_stale === true;
     const reason = result.rejected_reason || result.reason || 'Rejected by policy';
-    setLastConductorIntentSummary(`Camera cue skipped (${confidencePct}%): ${reason}`);
+    const confidenceLabel = (
+      result.reason === 'below_confidence_threshold' && thresholdPct !== null
+    )
+      ? `${confidencePct}% < ${thresholdPct}%`
+      : `${confidencePct}%`;
+    const signalBits = [
+      (typeof motionScore === 'number' && Number.isFinite(motionScore))
+        ? `motion=${motionScore.toFixed(2)}`
+        : null,
+      (typeof faceMotion === 'number' && Number.isFinite(faceMotion))
+        ? `face=${faceMotion.toFixed(2)}`
+        : null,
+      sampleIsStale ? 'stale' : null,
+    ].filter((entry): entry is string => Boolean(entry));
+    const signalSummary = signalBits.length > 0
+      ? ` (${signalBits.join(', ')})`
+      : '';
+
+    setLastConductorIntentSummary(`Camera cue skipped (${confidenceLabel}): ${reason}${signalSummary}`);
   }, []);
 
   // Lift useRuntimeTerminal to page level so sendStartJam is accessible
