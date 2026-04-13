@@ -1,91 +1,189 @@
-# Codex Runtime Setup (Workstream E)
+# Codex Runtime Setup
 
-This document captures the Codex runtime configuration and startup checks introduced for `bsj-3xy.4`.
+This document describes the active Codex runtime configuration for both normal
+assistant mode and jam mode.
 
-## Canonical Config
+## Runtime Topology
 
-Preferred project config location:
+The app exposes three transport surfaces:
 
-- `.codex/config.toml`
+| Route | Purpose |
+|------|---------|
+| `/api/ai-ws` | Primary provider-neutral websocket for normal assistant mode and jam control |
+| `/api/runtime-ws` | Runtime implementation route that currently backs `/api/ai-ws` |
+| `/api/ws` | Broadcast bridge between the browser Strudel runtime and the MCP server |
 
-Current repository fallback (used when `.codex/` is read-only in sandboxed environments):
+Normal assistant mode streams Codex text/tool events over `/api/ai-ws`. Jam mode
+uses the same websocket path for `start_jam`, `set_jam_preset`,
+`boss_directive`, `audio_feedback`, `camera_directive`, and `stop_jam`.
 
-- `config/codex/config.toml`
+## Canonical Config Resolution
 
-Runtime code resolves config home in this order:
+Runtime config resolves in this order:
 
 1. `.codex/config.toml`
 2. `config/codex/config.toml`
 
-Runtime reads the config file and injects equivalent Codex `-c key=value` overrides per command.
-This avoids auth-state drift that can happen when forcing `CODEX_HOME` in multi-config environments.
+The repository currently ships `config/codex/config.toml`. Runtime code reads
+that file, extracts the required profile fields, and injects equivalent `-c
+key=value` overrides into each Codex invocation so profile resolution stays
+aligned even when the project config lives outside `$CODEX_HOME`.
 
-## Profiles
+## Active Profiles
 
-Two Codex profiles are required and validated at runtime startup:
+Two profiles are required:
 
-1. `normal_mode`
-2. `jam_agent`
+| Profile | Current Role | Current Defaults |
+|--------|--------------|------------------|
+| `normal_mode` | Normal assistant mode with Strudel MCP access | `gpt-5-codex`, `model_reasoning_effort="low"`, `model_reasoning_summary="detailed"` |
+| `jam_agent` | Long-lived jam workers with no tools and no MCP | `gpt-5-codex-mini`, `model_reasoning_effort="low"`, `model_reasoning_summary="detailed"` |
 
-Profile intent:
+Shared config details in the bundled fallback config:
 
-- `normal_mode`: normal assistant mode, Strudel MCP enabled, default model `gpt-5-codex`
-- `jam_agent`: jam sub-agent mode, MCP disabled, default model `gpt-5-codex-mini`
+- `approval_policy = "never"`
+- `sandbox_mode = "workspace-write"`
+- `features.runtime_metrics = false`
+- `mcp_servers.strudel.transport = "stdio"`
+- `mcp_servers.strudel.command = "node"`
+- `mcp_servers.strudel.args = ["packages/mcp-server/build/index.js"]`
+- `mcp_servers.strudel.env.WS_URL = "ws://localhost:3000/api/ws"`
+
+Normal mode keeps `mcp_servers.strudel.enabled = true`. Jam mode keeps
+`mcp_servers.strudel.enabled = false` and `mcp_servers.playwright.enabled = false`.
 
 ## Startup Checks
 
-`CodexProcess.start()` now runs fail-closed availability checks before reporting ready state:
+Both the normal runtime (`CodexProcess`) and the camera-directive interpreter
+fail closed through `assert_codex_runtime_ready()`. Startup validation checks:
 
-1. project Codex config exists (`.codex/config.toml` or `config/codex/config.toml`)
-2. `codex` binary is present (`codex --version`)
-3. auth is available (`codex login status`)
-4. required profiles are resolvable (`normal_mode`, `jam_agent`)
-5. required MCP server is visible for normal mode (`strudel`)
+1. a readable project Codex config exists at one of the supported paths
+2. the `codex` binary is available
+3. local Codex auth is valid (`codex login status`)
+4. required profiles resolve: `normal_mode`, `jam_agent`
+5. required MCP server registration resolves for normal mode: `strudel`
 
-If any check fails, the websocket returns a clear runtime start error and does not proceed.
+Successful checks are cached for 30 seconds to avoid repeating the full probe
+on every turn.
 
-## Rollout Controls (Workstream G)
+## Install And Run
 
-Normal-mode runtime selection is controlled by `lib/runtime-factory.ts` with two environment overrides:
+From the repo root:
 
-1. `NORMAL_RUNTIME_PROVIDER` (explicit override)
-   - `codex` => force Codex
-   - `codex` => force Codex fallback
-2. `NORMAL_RUNTIME_ROLLOUT_STAGE` (default selection when provider is not forced)
-   - `pre_gate` => Codex default before benchmark/test gates pass
-   - `post_gate` (default) => Codex-first default after gates pass
+```sh
+npm install
+cd packages/mcp-server && npm run build && cd ../..
+npm run dev
+```
 
-Operational fallback strategy:
+Additional project commands:
 
-- Keep `NORMAL_RUNTIME_ROLLOUT_STAGE=post_gate` in normal operation.
-- If Codex runtime is unavailable in production-like usage, set `NORMAL_RUNTIME_PROVIDER=codex` temporarily while investigating.
-- Remove the temporary override after Codex runtime health is restored.
+```sh
+npm run build
+npm run start
+npm run lint
+npx vitest run
+npm run test:e2e
+npm run test:e2e:headed
+npm run benchmark:workstream-g -- --jam-start-runs 2 --targeted-runs 2 --broadcast-runs 2
+```
+
+MCP server commands:
+
+```sh
+cd packages/mcp-server
+npm run build
+npm run dev
+npm run start
+```
+
+`npm install` also runs the repo `prepare` script, which applies the `next-ws`
+patch required for websocket route support in the Next.js app.
+
+## Runtime Behavior Notes
+
+### Normal Assistant Mode
+
+- The runtime always instantiates `CodexProcess`.
+- `build_exec_args()` runs `codex exec --json --profile normal_mode`.
+- The normal-mode system prompt is loaded from
+  `.codex/agents/normal-mode-system-prompt.md`.
+- Runtime overrides `mcp_servers.strudel.env.WS_URL` per request so the browser
+  bridge follows the current host/protocol.
+
+### Jam Mode
+
+- `AgentProcessManager` owns jam-state continuity, deterministic routing,
+  session lifecycle, and final `stack(...)` composition.
+- Jam sessions start in staged-silent mode and remain directive-gated until a
+  preset is chosen and Play is pressed.
+- Presets lock after the first manual join.
+- Audio feedback and camera conductor samples flow through `/api/ai-ws`.
+- Agent context inspection is enabled by default and records recent prompt and
+  thread snapshots for the UI.
+
+## Environment Variables
+
+### Runtime Capacity
+
+| Variable | Default | Purpose |
+|---------|---------|---------|
+| `MAX_CONCURRENT_JAMS` | `1` | Maximum simultaneous jam sessions |
+| `MAX_TOTAL_AGENT_PROCESSES` | `4` | Maximum total active jam-agent processes |
+
+### Camera And Conductor Controls
+
+| Variable | Default | Purpose |
+|---------|---------|---------|
+| `CAMERA_INTERPRETATION_MIN_CONFIDENCE` | `0.55` | Minimum confidence required to accept a camera cue |
+| `CAMERA_SAMPLE_MAX_AGE_MS` | `5000` | Rejects stale camera samples older than this age |
+| `CAMERA_SAMPLE_MAX_FUTURE_SKEW_MS` | `1500` | Rejects camera samples too far in the future |
+| `CONDUCTOR_INTENT_TOKEN` | unset | Required shared secret for the standalone `/api/conductor-intent` endpoint |
+| `CONDUCTOR_INTENT_ALLOWED_HOSTS` | `localhost,127.0.0.1` | Host allowlist for the standalone conductor endpoint; `*` allows all hosts |
+
+### Rollout Bookkeeping
+
+| Variable | Accepted Values | Current Effect |
+|---------|------------------|----------------|
+| `NORMAL_RUNTIME_PROVIDER` | `codex` | The runtime provider remains `codex` in all cases |
+| `NORMAL_RUNTIME_ROLLOUT_STAGE` | `pre_gate`, `post_gate` | Exposes rollout stage metadata; current runtime instantiation is unchanged |
+
+## Standalone Conductor Intent Endpoint
+
+`POST /api/conductor-intent` exposes the same camera-interpretation pipeline as
+the websocket path for authorized callers. Requests must:
+
+1. include `x-conductor-intent-token`
+2. originate from an allowed host
+3. provide a valid camera payload compatible with `normalize_camera_directive_payload`
+
+Responses use the `ConductorInterpreterResult` shape and apply the same
+freshness checks and schema-backed interpretation as websocket-driven camera
+conductor events.
 
 ## Quick Verification
 
-Run from repo root:
+Run from the repo root:
 
 ```sh
 codex --version
 codex login status
-codex exec -p normal_mode \
-  -c 'profiles.normal_mode.model="gpt-5-codex"' \
-  -c 'profiles.jam_agent.model="gpt-5-codex-mini"' \
-  -c 'mcp_servers.strudel.command="node"' \
-  -c 'mcp_servers.strudel.args=["packages/mcp-server/build/index.js"]' \
-  --json --skip-git-repo-check --output-schema /tmp/missing.schema.json "probe"
 codex mcp list --json \
   -c 'mcp_servers.strudel.command="node"' \
   -c 'mcp_servers.strudel.args=["packages/mcp-server/build/index.js"]'
 ```
 
-Expected:
+Expected results:
 
-- version and login status succeed
-- profile probe fails specifically on missing schema file (this confirms profile resolution without spending model tokens)
-- MCP list includes `strudel`
+- `codex --version` succeeds
+- `codex login status` reports an authenticated local session
+- `codex mcp list --json` includes `strudel`
 
-## Notes
+An end-to-end runtime probe is also available through the benchmark harness:
 
-- Normal-mode Codex execution is now profile-based (`--profile normal_mode`) and no longer hardcodes MCP server registration inline.
-- Runtime still overrides `mcp_servers.strudel.env.WS_URL` per request so dynamic host/port wiring continues to work.
+```sh
+npm run benchmark:workstream-g -- --jam-start-runs 2 --targeted-runs 2 --broadcast-runs 2
+```
+
+The benchmark connects to `/api/ai-ws`, waits for runtime `ready`, measures jam
+start plus targeted and broadcast directive latency, and writes results to
+`tmp/benchmarks/` unless `--output-dir` is provided.

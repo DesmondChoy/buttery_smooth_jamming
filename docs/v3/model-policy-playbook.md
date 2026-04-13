@@ -122,6 +122,25 @@ the authority for "agent decided to change" in the UI.
 This keeps glow signals aligned to actual creative decisions, not clock-time
 heuristics.
 
+### Context Inspector And Thread Compaction
+
+Agent context inspection is enabled by default. `AgentProcessManager` captures a
+rolling per-agent window containing:
+
+- turn source, round, outcome, and timestamp
+- prompt-level musical context and band-state summary
+- optional audio-context summary / raw audio feature snapshot
+- thread lifecycle details before and after the turn
+- full manager context plus the raw prompt snapshot shown in the UI
+
+The jam UI surfaces this window from each agent column header so operators can
+inspect what an agent saw without altering runtime behavior.
+
+To keep long-lived jam sessions bounded, thread compaction is scheduled after
+`THREAD_COMPACTION_NO_CHANGE_STREAK = 5` qualifying auto-tick `no_change`
+turns for an already-playing agent. Compaction is visible in the inspector via
+the recorded `lastCompaction` metadata.
+
 ### A/B/C Classification Rubric
 
 The [hardcoding audit](./hardcoding-audit-bsj-7k4.8.md) classifies every
@@ -156,17 +175,26 @@ All governance constants are defined in `lib/jam-governance-constants.ts`
 | `BPM_MIN/MAX` | `[60, 300]` | `jam-governance-constants.ts` → `parseDeterministicMusicalContextChanges()`, `applyModelRelativeContextDeltaForDirectiveTurn()`, `applyModelRelativeContextDeltaForAutoTick()` | Hard bounds on final BPM value | N/A (expanding is possible but rarely useful) | Narrows the playable tempo range | Outside [60, 300] produces unmusical results |
 | `ENERGY_MIN/MAX` | `[1, 10]` | `jam-governance-constants.ts` → same locations as BPM clamp | Hard bounds on final energy value | N/A | N/A | Fixed scale — changing breaks UI and prompt assumptions |
 | `AUTO_TICK_INTERVAL_MS` | `15000` ms | `jam-governance-constants.ts` → `startAutoTick()` | Time between autonomous evolution rounds | Slower autonomous evolution; longer static stretches | Faster evolution; more API calls; potential cost/latency | Too fast → rate limits; too slow → stale jams |
+| `COMMENTARY_MAX_CHARS` | `180` | `jam-governance-constants.ts` → commentary broadcast shaping | Maximum optional commentary length shown in jam columns | More prose survives per turn | Commentary is trimmed more aggressively | Large values can flood columns and hide signal |
+| `COMMENTARY_AUTO_TICK_MIN_ROUNDS` | `2` | `jam-governance-constants.ts` → auto-tick commentary cooldown | Minimum rounds between commentary emissions on auto-tick | Commentary appears less often | Commentary can chatter on every tick | Too low creates noisy UX |
+| `COMMENTARY_RECENT_SIGNATURE_WINDOW` | `3` | `jam-governance-constants.ts` → duplicate-commentary suppression | Number of recent commentary signatures tracked per agent | Repetition is suppressed across a wider history | Agents can repeat themselves sooner | Too low makes commentary feel spammy |
+| `THREAD_COMPACTION_NO_CHANGE_STREAK` | `5` | `jam-governance-constants.ts` → agent-thread compaction scheduling | Number of qualifying unchanged auto-ticks before compaction | Threads compact sooner and keep prompts shorter | Threads stay longer and retain more direct history | Too low can drop useful continuity; too high grows prompt cost/latency |
 
 ### Environment Variables
 
 Set these in the server environment (e.g. `.env` or process environment).
-Enforced by `lib/jam-admission.ts`, consumed in `app/api/runtime-ws/route.ts`.
+Consumed in `app/api/runtime-ws/route.ts`, `app/api/conductor-intent/route.ts`,
+and `lib/camera-directive-interpreter.ts`.
 
 | Variable | Default | Controls | Notes |
 |----------|---------|----------|-------|
 | `MAX_CONCURRENT_JAMS` | `1` | Maximum simultaneous jam sessions across all clients | Prevents multi-tab process explosions |
 | `MAX_TOTAL_AGENT_PROCESSES` | `4` | Maximum total agent Codex processes across all jams | With 4 agents per jam and default limit of 1 jam, this is exactly 1 full band |
 | `CAMERA_INTERPRETATION_MIN_CONFIDENCE` | `0.55` | Minimum model confidence required to accept a camera cue | Used by `interpretCameraDirective`; lower values increase cue acceptance and false-positive risk. Restart server after changes. |
+| `CAMERA_SAMPLE_MAX_AGE_MS` | `5000` | Maximum accepted age of a camera sample | Older samples are marked stale and rejected before routing |
+| `CAMERA_SAMPLE_MAX_FUTURE_SKEW_MS` | `1500` | Maximum allowed future skew for a camera sample timestamp | Prevents clock-skewed or malformed samples from being treated as fresh |
+| `CONDUCTOR_INTENT_TOKEN` | unset | Shared secret for the standalone `/api/conductor-intent` endpoint | Requests without a matching `x-conductor-intent-token` are rejected |
+| `CONDUCTOR_INTENT_ALLOWED_HOSTS` | `localhost,127.0.0.1` | Host allowlist for the standalone conductor endpoint | Comma-separated; `*` allows all hosts |
 
 ### Prompt-Layer Tuning Knobs
 
@@ -255,6 +283,11 @@ directives: browser audio feedback and camera conductor intent payloads.
     `sample_face_motion`, `sample_is_stale`) to explain skipped cues.
   - Accepted visions are translated into normal boss directives and routed through
     the same deterministic `handleDirective()` path.
+
+- Standalone HTTP path (`app/api/conductor-intent/route.ts`):
+  - Exposes the same interpreter through `POST /api/conductor-intent`.
+  - Requires a valid `x-conductor-intent-token` and an allowed host.
+  - Returns `ConductorInterpreterResult` JSON without mutating jam state by itself.
 
 ---
 

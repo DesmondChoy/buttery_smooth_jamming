@@ -6,7 +6,25 @@ Companion docs: `docs/v3/model-policy-boundary.md` | `lib/musical-context-parser
 
 ## Quick Start
 
-You must: (1) start a jam session, (2) choose a preset (genre), (3) press Play (jam mode play, not normal mode playback). Until the preset is chosen and the jam is armed, boss directives are rejected.
+You must: (1) start a jam session, (2) choose a preset (genre), (3) unlock browser audio, and (4) press Play (jam mode play, not normal mode playback). Until the preset is chosen and the jam is armed, boss directives are rejected.
+
+## Session Controls
+
+| Control | Current Behavior |
+|---------|------------------|
+| Start a Jam Session | Opens agent selection and spawns the selected jam workers |
+| Preset picker | Applies the staged-silent starting context before anyone joins audibly |
+| Play | Arms the jam after preset selection and audio unlock |
+| Stop | Stops playback and tears down the jam session |
+| Camera Conductor | Can be toggled once the jam is running; cues enter the same directive pipeline after interpretation |
+| Agent header context inspector | Hover or click an agent header to inspect recent prompt/thread/context snapshots |
+
+Practical session rules:
+
+- The first audible join should usually be a targeted `@mention` so one agent is activated intentionally.
+- The preset locks after the first manual join.
+- The camera conductor does not activate agents by itself; at least one agent must already be manually active.
+- The auto-tick countdown appears after the jam is armed and at least one agent is playing.
 
 ## Mental Model: Three Prompting Layers
 
@@ -494,6 +512,7 @@ Agent key/chord suggestions are applied during auto-tick processing (autonomous 
 | `faster`/`more energy` didn't move the meter | Relative cue with no usable agent decision | Use explicit `BPM {n}` or `energy {n}` |
 | Chord progression didn't apply | Boss text doesn't parse chord sequences | Change key instead; let agents derive chords |
 | Genre didn't change | Genre is locked per jam session | Stop → new jam → pick different preset |
+| Camera cue was skipped | No manually active agents yet, stale sample, or confidence below threshold | Activate one agent with a targeted boss cue first, then check conductor status/error text in the top bar |
 
 ## Recommended Boss Prompting Style
 

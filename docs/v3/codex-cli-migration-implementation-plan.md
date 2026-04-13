@@ -1,6 +1,6 @@
 # V3 Implementation Plan: Migrate to Codex CLI + OpenAI Subagents
 
-> Status: Execution in progress (Workstreams A-F closed; G open). Post-migration musical enhancements (bsj-bx1 epic, 8 issues) shipped.
+> Status: Active reference for the v3 runtime. Workstreams A-F are reflected in code, Workstream G remains the validation/benchmark checkpoint, and the bsj-bx1 musical-policy enhancements are part of the current runtime surface.
 > Last updated: February 26, 2026 (bsj-bx1 epic documentation update)
 > Scope: Repository-level migration plan only (no code changes in this document)
 
@@ -32,7 +32,7 @@ GA defaults locked for this plan:
 2. Headless/CI runtime via API key is out of scope for v3 GA.
 3. Jam mode GA uses manager-controlled long-lived per-agent Codex CLI processes.
 4. Jam agents are hard-toolless (no built-in tools and no MCP).
-5. WebSocket cutover is direct to `/api/ai-ws` (no legacy compatibility alias in GA).
+5. `/api/ai-ws` is the primary websocket path; `/api/runtime-ws` remains the backing implementation route during the transition period.
 6. Jam sub-agent default model is `gpt-5-codex-mini` (latency-optimized and validated in ChatGPT-auth Codex CLI flow).
 7. Normal mode default model is `gpt-5-codex`.
 
@@ -43,7 +43,22 @@ GA defaults locked for this plan:
 - Do not migrate to direct OpenAI REST API integration for core runtime flows in v3.
 - Do not make CI/headless API-key runtime a GA requirement.
 
-## Current State (v2)
+## Current Implementation Snapshot
+
+The active codebase runs the v3 runtime architecture:
+
+- Normal mode uses `lib/codex-process.ts` through the provider-neutral websocket
+  entrypoint `app/api/ai-ws/route.ts`.
+- Jam mode uses `lib/agent-process-manager.ts` with one long-lived Codex worker
+  per active agent (`drums`, `bass`, `melody`, `chords`).
+- Jam sessions start staged-silent, apply a preset before playback, and lock the
+  preset after the first manual join.
+- Browser audio feedback and camera-derived conductor cues feed the same jam
+  policy boundary, with freshness/confidence gates enforced before routing.
+- Agent context inspection is enabled by default and surfaces prompt/thread
+  snapshots in the jam UI.
+
+## Current Architecture Reference
 
 The current architecture is tightly coupled to Codex CLI process semantics:
 

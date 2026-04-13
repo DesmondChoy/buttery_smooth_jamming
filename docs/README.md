@@ -3,14 +3,24 @@
 ## Current Focus: V3 Codex Runtime Architecture
 
 The project is an **autonomous AI jam session** where 4 band member agents
-(drums, bass, melody, FX) play together in real-time via Strudel, react to each
+(drums, bass, melody, chords) play together in real-time via Strudel, react to each
 other, and respond to a human "boss" directing the session.
 
 The active architecture path is v3: Codex-first runtime and jam orchestration
 with deterministic routing and manager-owned jam-state continuity.
 
+## Current Product Surface
+
+| Surface | What It Covers |
+|---------|----------------|
+| Normal assistant mode | Provider-neutral Codex runtime on `/api/ai-ws`, Strudel MCP tools, terminal drawer, browser playback via `/api/ws` |
+| Jam mode | Staged-silent startup, genre presets, deterministic `@mention` routing, per-agent persistent Codex workers, server-side `stack(...)` composition |
+| Sensory control | Browser audio spectral summaries, camera conductor intent interpretation, confidence/freshness gates |
+| Diagnostics | Runtime status/error events, benchmark harness, agent context inspector with prompt/thread snapshots |
+
 | Document | Purpose |
 |----------|---------|
+| [Project README](../README.md) | Top-level overview, quick start, commands, runtime surface |
 | [V3 Migration Plan](./v3/codex-cli-migration-implementation-plan.md) | Provider migration workstreams and acceptance criteria |
 | [V3 Codex Runtime Setup](./v3/codex-runtime-setup.md) | Codex profiles, config locations, startup checks (Workstream E) |
 | [V3 Workstream G Checkpoint](./v3/bsj-6ud.1-validation-rollout-2026-02-25.md) | Regression gate status, benchmark harness, staged rollout controls |
@@ -19,6 +29,7 @@ with deterministic routing and manager-owned jam-state continuity.
 | [V3 Jam Boss Prompting Guide](./v3/jam-boss-prompting-guide.md) | User-facing phrase guide: trigger cues, routing, and expected jam reactions |
 | [V3 Runtime Reliability Notes](./v3/model-policy-boundary.md#runtime-and-transport-failure-semantics) | Runtime start/connect race handling, transport reconnection behavior, and deterministic lifecycle/shutdown boundaries |
 | [V3 Sensing + Camera Conductor Notes](./v3/model-policy-boundary.md#audio-and-vision-context-boundaries) | Browser audio spectral context and camera-derived conductor intent pipeline, including freshness and confidence gates |
+| [V3 Benchmark Script Notes](./v3/bsj-6ud.1-validation-rollout-2026-02-25.md) | `npm run benchmark:workstream-g` usage, thresholds, and sample invocations |
 
 Post-migration musical enhancements (bsj-bx1 epic) are documented in the
 [model policy boundary](./v3/model-policy-boundary.md) and
